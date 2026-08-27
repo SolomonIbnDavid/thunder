@@ -100,14 +100,17 @@ public class OptWnd extends WindowX {
 	}
 
 	public boolean keydown(KeyDownEvent ev) {
-	    if((this.key != -1) && (ev.c == this.key)) {
+	    /* Plain keypresses only: a modified combo (e.g. ctrl+O, which
+	     * toggles the options window) must reach the global handler
+	     * instead of being eaten as a panel hotkey. */
+	    if((this.key != -1) && (ev.c == this.key) && (ev.mods == 0)) {
 		click();
 		return (true);
 	    }
 	    return (super.keydown(ev));
 	}
     }
-    
+
     private static class AButton extends Button {
 	public final Action act;
 	public final int key;
@@ -123,7 +126,7 @@ public class OptWnd extends WindowX {
 	}
 	
 	public boolean keydown(KeyDownEvent ev) {
-	    if((this.key != -1) && (ev.c == this.key)) {
+	    if((this.key != -1) && (ev.c == this.key) && (ev.mods == 0)) {
 		click();
 		return (true);
 	    }
@@ -1020,6 +1023,18 @@ public class OptWnd extends WindowX {
 	    }
 	}, x, y);
 
+	String catchupTip = "How long the camera takes to settle on the character after movement stops, in milliseconds. Lower is snappier."
+	    + "\nNotches: " + CFG.CAMERA_CATCHUP_HURRICANE + " ms matches Hurricane's free camera, " + CFG.CAMERA_CATCHUP_CLASSIC + " ms is the old Thunder behavior.";
+	y += STEP;
+	camera.add(new Label("Catch-up speed (ms)"), x, y).settip(catchupTip, true);
+	y += UI.scale(15);
+	camera.add(new NotchedHSlider(UI.scale(200), 50, 1000, CFG.CAMERA_CATCHUP_MS.get(),
+				      CFG.CAMERA_CATCHUP_HURRICANE, CFG.CAMERA_CATCHUP_CLASSIC) {
+	    public void changed() {
+		CFG.CAMERA_CATCHUP_MS.set(val);
+	    }
+	}, x, y).settip(catchupTip, true);
+
 	y += STEP;
 	camera.add(new Label("Rotation smoothing (ms)"), x, y).settip("Only affects the free camera. The ortho cameras have their own built-in smoothing.");
 	y += UI.scale(15);
@@ -1028,6 +1043,24 @@ public class OptWnd extends WindowX {
 		CFG.CAMERA_ROTATION_SMOOTHING_MS.set(val);
 	    }
 	}, x, y).settip("Only affects the free camera. The ortho cameras have their own built-in smoothing.");
+
+	y += STEP;
+	camera.add(new Label("Free camera rotation sensitivity (%)"), x, y).settip("How fast mouse-drag rotates the free camera. 100% is the standard speed.");
+	y += UI.scale(15);
+	camera.add(new HSlider(UI.scale(200), 10, 100, CFG.FREE_CAM_SENSITIVITY.get()) {
+	    public void changed() {
+		CFG.FREE_CAM_SENSITIVITY.set(val);
+	    }
+	}, x, y).settip("How fast mouse-drag rotates the free camera. 100% is the standard speed.");
+
+	y += STEP;
+	camera.add(new Label("Ortho camera rotation sensitivity (%)"), x, y).settip("How fast mouse-drag rotates the ortho cameras. 100% is the standard speed.");
+	y += UI.scale(15);
+	camera.add(new HSlider(UI.scale(200), 10, 100, CFG.ORTHO_CAM_SENSITIVITY.get()) {
+	    public void changed() {
+		CFG.ORTHO_CAM_SENSITIVITY.set(val);
+	    }
+	}, x, y).settip("How fast mouse-drag rotates the ortho cameras. 100% is the standard speed.");
 
 	y += BIG_STEP;
 	my = Math.max(my, y);

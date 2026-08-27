@@ -246,9 +246,17 @@ public class MapView extends PView implements DTarget, Console.Directory, Widget
 		float a = cc.xyangle(curc);
 		float nx = cc.x + ((float)Math.cos(a) * fr), ny = cc.y + ((float)Math.sin(a) * fr);
 		Coord3f tgtc = new Coord3f(nx, ny, cc.z);
-		curc = curc.add(tgtc.sub(curc).mul((float)(1.0 - Math.pow(500, -dt))));
-		if(curc.dist(tgtc) < 0.01)
+		/* The built-in glide answers to the same "Smooth camera" option
+		 * and catch-up slider as the jitter filter, so one setting
+		 * governs all trailing after the character has stopped. */
+		if(CFG.CAMERA_SMOOTH_JITTER.get()) {
+		    float rate = 4000f / Utils.clip(CFG.CAMERA_CATCHUP_MS.get(), 50, 2000);
+		    curc = curc.add(tgtc.sub(curc).mul((float)(1.0 - Math.exp(-rate * dt))));
+		    if(curc.dist(tgtc) < 0.01)
+			curc = tgtc;
+		} else {
 		    curc = tgtc;
+		}
 		tangl = curc.xyangle(cambase);
 	    }
 	    
@@ -440,10 +448,11 @@ public class MapView extends PView implements DTarget, Console.Directory, Widget
 	
 	public void drag(Coord c) {
 	    c = inversion(c, dragorig);
-	    telev = elevorig - ((float)(c.y - dragorig.y) / 100.0f);
+	    float sens = CFG.FREE_CAM_SENSITIVITY.get() / 100.0f;
+	    telev = elevorig - ((float)(c.y - dragorig.y) * sens / 100.0f);
 	    if(telev < 0.0f) telev = 0.0f;
 	    if(telev > (Math.PI / 2.0)) telev = (float)Math.PI / 2.0f;
-	    tangl = anglorig + ((float)(c.x - dragorig.x) / 100.0f);
+	    tangl = anglorig + ((float)(c.x - dragorig.x) * sens / 100.0f);
 	}
 
 	public boolean wheel(MouseWheelEvent ev) {
@@ -506,7 +515,8 @@ public class MapView extends PView implements DTarget, Console.Directory, Widget
 	
 	public void drag(Coord c) {
 	    c = inversion(c, dragorig);
-	    angl = anglorig + ((float)(c.x - dragorig.x) / 100.0f);
+	    float sens = CFG.ORTHO_CAM_SENSITIVITY.get() / 100.0f;
+	    angl = anglorig + ((float)(c.x - dragorig.x) * sens / 100.0f);
 	    angl = angl % ((float)Math.PI * 2.0f);
 	}
 	
@@ -594,7 +604,8 @@ public class MapView extends PView implements DTarget, Console.Directory, Widget
 	
 	public void drag(Coord c) {
 	    c = inversion(c, dragorig);
-	    tangl = anglorig + ((float)(c.x - dragorig.x) / 100.0f);
+	    float sens = CFG.ORTHO_CAM_SENSITIVITY.get() / 100.0f;
+	    tangl = anglorig + ((float)(c.x - dragorig.x) * sens / 100.0f);
 	}
 	
 	public void release() {
@@ -1398,10 +1409,9 @@ public class MapView extends PView implements DTarget, Console.Directory, Widget
     private final CamJitterFilter camfilter = new CamJitterFilter();
 
     private static class CamJitterFilter {
-	// Critically-damped spring. OMEGA controls how fast the camera reaches
-	// the target — roughly 4/OMEGA seconds to settle from rest. OMEGA=6
-	// gives ~0.65s settle on big jumps with smooth ease-in-out.
-	private static final float OMEGA = 6f;
+	// Critically-damped spring. omega controls how fast the camera reaches
+	// the target — roughly 4/omega seconds to settle from rest; it is
+	// derived from the catch-up slider so settle time ≈ CAMERA_CATCHUP_MS.
 	private double lastTime = Double.NaN;
 	private Coord3f filtered;
 	private float vx, vy;
@@ -1421,7 +1431,6 @@ public class MapView extends PView implements DTarget, Console.Directory, Widget
 	    float dt = (float)(now - lastTime);
 	    if(dt <= 0) return(filtered);
 	    lastTime = now;
-	    if(dt > 0.1f) dt = 0.1f;
 
 	    // Teleport detection: if the player jumped a huge distance (e.g. zoning
 	    // indoors, fast-travel), don't try to spring across it — that overshoots
@@ -1434,17 +1443,23 @@ public class MapView extends PView implements DTarget, Console.Directory, Widget
 
 	    float leash = Utils.clip(CFG.CAMERA_SMOOTH_STRENGTH.get(), 0, 50);
 
-	    // Critically-damped spring integration (semi-implicit). Produces
+	    // Closed-form critically-damped spring step. Exact for any dt, so
+	    // a huge frame delta (tabbed-out client, lag spike) converges onto
+	    // the target instead of blowing up the way the old semi-implicit
+	    // Euler step did once the slider allowed high omega. Produces
 	    // ease-in-out: accelerates from rest, decelerates into the target,
-	    // no overshoot, no exponential tail.
+	    // no overshoot.
+	    float omega = 4000f / Utils.clip(CFG.CAMERA_CATCHUP_MS.get(), 50, 2000);
+	    float ex = (float)Math.exp(-omega * dt);
 	    float dx = filtered.x - raw.x;
 	    float dy = filtered.y - raw.y;
-	    float ax = -2f * OMEGA * vx - OMEGA * OMEGA * dx;
-	    float ay = -2f * OMEGA * vy - OMEGA * OMEGA * dy;
-	    vx += ax * dt;
-	    vy += ay * dt;
-	    float fx = filtered.x + vx * dt;
-	    float fy = filtered.y + vy * dt;
+	    float cx = vx + omega * dx, cy = vy + omega * dy;
+	    float px = (dx + cx * dt) * ex;
+	    float py = (dy + cy * dt) * ex;
+	    vx = (cx - omega * (dx + cx * dt)) * ex;
+	    vy = (cy - omega * (dy + cy * dt)) * ex;
+	    float fx = raw.x + px;
+	    float fy = raw.y + py;
 
 	    // Clamp offset to leash radius. Pinning at the boundary kills any
 	    // outward velocity component so the camera tracks at player speed.
