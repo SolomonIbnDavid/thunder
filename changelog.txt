@@ -1,5 +1,6 @@
 $size[14]{$u{update on 27.08.2026:}
-* Pre-release from the pathfinding-bot branch (does not replace the standalone updater's latest). Includes the Ard HUD theme with floating chat/minimap, and a setting to use the floating HUD independently of the theme.
+* Standalone updater on this fork now follows SolomonIbnDavid/thunder releases, including pre-releases (override with THUNDER_UPDATE_REPO=owner/repo).
+* Pre-release from the pathfinding-bot branch (does not replace onefuncman/thunder latest). Includes the Ard HUD theme with floating chat/minimap, and a setting to use the floating HUD independently of the theme.
 `
 $size[14]{$u{update on 26.08.2026:}
 * The "Toggle animal warnings" shortcut no longer disturbs player, gem or midge circles - it now touches animal warnings only. A rare case where a gob could permanently lose its warning circle after a toggle is also fixed.
