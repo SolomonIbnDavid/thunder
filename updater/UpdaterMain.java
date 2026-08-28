@@ -44,8 +44,11 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 public class UpdaterMain {
-    private static final String OWNER = "onefuncman";
-    private static final String REPO = "thunder";
+    /* This branch ships Solomon's fork builds. Override with
+     * THUNDER_UPDATE_REPO=owner/repo if needed. /releases/latest ignores
+     * pre-releases, so the check lists published releases instead. */
+    private static final String DEFAULT_OWNER = "SolomonIbnDavid";
+    private static final String DEFAULT_REPO = "thunder";
     private static final String ASSET = "Thunder-cross-platform.zip";
     private static final String ZIP_ROOT = "Thunder/";
     private static final String VERSION_FILE = "VERSION";
@@ -81,8 +84,10 @@ public class UpdaterMain {
     }
 
     private void run() throws Exception {
+        String[] repo = updateRepo();
+        System.out.println("[updater] Checking " + repo[0] + "/" + repo[1] + " releases.");
         String local = localVersion();
-        Map<?, ?> release = fetchLatestRelease();
+        Map<?, ?> release = fetchLatestRelease(repo[0], repo[1]);
         String tag = (String)release.get("tag_name");
         if(tag == null || tag.isBlank())
             throw new IOException("latest release has no tag_name");
@@ -112,8 +117,21 @@ public class UpdaterMain {
         return Files.isRegularFile(f) ? Files.readString(f, StandardCharsets.UTF_8).trim() : null;
     }
 
-    private Map<?, ?> fetchLatestRelease() throws IOException, InterruptedException {
-        URI uri = URI.create("https://api.github.com/repos/" + OWNER + "/" + REPO + "/releases/latest");
+    private static String[] updateRepo() {
+        String env = System.getenv("THUNDER_UPDATE_REPO");
+        if(env != null && !env.isBlank()) {
+            String[] parts = env.trim().split("/", 2);
+            if(parts.length == 2 && !parts[0].isBlank() && !parts[1].isBlank())
+                return parts;
+            System.out.println("[updater] Ignoring bad THUNDER_UPDATE_REPO=" + env + " (want owner/repo).");
+        }
+        return new String[] {DEFAULT_OWNER, DEFAULT_REPO};
+    }
+
+    /* Newest published release, including pre-releases. /releases/latest
+     * skips those, so a fork tag like v2026.08.27-pf would never apply. */
+    private Map<?, ?> fetchLatestRelease(String owner, String repo) throws IOException, InterruptedException {
+        URI uri = URI.create("https://api.github.com/repos/" + owner + "/" + repo + "/releases?per_page=20");
         HttpRequest req = HttpRequest.newBuilder(uri)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "thunder-updater")
@@ -123,9 +141,13 @@ public class UpdaterMain {
         if(rsp.statusCode() != 200)
             throw new IOException("release check got HTTP " + rsp.statusCode());
         Object root = new Json(rsp.body()).parse();
-        if(!(root instanceof Map<?, ?> map))
-            throw new IOException("unexpected release JSON");
-        return map;
+        if(!(root instanceof List<?> list) || list.isEmpty())
+            throw new IOException("no published releases on " + owner + "/" + repo);
+        for(Object o : list) {
+            if(o instanceof Map<?, ?> map && !Boolean.TRUE.equals(map.get("draft")))
+                return map;
+        }
+        throw new IOException("no non-draft releases on " + owner + "/" + repo);
     }
 
     private Map<?, ?> findAsset(Map<?, ?> release) throws IOException {

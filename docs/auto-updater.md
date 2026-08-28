@@ -2,7 +2,9 @@
 
 `updater.jar` is a self-updater run by the release launchers (`Thunder.bat` /
 `thunder.sh`) before the client starts. It checks the latest GitHub release of
-`onefuncman/thunder` and updates the install in place. Modeled on Nightdawg's
+the GitHub repo this build was cut from (`SolomonIbnDavid/thunder` on
+this branch; `onefuncman/thunder` on main) and updates the install in place.
+Override with `THUNDER_UPDATE_REPO=owner/repo`. Modeled on Nightdawg's
 [Hurricane-Updater](https://github.com/Nightdawg/Hurricane-Updater), adapted
 from its raw-manifest scheme to GitHub release assets.
 
@@ -10,9 +12,9 @@ from its raw-manifest scheme to GitHub release assets.
 
 1. Launcher swaps in any `updater.jar.new` staged by a previous run, then runs
    `updater.jar`.
-2. Updater reads the local `VERSION` file and calls
-   `api.github.com/.../releases/latest`. Tag matches → exits immediately
-   (one HTTP request).
+2. Updater reads the local `VERSION` file and lists published GitHub
+   releases (including pre-releases; `/releases/latest` would skip those).
+   Newest tag matches → exits immediately.
 3. On mismatch it downloads `Thunder-cross-platform.zip` (both platforms use
    this asset — it is the Windows zip minus the bundled JRE), verifies the
    GitHub-published SHA-256 `digest` and size, extracts to a temp stage dir,
