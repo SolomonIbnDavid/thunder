@@ -146,6 +146,20 @@
     </jar>
   </target>
 
+  <!-- Drop-in zip for people on onefuncman/thunder: replace updater.jar, relaunch. -->
+  <target name="switcher-zip" depends="updater-jar">
+    <mkdir dir="build/switch" />
+    <copy file="build/updater.jar" todir="build/switch" />
+    <copy file="etc/release/Thunder.bat" todir="build/switch" />
+    <copy file="etc/release/thunder.sh" todir="build/switch" />
+    <copy file="etc/release/run.bat" todir="build/switch" />
+    <copy file="etc/release/run" todir="build/switch" />
+    <copy file="etc/release/SWITCH-README.txt" tofile="build/switch/README.txt" />
+    <chmod file="build/switch/thunder.sh" perm="a+x" />
+    <chmod file="build/switch/run" perm="a+x" />
+    <zip destfile="build/Thunder-switch-to-experimental.zip" basedir="build/switch" />
+  </target>
+
   <target name="client-res-java" depends="hafen-client">
     <mkdir dir="resources/classes" />
     <javac srcdir="resources/java" destdir="resources/classes" debug="on" source="1.8" target="1.8" includeantruntime="no" encoding="UTF-8">
