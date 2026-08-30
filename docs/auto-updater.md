@@ -58,3 +58,20 @@ entirely.
 - Installs older than the first updater-carrying release have no `VERSION`
   (treated as unknown → one full update) and no `updater.jar` (users must
   re-download once; the launcher tolerates its absence).
+
+## Switching from official Thunder (onefuncman)
+
+Friends on a `onefuncman/thunder` standalone install keep following that
+repo until their `updater.jar` is replaced. This branch bakes
+`SolomonIbnDavid/thunder` into the updater.
+
+- **Already have a Thunder folder** (you launch `Thunder.bat` / `thunder.sh`):
+  download `Thunder-switch-to-experimental.zip` from this fork's releases,
+  copy `updater.jar` into that folder, relaunch. The next start downloads
+  this fork's newest published tag (including pre-releases).
+- **Only downloaded `hafen.jar`:** that file is not a playable install. Grab
+  `Thunder-windows-x64.zip` or `Thunder-cross-platform.zip` instead and run
+  `Thunder.bat` / `thunder.sh`.
+- **Steam Workshop** installs cannot use this updater; use a standalone zip.
+
+`ant switcher-zip` builds the drop-in zip locally (`build/Thunder-switch-to-experimental.zip`).

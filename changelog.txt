@@ -1,3 +1,6 @@
+$size[14]{$u{update on 30.08.2026:}
+* New Measure action under Xtended: click tiles to mark distances. The overlay stays until you clear it (Shift-click Measure, or Shift-click the map while measuring). Ctrl-click undoes the last mark; right-click leaves measure mode but keeps the lines.
+`
 $size[14]{$u{update on 27.08.2026:}
 * Standalone updater on this fork now follows SolomonIbnDavid/thunder releases, including pre-releases (override with THUNDER_UPDATE_REPO=owner/repo).
 * Pre-release from the pathfinding-bot branch (does not replace onefuncman/thunder latest). Includes the Ard HUD theme with floating chat/minimap, and a setting to use the floating HUD independently of the theme.
