@@ -1,4 +1,5 @@
 $size[14]{$u{update on 30.08.2026:}
+* Minesweeper now paints deduced green/red/orange fills on cave walls from Cavedust counts. Ctrl-activate the Minesweeper action to hide the fills if they get noisy (numbers and markers stay). Importing a shared .hems file turns the overlay and colors on so both people see the same map.
 * New Measure action under Xtended: click tiles to mark distances. The overlay stays until you clear it (Shift-click Measure, or Shift-click the map while measuring). Ctrl-click undoes the last mark; right-click leaves measure mode but keeps the lines.
 `
 $size[14]{$u{update on 27.08.2026:}
