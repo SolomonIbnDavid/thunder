@@ -249,6 +249,8 @@ public final class DevControl {
    private JSONObject status(boolean occupancy) {
       JSONObject o = new JSONObject();
       o.put("ok", true);
+      o.put("navigation_core_git", haven.nav.NavigationCore.gitHash());
+      o.put("navigation_core_title", haven.nav.NavigationCore.TITLE);
       UI ui = this.ui();
       if (ui == null) {
          o.put("screen", "none");

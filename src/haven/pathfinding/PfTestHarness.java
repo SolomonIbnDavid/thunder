@@ -94,7 +94,7 @@ final class PfTestHarness {
          if (w != null) {
             w.close();
          }
-         Path replay = NavReplay.emit(run, result, dir);
+         Path replay = NavReplayIO.emit(run, result, dir);
          if (replay != null) {
             result.put("navreplay", replay.toString());
          }

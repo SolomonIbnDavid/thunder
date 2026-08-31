@@ -31,7 +31,9 @@ GET  /pf/result?run_id=
 POST /pf/cancel
 ```
 
-Launch: `tools/launch-pf-test.sh` after `ant bin`. Occupancy, body clearance, eight-way A*, no-corner-cutting, and collision-checked smoothing remain in `PrototypePathfinder` / `GridAStar` (quarter-tile `2.75` world-unit cells).
+Launch: `tools/launch-pf-test.sh` after `ant bin`. Occupancy, body clearance, eight-way A*, no-corner-cutting, and collision-checked smoothing live in `HavenNavigationCore` (`LocalPlanner` / `GridAStar`, quarter-tile `2.75` world-unit cells). Thunder adapters (`PrototypePathfinder`, `ThunderNavAdapter`) convert live `GameUI` state into core inputs. `GET /status` includes `navigation_core_git`.
+
+Phase 1 live-gate: Navigation Lab jar launched and bound `18762`, but the session stayed on the login screen (`no matching saved account` for Rip Van Winkle). Offline NavReplay still loads without a game connection.
 
 ## Navigation Lab layout
 
@@ -45,10 +47,10 @@ Each completed run writes two artifacts under `dev-snapshots/pf/tests/<scenario>
 Offline replay (no live session):
 
 ```
-java -cp bin/hafen.jar haven.pathfinding.NavReplayRunner path/to/<run_id>.navreplay.jsonl
+java -cp bin/hafen.jar:bin/HavenNavigationCore.jar haven.pathfinding.NavReplayRunner path/to/<run_id>.navreplay.jsonl
 ```
 
-or `java -cp hafen.jar haven.dev.DebugReplay` on a `feature=navreplay` snapshot. Replay calls `PrototypePathfinder.planFromOccupancy` (the same `planCore` used live).
+or `java -cp hafen.jar:HavenNavigationCore.jar haven.dev.DebugReplay` on a `feature=navreplay` snapshot. Replay calls `PrototypePathfinder.planFromOccupancy`, which delegates to `LocalPlanner.planFromOccupancy` in the shared core (the same `planCore` used live).
 
 ## Overlays (`:pf debug` / `CFG.DEBUG_PATHFIND`)
 

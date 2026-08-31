@@ -183,9 +183,12 @@ public final class PfTestRunner {
          result.put("duration_ms", nowx - run.startedMs);
          result.put("error", var12.getMessage() == null ? var12.toString() : var12.getMessage());
       } finally {
-         finishRun(run);
-         rememberResult(result);
-         PfTestHarness.write(run, result);
+         try {
+            PfTestHarness.write(run, result);
+         } finally {
+            rememberResult(result);
+            finishRun(run);
+         }
       }
    }
 

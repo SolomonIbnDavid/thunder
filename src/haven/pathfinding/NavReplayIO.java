@@ -18,18 +18,14 @@ import org.json.JSONObject;
  * live game connection. Stores occupancy, goal, routes, observations,
  * decisions, and outcome. Does not serialize renderer or UI objects.
  */
-public final class NavReplay {
-   public static final String FORMAT = "NavReplay";
-   public static final int VERSION = 1;
-   public static final String FEATURE = "navreplay";
-
-   private NavReplay() {
+public final class NavReplayIO {
+   private NavReplayIO() {
    }
 
    public static JSONObject document(PfTestRunner.Run run, JSONObject result) {
       JSONObject o = new JSONObject();
-      o.put("format", FORMAT);
-      o.put("version", VERSION);
+      o.put("format", NavReplay.FORMAT);
+      o.put("version", NavReplay.VERSION);
       o.put("scenario", run == null ? JSONObject.NULL : run.scenario);
       o.put("run_id", run == null ? JSONObject.NULL : run.id);
       o.put("generated_at_ms", System.currentTimeMillis());
@@ -52,9 +48,9 @@ public final class NavReplay {
       JSONObject body = document(run, result);
       JSONObject header = new JSONObject()
          .put("type", "header")
-         .put("feature", FEATURE)
-         .put("format", FORMAT)
-         .put("version", VERSION)
+         .put("feature", NavReplay.FEATURE)
+         .put("format", NavReplay.FORMAT)
+         .put("version", NavReplay.VERSION)
          .put("scenario", run.scenario)
          .put("run_id", run.id)
          .put("generated_at_ms", System.currentTimeMillis());
@@ -70,41 +66,8 @@ public final class NavReplay {
       return file;
    }
 
-   public static JSONObject parse(String json) {
-      return parseObject(new JSONObject(json));
-   }
 
-   public static JSONObject parseObject(JSONObject o) {
-      if (o == null) {
-         throw new IllegalArgumentException("NavReplay body is null");
-      }
-      if (!FORMAT.equals(o.optString("format"))) {
-         throw new IllegalArgumentException("not a NavReplay document (format=" + o.optString("format") + ")");
-      }
-      if (o.optInt("version") != VERSION) {
-         throw new IllegalArgumentException("unsupported NavReplay version " + o.optInt("version"));
-      }
-      return o;
-   }
 
-   public static JSONObject loadFile(Path file) throws IOException {
-      List<String> lines = Files.readAllLines(file);
-      if (lines.size() < 2) {
-         throw new IllegalArgumentException("NavReplay file has no body: " + file);
-      }
-      JSONObject header = new JSONObject(lines.get(0));
-      if (!"header".equals(header.optString("type"))) {
-         throw new IllegalArgumentException("first line is not a header: " + file);
-      }
-      if (!FEATURE.equals(header.optString("feature")) && !FORMAT.equals(header.optString("format"))) {
-         JSONObject body = new JSONObject(lines.get(1));
-         if (FORMAT.equals(body.optString("format"))) {
-            return parseObject(body);
-         }
-         throw new IllegalArgumentException("header is not a NavReplay: " + header.optString("feature"));
-      }
-      return parseObject(new JSONObject(lines.get(1)));
-   }
 
    static JSONObject worldFromLogs(JSONObject result) {
       JSONObject world = new JSONObject();

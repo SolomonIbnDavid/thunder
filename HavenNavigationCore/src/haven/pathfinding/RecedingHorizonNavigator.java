@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Objects;
 
 public final class RecedingHorizonNavigator {
+   private static volatile haven.nav.NavigationTelemetrySink telemetry = haven.nav.NavigationTelemetrySink.NONE;
    private final RecedingHorizonNavigator.LocalPlanner localPlanner;
    private final RecedingHorizonNavigator.LegWalker walker;
    private final RecedingHorizonNavigator.CoarsePlanner coarsePlanner;
@@ -115,29 +116,37 @@ public final class RecedingHorizonNavigator {
 
    private RecedingHorizonNavigator.Result replan(RecedingHorizonNavigator.State st, Coord goalTile) {
       if (st.replans >= this.bounds.maxReplans) {
-         PathfinderLog.setReplanReason("replan_limit");
+         noteReplan("replan_limit");
          return new RecedingHorizonNavigator.Result(RecedingHorizonNavigator.Outcome.REPLAN_LIMIT_EXHAUSTED, st.legs, st.replans, null, st.pos, st.idx);
       } else {
          st.replans++;
          Coord curTile = this.tileMap.toTile(st.pos);
          CoarseRoutePlanner.Route nr = this.coarsePlanner.plan(curTile, goalTile, this.bounds.coarseExpanded);
          if (nr == null || !nr.reached()) {
-            PathfinderLog.setReplanReason("coarse_plan_failed");
+            noteReplan("coarse_plan_failed");
             return new RecedingHorizonNavigator.Result(
                RecedingHorizonNavigator.Outcome.COARSE_PLAN_FAILED, st.legs, st.replans, coarseDetail(nr), st.pos, st.idx
             );
          } else if (!validRoute(nr.waypoints, goalTile, curTile)) {
-            PathfinderLog.setReplanReason("coarse_plan_invalid");
+            noteReplan("coarse_plan_invalid");
             return new RecedingHorizonNavigator.Result(
                RecedingHorizonNavigator.Outcome.COARSE_PLAN_INVALID, st.legs, st.replans, routeReason(nr.waypoints, goalTile, curTile), st.pos, st.idx
             );
          } else {
-            PathfinderLog.setReplanReason("replan");
+            noteReplan("replan");
             st.route = nr.waypoints;
             st.idx = 1;
             return null;
          }
       }
+   }
+
+   public static void setTelemetry(haven.nav.NavigationTelemetrySink sink) {
+      telemetry = sink == null ? haven.nav.NavigationTelemetrySink.NONE : sink;
+   }
+
+   private static void noteReplan(String reason) {
+      telemetry.onEvent("replan", reason);
    }
 
    private static String coarseDetail(CoarseRoutePlanner.Route r) {
@@ -245,30 +254,14 @@ public final class RecedingHorizonNavigator {
          this.waypoints = waypoints == null ? Collections.emptyList() : Collections.unmodifiableList(new ArrayList<>(waypoints));
       }
 
-      public static RecedingHorizonNavigator.LocalPlan from(PrototypePathfinder.Plan plan) {
+      public static RecedingHorizonNavigator.LocalPlan from(haven.nav.NavPlan plan) {
          Objects.requireNonNull(plan, "plan");
-         RecedingHorizonNavigator.LocalPlan.Status st;
-         switch (plan.status) {
-            case REACHED:
-               st = RecedingHorizonNavigator.LocalPlan.Status.REACHED;
-               break;
-            case CLIPPED:
-               st = RecedingHorizonNavigator.LocalPlan.Status.CLIPPED;
-               break;
-            case SNAPPED:
-               st = RecedingHorizonNavigator.LocalPlan.Status.SNAPPED;
-               break;
-            case PARTIAL:
-               st = RecedingHorizonNavigator.LocalPlan.Status.PARTIAL;
-               break;
-            case FAILED:
-               st = RecedingHorizonNavigator.LocalPlan.Status.FAILED;
-               break;
-            default:
-               throw new AssertionError(plan.status);
-         }
+         return new RecedingHorizonNavigator.LocalPlan(RecedingHorizonNavigator.LocalPlan.Status.valueOf(plan.status.name()), plan.smoothedRoute);
+      }
 
-         return new RecedingHorizonNavigator.LocalPlan(st, plan.waypoints);
+      public static RecedingHorizonNavigator.LocalPlan from(Enum<?> status, List<Coord2d> waypoints) {
+         Objects.requireNonNull(status, "status");
+         return new RecedingHorizonNavigator.LocalPlan(RecedingHorizonNavigator.LocalPlan.Status.valueOf(status.name()), waypoints);
       }
 
       @Override

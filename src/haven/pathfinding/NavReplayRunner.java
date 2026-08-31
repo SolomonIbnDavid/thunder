@@ -79,7 +79,7 @@ public final class NavReplayRunner {
 
    public static void main(String[] args) throws Exception {
       if (args.length < 1) {
-         System.err.println("usage: java -cp hafen.jar haven.pathfinding.NavReplayRunner <navreplay.jsonl>");
+         System.err.println("usage: java -cp hafen.jar:HavenNavigationCore.jar haven.pathfinding.NavReplayRunner <navreplay.jsonl>");
          System.exit(2);
          return;
       }

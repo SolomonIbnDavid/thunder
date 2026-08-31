@@ -1,0 +1,13 @@
+package haven.nav;
+
+public enum NavOutcome {
+   REACHED,
+   BLOCKED,
+   STUCK,
+   DANGER,
+   CANCELLED,
+   TRANSITION_FAILED,
+   UNKNOWN_TERRAIN,
+   BUDGET_EXHAUSTED,
+   UNAVAILABLE;
+}

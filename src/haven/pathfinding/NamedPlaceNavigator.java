@@ -107,7 +107,7 @@ public final class NamedPlaceNavigator {
          @Override
          public RecedingHorizonNavigator.LocalPlan plan(Coord2d from, Coord2d target) {
             PrototypePathfinder.Plan p = PrototypePathfinder.planAny(gui, Collections.singletonList(target), true);
-            return RecedingHorizonNavigator.LocalPlan.from(p);
+            return RecedingHorizonNavigator.LocalPlan.from(p.status, p.waypoints);
          }
       };
    }

@@ -392,7 +392,7 @@ public class RecedingHorizonNavigatorTest {
       Assertions.assertTrue(dest.dist(start) > PrototypePathfinder.maxReach(), "fixture must be beyond the horizon");
       Plan plan = planOn(start, dest, true, null);
       Assertions.assertEquals(haven.pathfinding.PrototypePathfinder.Plan.Status.CLIPPED, plan.status, "the prototype must report the far goal as a clipped leg");
-      LocalPlan lp = LocalPlan.from(plan);
+      LocalPlan lp = LocalPlan.from(plan.status, plan.waypoints);
       Assertions.assertEquals(Status.CLIPPED, lp.status, "a horizon-clipped leg stays CLIPPED — never destination arrival");
       Assertions.assertEquals(plan.waypoints.size(), lp.waypoints.size());
       Assertions.assertEquals(plan.waypoints, lp.waypoints);
@@ -402,7 +402,7 @@ public class RecedingHorizonNavigatorTest {
    void fromPrototypeMapsReachedAndFailed() {
       Plan reached = planOn(Coord2d.of(0.0, 0.0), Coord2d.of(0.0, 100.0), true, null);
       Assertions.assertEquals(haven.pathfinding.PrototypePathfinder.Plan.Status.REACHED, reached.status);
-      Assertions.assertEquals(Status.REACHED, LocalPlan.from(reached).status);
+      Assertions.assertEquals(Status.REACHED, LocalPlan.from(reached.status, reached.waypoints).status);
       Coord2d dest = Coord2d.of(0.0, 100.0);
       Plan failed = planOn(Coord2d.of(0.0, 0.0), dest, false, (grid, solid, dilated) -> {
          Coord destCell = PrototypePathfinder.worldCell(grid.origin, dest);
@@ -413,8 +413,8 @@ public class RecedingHorizonNavigatorTest {
       Assertions.assertEquals(
          haven.pathfinding.PrototypePathfinder.Plan.Status.FAILED, failed.status, "snap=false with a blocked goal yields FAILED (see PathfinderPlanStatusTest)"
       );
-      Assertions.assertEquals(Status.FAILED, LocalPlan.from(failed).status);
-      Assertions.assertTrue(LocalPlan.from(failed).waypoints.isEmpty());
+      Assertions.assertEquals(Status.FAILED, LocalPlan.from(failed.status, failed.waypoints).status);
+      Assertions.assertTrue(LocalPlan.from(failed.status, failed.waypoints).waypoints.isEmpty());
    }
 
    private interface Blocker {

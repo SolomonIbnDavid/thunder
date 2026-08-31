@@ -37,6 +37,10 @@ flowchart LR
 
 Navigation Lab (Phase 1): `PfTestRunner` is the localhost facade over `PfScenarioRegistry` + `PfTestHarness` + per-scenario classes. `PathfinderDebug` overlays occupancy (raw / body-inflated), dynamic hazards, start/goal regions, raw A* vs smoothed route, the active waypoint, replanning reason, and server-confirmed position. Completed allowlisted runs emit a **NavReplay v1** JSONL artifact; `NavReplayRunner` replays `planCore` from that occupancy without a live game connection. Planner fundamentals are unchanged: quarter-tile `2.75` cells, oriented obstacles, body clearance, eight-way A*, no-corner-cutting, collision-checked smoothing.
 
+Phase 1 live-gate (fresh Navigation Lab jar): the client reached the login screen on `127.0.0.1:18762` using `bin/navigation-lab.jar`. `GET /login?user=Rip Van Winkle` returned `no matching saved account`. Occupancy-rich live `observe` / `.navreplay.jsonl` therefore still requires a manual login. Unit and offline NavReplay evidence from the Phase 1 commit remain the recorded gate.
+
+HavenNavigationCore (Phase 2): occupancy raster helpers, body clearance, eight-way A*, no-corner-cutting, collision-checked smoothing, receding-horizon control, goal-region selection, and NavReplay v1 parse live in the standalone Java 8 module `HavenNavigationCore/`. Thunder compiles against and ships `bin/HavenNavigationCore.jar` (`Class-Path` on `navigation-lab.jar`). `GET /status` reports `navigation_core_git` / `navigation_core_title` from the core JAR manifest. `PrototypePathfinder` keeps GameUI/Gob rasterization and command execution; planning calls `LocalPlanner`.
+
 Phases:
 
 1. **Mechanics probe** — record polygons, occupancy, clicks, vanilla steps.

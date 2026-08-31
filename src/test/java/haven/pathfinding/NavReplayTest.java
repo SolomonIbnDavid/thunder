@@ -40,7 +40,7 @@ public class NavReplayTest {
       PathfinderLog.recordConfirmedPos(Coord2d.of(1.25, 1.5));
       PfTestRunner.Run run = new PfTestRunner.Run("observe");
       JSONObject result = new JSONObject().put("status", "completed").put("verdict", "PASS");
-      JSONObject doc = NavReplay.document(run, result);
+      JSONObject doc = NavReplayIO.document(run, result);
       JSONObject parsed = NavReplay.parseObject(new JSONObject(doc.toString()));
       Assertions.assertEquals(NavReplay.FORMAT, parsed.getString("format"));
       Assertions.assertEquals(1, parsed.getInt("version"));

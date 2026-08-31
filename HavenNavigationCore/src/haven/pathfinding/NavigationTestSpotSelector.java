@@ -20,20 +20,20 @@ public final class NavigationTestSpotSelector {
    private NavigationTestSpotSelector() {
    }
 
-   public static NavigationTestSpotSelector.Selection openGround(PrototypePathfinder.Scene scene) {
+   public static NavigationTestSpotSelector.Selection openGround(OccupancyView scene) {
       return select(scene, NavigationTestSpotSelector.Profile.OPEN_GROUND, NavigationTestSpotSelector.SpotRange.openGround());
    }
 
-   public static NavigationTestSpotSelector.Selection openGround(PrototypePathfinder.Scene scene, NavigationTestSpotSelector.SpotRange range) {
+   public static NavigationTestSpotSelector.Selection openGround(OccupancyView scene, NavigationTestSpotSelector.SpotRange range) {
       return select(scene, NavigationTestSpotSelector.Profile.OPEN_GROUND, range);
    }
 
-   public static NavigationTestSpotSelector.Selection localObstacleOrCorridor(PrototypePathfinder.Scene scene) {
+   public static NavigationTestSpotSelector.Selection localObstacleOrCorridor(OccupancyView scene) {
       return select(scene, NavigationTestSpotSelector.Profile.LOCAL_OBSTACLE_OR_CORRIDOR, NavigationTestSpotSelector.SpotRange.obstacleCorridor());
    }
 
    public static NavigationTestSpotSelector.Selection localObstacleOrCorridor(
-      PrototypePathfinder.Scene scene, NavigationTestSpotSelector.SpotRange range, int maxExpanded
+      OccupancyView scene, NavigationTestSpotSelector.SpotRange range, int maxExpanded
    ) {
       return select(scene, NavigationTestSpotSelector.Profile.LOCAL_OBSTACLE_OR_CORRIDOR, range, maxExpanded);
    }
@@ -167,13 +167,13 @@ public final class NavigationTestSpotSelector {
    }
 
    public static NavigationTestSpotSelector.Selection select(
-      PrototypePathfinder.Scene scene, NavigationTestSpotSelector.Profile profile, NavigationTestSpotSelector.SpotRange range
+      OccupancyView scene, NavigationTestSpotSelector.Profile profile, NavigationTestSpotSelector.SpotRange range
    ) {
       return select(scene, profile, range, 100000);
    }
 
    public static NavigationTestSpotSelector.Selection select(
-      PrototypePathfinder.Scene scene, NavigationTestSpotSelector.Profile profile, NavigationTestSpotSelector.SpotRange range, int maxExpanded
+      OccupancyView scene, NavigationTestSpotSelector.Profile profile, NavigationTestSpotSelector.SpotRange range, int maxExpanded
    ) {
       Objects.requireNonNull(profile, "profile");
       if (!profile.supported) {
@@ -182,17 +182,17 @@ public final class NavigationTestSpotSelector {
          );
       } else if (scene == null) {
          return refuse(profile, NavigationTestSpotSelector.Refusal.NO_SCENE, "no scene injected");
-      } else if (scene.occupancy != null && scene.origin != null && scene.w > 0 && scene.h > 0) {
-         byte[] occ = scene.occupancy.occ;
-         if (occ == null || occ.length < scene.w * scene.h) {
+      } else if (scene.occupancy() != null && scene.origin() != null && scene.width() > 0 && scene.height() > 0) {
+         byte[] occ = scene.occupancy();
+         if (occ == null || occ.length < scene.width() * scene.height()) {
             return refuse(
                profile,
                NavigationTestSpotSelector.Refusal.NO_OCCUPANCY,
                String.format(
-                  "occupancy lattice is %d cells but the grid is %dx%d = %d cells", occ == null ? 0 : occ.length, scene.w, scene.h, scene.w * scene.h
+                  "occupancy lattice is %d cells but the grid is %dx%d = %d cells", occ == null ? 0 : occ.length, scene.width(), scene.height(), scene.width() * scene.height()
                )
             );
-         } else if (scene.player == null) {
+         } else if (scene.player() == null) {
             return refuse(
                profile, NavigationTestSpotSelector.Refusal.PLAYER_UNKNOWN, "scene has no player anchor (the local profiles are anchored at the player)"
             );
@@ -202,8 +202,8 @@ public final class NavigationTestSpotSelector {
             && !(range.minDist < 0.0)
             && range.maxDist > range.minDist
             && range.minClearance >= 0) {
-            Coord start = scene.cellOf(scene.player);
-            if (start != null && start.x >= 0 && start.y >= 0 && start.x < scene.w && start.y < scene.h) {
+            Coord start = scene.cellOf(scene.player());
+            if (start != null && start.x >= 0 && start.y >= 0 && start.x < scene.width() && start.y < scene.height()) {
                switch (profile) {
                   case OPEN_GROUND:
                      return openGroundCore(scene, range, start);
@@ -216,7 +216,7 @@ public final class NavigationTestSpotSelector {
                return refuse(
                   profile,
                   NavigationTestSpotSelector.Refusal.PLAYER_OFF_GRID,
-                  String.format("player %s outside the %dx%d occupancy grid", scene.player, scene.w, scene.h)
+                  String.format("player %s outside the %dx%d occupancy grid", scene.player(), scene.width(), scene.height())
                );
             }
          } else {
@@ -231,9 +231,9 @@ public final class NavigationTestSpotSelector {
       }
    }
 
-   private static NavigationTestSpotSelector.Selection openGroundCore(PrototypePathfinder.Scene scene, NavigationTestSpotSelector.SpotRange range, Coord start) {
-      int w = scene.w;
-      int h = scene.h;
+   private static NavigationTestSpotSelector.Selection openGroundCore(OccupancyView scene, NavigationTestSpotSelector.SpotRange range, Coord start) {
+      int w = scene.width();
+      int h = scene.height();
       int[] open = openness(scene);
       List<NavigationTestSpotSelector.Candidate> cands = new ArrayList<>();
       int scanned = 0;
@@ -245,7 +245,7 @@ public final class NavigationTestSpotSelector {
             int idx = y * w + x;
             if (!isBodyBlocked(scene, idx)) {
                Coord2d center = cellCenter(scene, x, y);
-               double dist = scene.player.dist(center);
+               double dist = scene.player().dist(center);
                if (!(dist < range.minDist) && !(dist > range.maxDist)) {
                   inRange++;
                   int oc = Math.min(open[idx], 8);
@@ -299,10 +299,10 @@ public final class NavigationTestSpotSelector {
    }
 
    private static NavigationTestSpotSelector.Selection obstacleCore(
-      PrototypePathfinder.Scene scene, NavigationTestSpotSelector.SpotRange range, Coord start, int maxExpanded
+      OccupancyView scene, NavigationTestSpotSelector.SpotRange range, Coord start, int maxExpanded
    ) {
-      int w = scene.w;
-      int h = scene.h;
+      int w = scene.width();
+      int h = scene.height();
       int[] open = openness(scene);
       List<NavigationTestSpotSelector.Candidate> cands = new ArrayList<>();
       int scanned = 0;
@@ -316,7 +316,7 @@ public final class NavigationTestSpotSelector {
             int idx = y * w + x;
             if (!isBodyBlocked(scene, idx)) {
                Coord2d center = cellCenter(scene, x, y);
-               double dist = scene.player.dist(center);
+               double dist = scene.player().dist(center);
                if (!(dist < range.minDist) && !(dist > range.maxDist)) {
                   inRange++;
                   Coord cell = Coord.of(x, y);
@@ -404,8 +404,8 @@ public final class NavigationTestSpotSelector {
       }
    }
 
-   private static boolean isBodyBlocked(PrototypePathfinder.Scene scene, int idx) {
-      byte[] occ = scene.occupancy.occ;
+   private static boolean isBodyBlocked(OccupancyView scene, int idx) {
+      byte[] occ = scene.occupancy();
       if (idx >= 0 && idx < occ.length) {
          byte v = occ[idx];
          return v == 1 || v == 2;
@@ -414,14 +414,14 @@ public final class NavigationTestSpotSelector {
       }
    }
 
-   private static Coord2d cellCenter(PrototypePathfinder.Scene scene, int x, int y) {
-      return Coord2d.of(scene.origin.x + ((double)x + 0.5) * scene.cell, scene.origin.y + ((double)y + 0.5) * scene.cell);
+   private static Coord2d cellCenter(OccupancyView scene, int x, int y) {
+      return Coord2d.of(scene.origin().x + ((double)x + 0.5) * scene.cell(), scene.origin().y + ((double)y + 0.5) * scene.cell());
    }
 
-   static int[] openness(PrototypePathfinder.Scene scene) {
-      int w = scene.w;
-      int h = scene.h;
-      byte[] occ = scene.occupancy.occ;
+   static int[] openness(OccupancyView scene) {
+      int w = scene.width();
+      int h = scene.height();
+      byte[] occ = scene.occupancy();
       int[] dist = new int[w * h];
       Arrays.fill(dist, 1073741823);
       ArrayDeque<Integer> q = new ArrayDeque<>();
@@ -468,16 +468,16 @@ public final class NavigationTestSpotSelector {
       return dist;
    }
 
-   static boolean lineOccluded(PrototypePathfinder.Scene scene, Coord from, Coord to) {
-      int w = scene.w;
-      int h = scene.h;
-      byte[] occ = scene.occupancy.occ;
+   static boolean lineOccluded(OccupancyView scene, Coord from, Coord to) {
+      int w = scene.width();
+      int h = scene.height();
+      byte[] occ = scene.occupancy();
       Coord2d a = cellCenter(scene, from.x, from.y);
       Coord2d b = cellCenter(scene, to.x, to.y);
       double dx = b.x - a.x;
       double dy = b.y - a.y;
       double len = Math.sqrt(dx * dx + dy * dy);
-      int steps = Math.max(2, (int)Math.ceil(len / (scene.cell * 0.25)));
+      int steps = Math.max(2, (int)Math.ceil(len / (scene.cell() * 0.25)));
 
       for (int i = 1; i <= steps; i++) {
          double t = (double)i / (double)steps;
@@ -497,10 +497,10 @@ public final class NavigationTestSpotSelector {
       return false;
    }
 
-   static GridAStar.Result reachable(PrototypePathfinder.Scene scene, Coord start, Coord goal, int maxExpanded) {
-      int w = scene.w;
-      int h = scene.h;
-      byte[] occ = scene.occupancy.occ;
+   static GridAStar.Result reachable(OccupancyView scene, Coord start, Coord goal, int maxExpanded) {
+      int w = scene.width();
+      int h = scene.height();
+      byte[] occ = scene.occupancy();
       final boolean[] blocked = new boolean[w * h];
       int n = Math.min(w * h, occ.length);
 
@@ -509,10 +509,10 @@ public final class NavigationTestSpotSelector {
       }
 
       if (start.x >= 0 && start.y >= 0 && start.x < w && start.y < h && blocked[start.y * w + start.x]) {
-         int dil = Math.max(1, (int)Math.ceil(Math.max(scene.radius, 0.0) / Math.max(scene.cell, 1.0E-9)));
-         PrototypePathfinder.openFootprint(blocked, w, h, start.x, start.y, dil);
+         int dil = Math.max(1, (int)Math.ceil(Math.max(scene.radius(), 0.0) / Math.max(scene.cell(), 1.0E-9)));
+         LocalPlanner.openFootprint(blocked, w, h, start.x, start.y, dil);
          if (blocked[start.y * w + start.x]) {
-            PrototypePathfinder.openStartPocket(blocked, w, h, start.x, start.y, dil + 1);
+            LocalPlanner.openStartPocket(blocked, w, h, start.x, start.y, dil + 1);
          }
       }
 
@@ -537,7 +537,7 @@ public final class NavigationTestSpotSelector {
       return GridAStar.find(grid, start, goal, maxExpanded);
    }
 
-   static double routeLengthWorld(PrototypePathfinder.Scene scene, List<Coord> cells) {
+   static double routeLengthWorld(OccupancyView scene, List<Coord> cells) {
       if (cells != null && cells.size() >= 2) {
          double len = 0.0;
          Coord prev = cells.get(0);
