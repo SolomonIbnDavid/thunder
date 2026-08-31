@@ -37,6 +37,11 @@ public final class PathfinderDebug implements Feature {
    private static final Color BODY = new Color(80, 255, 120, 220);
    private static final Color WANT = new Color(255, 180, 40);
    private static final Color END = new Color(255, 255, 255);
+   private static final Color START_REGION = new Color(80, 255, 180, 200);
+   private static final Color GOAL_REGION = new Color(255, 90, 40, 210);
+   private static final Color HAZARD = new Color(255, 40, 40, 200);
+   private static final Color ACTIVE_WP = new Color(255, 255, 80, 230);
+   private static final Color CONFIRMED = new Color(180, 255, 80, 230);
    private static final int GRID_R = 26;
 
    public String name() {
@@ -53,7 +58,11 @@ public final class PathfinderDebug implements Feature {
 
    public void paint(GOut g, MapView mv) {
       paintGrid(g, mv);
+      paintHazards(g, mv);
+      paintStartGoalRegions(g, mv);
       paintRoutes(g, mv);
+      paintActiveWaypoint(g, mv);
+      paintConfirmedPos(g, mv);
       paintBody(g, mv);
       if (!CatalogDebug.overlayActive()) {
          CatalogDebug.paintCupboardIds(g, mv);
@@ -104,6 +113,50 @@ public final class PathfinderDebug implements Feature {
       if (path != null && !path.isEmpty()) {
          marker(g, mv, path.get(path.size() - 1), END, 6, "end");
       }
+   }
+
+   private static void paintStartGoalRegions(GOut g, MapView mv) {
+      PathfinderLog.Occupancy occ = PathfinderLog.lastOccupancy();
+      if (mv == null || occ == null) {
+         return;
+      }
+      if (occ.start != null) {
+         quad(g, mv, occ, occ.start.x, occ.start.y, START_REGION);
+         marker(g, mv, occ.world(occ.start.x, occ.start.y), START_REGION, 7, "start");
+      }
+      if (occ.goal != null) {
+         quad(g, mv, occ, occ.goal.x, occ.goal.y, GOAL_REGION);
+         marker(g, mv, occ.world(occ.goal.x, occ.goal.y), GOAL_REGION, 7, "goal");
+      }
+      if (occ.freeGoal != null && (occ.goal == null || !occ.freeGoal.equals(occ.goal))) {
+         quad(g, mv, occ, occ.freeGoal.x, occ.freeGoal.y, GOAL_REGION);
+         marker(g, mv, occ.world(occ.freeGoal.x, occ.freeGoal.y), GOAL_REGION, 6, "free");
+      }
+   }
+
+   private static void paintHazards(GOut g, MapView mv) {
+      List<Coord2d> hazards = PathfinderLog.lastHazards();
+      if (mv == null || hazards == null) {
+         return;
+      }
+      for (Coord2d h : hazards) {
+         marker(g, mv, h, HAZARD, 9, "hz");
+      }
+   }
+
+   private static void paintActiveWaypoint(GOut g, MapView mv) {
+      Coord2d wp = PathfinderLog.lastActiveWaypoint();
+      if (wp != null) {
+         marker(g, mv, wp, ACTIVE_WP, 10, "wp");
+      }
+   }
+
+   private static void paintConfirmedPos(GOut g, MapView mv) {
+      Coord2d pos = PathfinderLog.lastConfirmedPos();
+      if (pos == null && mv != null && mv.player() != null) {
+         pos = mv.player().rc;
+      }
+      marker(g, mv, pos, CONFIRMED, 6, "srv");
    }
 
    private static void paintBody(GOut g, MapView mv) {
@@ -211,6 +264,14 @@ public final class PathfinderDebug implements Feature {
          y += 14;
          g.chcolor(TEXT);
          g.atext("grid #solid  +inflated  o carve   cyan=walk  green=body  orange=want  cupboard #id W=walk V=via", new Coord(12, y), 0.0, 0.0);
+         y += 14;
+         String replan = PathfinderLog.lastReplanReason();
+         g.atext(
+            "start/goal regions  hz=hazard  wp=active waypoint  srv=server pos  replan=" + (replan == null || replan.isEmpty() ? "-" : replan),
+            new Coord(12, y),
+            0.0,
+            0.0
+         );
          g.chcolor();
       }
    }

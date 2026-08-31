@@ -35,6 +35,8 @@ flowchart LR
     F -->|No| H["Blacklist cell, replan"]
 ```
 
+Navigation Lab (Phase 1): `PfTestRunner` is the localhost facade over `PfScenarioRegistry` + `PfTestHarness` + per-scenario classes. `PathfinderDebug` overlays occupancy (raw / body-inflated), dynamic hazards, start/goal regions, raw A* vs smoothed route, the active waypoint, replanning reason, and server-confirmed position. Completed allowlisted runs emit a **NavReplay v1** JSONL artifact; `NavReplayRunner` replays `planCore` from that occupancy without a live game connection. Planner fundamentals are unchanged: quarter-tile `2.75` cells, oriented obstacles, body clearance, eight-way A*, no-corner-cutting, collision-checked smoothing.
+
 Phases:
 
 1. **Mechanics probe** — record polygons, occupancy, clicks, vanilla steps.

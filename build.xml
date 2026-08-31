@@ -283,6 +283,8 @@
     </copy>
     <copy file="etc/ansgar-config.properties" tofile="bin/haven-config.properties" />
     <chmod file="bin/hafen.jar" perm="a+x" />
+    <copy file="bin/hafen.jar" tofile="bin/navigation-lab.jar" overwrite="true" />
+    <chmod file="bin/navigation-lab.jar" perm="a+x" />
   </target>
 
   <target name="play" depends="jar, extlib/jogl, extlib/lwjgl-gl, extlib/steamworks, res-jar, resources">

@@ -15,28 +15,12 @@ import haven.pathfinding.NavigationTestSpotSelector.Profile;
 import haven.pathfinding.NavigationTestSpotSelector.Refusal;
 import haven.pathfinding.NavigationTestSpotSelector.Selection;
 import haven.pathfinding.PathfinderLog.Occupancy;
-import haven.pathfinding.PfTestRunner.BasementCabinetIdentifyScenario;
 import haven.pathfinding.PfTestRunner.Cancelled;
-import haven.pathfinding.PfTestRunner.CrossCellarDoorScenario;
-import haven.pathfinding.PfTestRunner.CrossCellarStairsScenario;
-import haven.pathfinding.PfTestRunner.CrossMineholeScenario;
-import haven.pathfinding.PfTestRunner.MineholeDescent;
-import haven.pathfinding.PfTestRunner.MoveToAutoCaveTransitionApproachScenario;
-import haven.pathfinding.PfTestRunner.MoveToAutoKnownLongLegScenario;
-import haven.pathfinding.PfTestRunner.MoveToAutoObstacleCorridorScenario;
-import haven.pathfinding.PfTestRunner.MoveToAutoOpenGroundScenario;
-import haven.pathfinding.PfTestRunner.MoveToMarkerScenario;
-import haven.pathfinding.PfTestRunner.NavigationTestSpotScenario;
-import haven.pathfinding.PfTestRunner.ObserveScenario;
 import haven.pathfinding.PfTestRunner.Run;
-import haven.pathfinding.PfTestRunner.SelectBoulderApproachScenario;
-import haven.pathfinding.PfTestRunner.SelectCaveTransitionApproachScenario;
-import haven.pathfinding.PfTestRunner.SelectDoorGateApproachScenario;
-import haven.pathfinding.PfTestRunner.SelectWaterlineApproachScenario;
-import haven.pathfinding.PfTestRunner.CrossCellarDoorScenario.Interaction;
-import haven.pathfinding.PfTestRunner.MineholeDescent.Completion;
-import haven.pathfinding.PfTestRunner.MineholeDescent.Observation;
-import haven.pathfinding.PfTestRunner.MoveToAutoOpenGroundScenario.MoveResult;
+import haven.pathfinding.CrossCellarDoorScenario.Interaction;
+import haven.pathfinding.MineholeDescent.Completion;
+import haven.pathfinding.MineholeDescent.Observation;
+import haven.pathfinding.MoveToAutoOpenGroundScenario.MoveResult;
 import haven.pathfinding.PrototypePathfinder.GobGeom;
 import haven.pathfinding.PrototypePathfinder.Plan;
 import haven.pathfinding.PrototypePathfinder.Scene;
@@ -109,6 +93,17 @@ public class PfTestRunnerTest {
    @Test
    void scenariosListContainsOnlyAllowlistedScenarios() {
       Assertions.assertEquals(ALL_SCENARIOS, PfTestRunner.knownScenarios());
+   }
+
+   @Test
+   void registryResolvesEachAllowlistedScenarioByName() {
+      for (String name : ALL_SCENARIOS) {
+         PfTestRunner.Scenario sc = PfScenarioRegistry.get(name);
+         Assertions.assertNotNull(sc, name);
+         Assertions.assertEquals(name, sc.name());
+      }
+      Assertions.assertNull(PfScenarioRegistry.get("walk"));
+      Assertions.assertNull(PfScenarioRegistry.get(null));
    }
 
    @Test

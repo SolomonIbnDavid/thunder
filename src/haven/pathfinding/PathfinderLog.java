@@ -31,6 +31,10 @@ public final class PathfinderLog {
    private static volatile Coord2d lastDest;
    private static volatile PathfinderLog.Occupancy lastOcc;
    private static volatile String lastReason = "";
+   private static volatile String lastReplanReason = "";
+   private static volatile Coord2d lastActiveWaypoint;
+   private static volatile Coord2d lastConfirmedPos;
+   private static volatile List<Coord2d> lastHazards = Collections.emptyList();
    private static final ThreadLocal<String> target = new ThreadLocal<>();
    private static final ThreadLocal<Integer> probeDepth = ThreadLocal.withInitial(() -> 0);
 
@@ -82,6 +86,10 @@ public final class PathfinderLog {
                lastDest = Coord2d.of(trace.dx, trace.dy);
                lastOcc = trace.occupancy;
                lastReason = trace.reason;
+               lastHazards = (List<Coord2d>)(trace.hazards == null ? Collections.emptyList() : new ArrayList<>(trace.hazards));
+               if (gui != null && gui.map != null && gui.map.player() != null) {
+                  lastConfirmedPos = gui.map.player().rc;
+               }
             }
          }
 
@@ -122,6 +130,38 @@ public final class PathfinderLog {
 
    public static String lastReason() {
       return lastReason;
+   }
+
+   public static void setReplanReason(String reason) {
+      lastReplanReason = reason == null ? "" : reason;
+   }
+
+   public static String lastReplanReason() {
+      return lastReplanReason;
+   }
+
+   public static void setActiveWaypoint(Coord2d waypoint) {
+      lastActiveWaypoint = waypoint;
+   }
+
+   public static Coord2d lastActiveWaypoint() {
+      return lastActiveWaypoint;
+   }
+
+   public static Coord2d lastConfirmedPos() {
+      return lastConfirmedPos;
+   }
+
+   public static void recordConfirmedPos(Coord2d pos) {
+      lastConfirmedPos = pos;
+   }
+
+   public static void recordHazards(List<Coord2d> hazards) {
+      lastHazards = hazards == null ? Collections.emptyList() : new ArrayList<>(hazards);
+   }
+
+   public static List<Coord2d> lastHazards() {
+      return lastHazards;
    }
 
    public static List<JSONObject> recent() {
@@ -243,6 +283,32 @@ public final class PathfinderLog {
          }
 
          return new PathfinderLog.Occupancy(origin, w, h, cell, occ, start, goal, freeGoal, astar);
+      }
+
+      public static String encode(PathfinderLog.Occupancy occ) {
+         if (occ == null || occ.occ == null) {
+            return "";
+         }
+         char[] chars = new char[occ.occ.length];
+         for (int i = 0; i < occ.occ.length; i++) {
+            int v = occ.occ[i] & 0xff;
+            chars[i] = (char)('0' + Math.min(9, v));
+         }
+         return new String(chars);
+      }
+
+      public static PathfinderLog.Occupancy decode(
+         Coord2d origin, int w, int h, double cell, String encoded, Coord start, Coord goal, Coord freeGoal
+      ) {
+         byte[] occ = new byte[Math.max(0, w * h)];
+         if (encoded != null) {
+            int n = Math.min(occ.length, encoded.length());
+            for (int i = 0; i < n; i++) {
+               char c = encoded.charAt(i);
+               occ[i] = (byte)(c >= '0' && c <= '9' ? c - '0' : 1);
+            }
+         }
+         return new PathfinderLog.Occupancy(origin, w, h, cell, occ, start, goal, freeGoal, Collections.emptyList());
       }
 
       public Coord cellOf(Coord2d p) {
@@ -387,6 +453,7 @@ public final class PathfinderLog {
       public List<Coord2d> astar = Collections.emptyList();
       public List<String> near = Collections.emptyList();
       public List<Coord2d[]> polys = Collections.emptyList();
+      public List<Coord2d> hazards = Collections.emptyList();
       public PathfinderLog.Occupancy occupancy;
 
       JSONObject toJson() {

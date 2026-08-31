@@ -76,6 +76,7 @@ public final class PrototypePathfinder {
             int obstacles = occ.obstacles;
             tr.obstacles = obstacles;
             tr.polys = debugPolys;
+            tr.hazards = occ.hazards;
             tr.near = nearBlockers(gui, player, start);
             PrototypePathfinder.Plan plan = planCore(start, destinations, targets, clip.clipped, snap, radius, grid, solid, dilated, obstacles, tr);
             tr.clip = clipAlong(gui, player, plan.waypoints);
@@ -229,6 +230,53 @@ public final class PrototypePathfinder {
       }
    }
 
+   /**
+    * Replay planning against a captured occupancy grid. Reconstructs the
+    * pre-carve solid/dilated masks and calls {@link #planCore} — the same
+    * planner used by live {@link #planAny}.
+    */
+   static PrototypePathfinder.Plan planFromOccupancy(
+      Coord2d start, Coord2d dest, boolean snap, double radius, PathfinderLog.Occupancy occ, int obstacles, PathfinderLog.Trace tr
+   ) {
+      if (tr == null) {
+         tr = new PathfinderLog.Trace();
+      }
+      if (start == null || occ == null || occ.w <= 0 || occ.h <= 0 || occ.occ == null) {
+         tr.reason = start == null ? "no_player" : "no_goal";
+         return new PrototypePathfinder.Plan(Collections.emptyList(), false, 0, obstacles, PrototypePathfinder.Plan.Status.FAILED);
+      }
+      List<Coord2d> destinations = dest == null ? Collections.emptyList() : Collections.singletonList(dest);
+      PrototypePathfinder.ClipResult clip = clipToHorizon(start, destinations);
+      List<Coord2d> targets = clip.targets;
+      tr.sx = start.x;
+      tr.sy = start.y;
+      if (dest != null) {
+         tr.dx = dest.x;
+         tr.dy = dest.y;
+      }
+      tr.radius = radius;
+      tr.gridW = occ.w;
+      tr.gridH = occ.h;
+      if (targets.isEmpty()) {
+         tr.reason = dest == null ? "no_goal" : "no_player";
+         return new PrototypePathfinder.Plan(Collections.emptyList(), false, 0, obstacles, PrototypePathfinder.Plan.Status.FAILED);
+      }
+      PrototypePathfinder.Grid grid = new PrototypePathfinder.Grid(occ.origin, occ.w, occ.h);
+      boolean[] solid = new boolean[occ.w * occ.h];
+      boolean[] dilated = new boolean[occ.w * occ.h];
+      int n = Math.min(occ.occ.length, solid.length);
+      for (int i = 0; i < n; i++) {
+         byte v = occ.occ[i];
+         if (v == PathfinderLog.Occupancy.SOLID) {
+            solid[i] = true;
+         } else if (v == PathfinderLog.Occupancy.DILATED || v == PathfinderLog.Occupancy.CARVED) {
+            dilated[i] = true;
+            grid.blocked[i] = true;
+         }
+      }
+      return planCore(start, destinations, targets, clip.clipped, snap, radius, grid, solid, dilated, obstacles, tr);
+   }
+
    static PrototypePathfinder.ClipResult clipToHorizon(Coord2d start, List<Coord2d> destinations) {
       PrototypePathfinder.ClipResult out = new PrototypePathfinder.ClipResult();
       double maxReach = maxReach();
@@ -346,6 +394,9 @@ public final class PrototypePathfinder {
 
          scene.occupancy = PathfinderLog.Occupancy.capture(scene.origin, w, h, 2.75, solid, dilated, dilated, sc, null, null, Collections.emptyList());
          scene.gobs = nearbyGeometry(gui, player, 220.0);
+         PathfinderLog.recordOccupancy(scene.occupancy);
+         PathfinderLog.recordHazards(occ.hazards);
+         PathfinderLog.recordConfirmedPos(scene.player);
          return scene;
       } else {
          return scene;
@@ -834,6 +885,25 @@ public final class PrototypePathfinder {
 
          return count;
       }
+   }
+
+   static List<Coord2d> movingHazards(GameUI gui, Gob player) {
+      List<Coord2d> out = new ArrayList<>();
+      if (gui != null && gui.ui != null && gui.ui.sess != null) {
+         synchronized (gui.ui.sess.glob.oc) {
+            for (Gob gob : gui.ui.sess.glob.oc) {
+               if (gob != null && gob != player && gob.id >= 0L && gob.rc != null) {
+                  try {
+                     if (gob.getattr(Moving.class) != null) {
+                        out.add(gob.rc);
+                     }
+                  } catch (Loading var4) {
+                  }
+               }
+            }
+         }
+      }
+      return out;
    }
 
    public static boolean rasterObstacle(
@@ -1869,14 +1939,18 @@ public final class PrototypePathfinder {
       final boolean[] solid;
       final boolean[] dilated;
       final int obstacles;
+      final List<Coord2d> hazards;
 
-      private OccupancyBuild(PrototypePathfinder.Grid grid, boolean[] terrain, String[] terrainNames, boolean[] solid, boolean[] dilated, int obstacles) {
+      private OccupancyBuild(
+         PrototypePathfinder.Grid grid, boolean[] terrain, String[] terrainNames, boolean[] solid, boolean[] dilated, int obstacles, List<Coord2d> hazards
+      ) {
          this.grid = grid;
          this.terrain = terrain;
          this.terrainNames = terrainNames;
          this.solid = solid;
          this.dilated = dilated;
          this.obstacles = obstacles;
+         this.hazards = hazards == null ? Collections.emptyList() : hazards;
       }
 
       static PrototypePathfinder.OccupancyBuild build(GameUI gui, PrototypePathfinder.Grid grid, Gob player, List<Coord2d[]> debugPolys) {
@@ -1888,7 +1962,7 @@ public final class PrototypePathfinder {
          PrototypePathfinder.rasterGobs(gui, grid, player, null, body);
          PrototypePathfinder.inflateMasked(grid, terrain, body);
          boolean[] dilated = Arrays.copyOf(grid.blocked, grid.blocked.length);
-         return new PrototypePathfinder.OccupancyBuild(grid, terrain, terrainNames, solid, dilated, obstacles);
+         return new PrototypePathfinder.OccupancyBuild(grid, terrain, terrainNames, solid, dilated, obstacles, movingHazards(gui, player));
       }
    }
 

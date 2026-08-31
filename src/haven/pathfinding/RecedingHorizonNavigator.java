@@ -115,20 +115,24 @@ public final class RecedingHorizonNavigator {
 
    private RecedingHorizonNavigator.Result replan(RecedingHorizonNavigator.State st, Coord goalTile) {
       if (st.replans >= this.bounds.maxReplans) {
+         PathfinderLog.setReplanReason("replan_limit");
          return new RecedingHorizonNavigator.Result(RecedingHorizonNavigator.Outcome.REPLAN_LIMIT_EXHAUSTED, st.legs, st.replans, null, st.pos, st.idx);
       } else {
          st.replans++;
          Coord curTile = this.tileMap.toTile(st.pos);
          CoarseRoutePlanner.Route nr = this.coarsePlanner.plan(curTile, goalTile, this.bounds.coarseExpanded);
          if (nr == null || !nr.reached()) {
+            PathfinderLog.setReplanReason("coarse_plan_failed");
             return new RecedingHorizonNavigator.Result(
                RecedingHorizonNavigator.Outcome.COARSE_PLAN_FAILED, st.legs, st.replans, coarseDetail(nr), st.pos, st.idx
             );
          } else if (!validRoute(nr.waypoints, goalTile, curTile)) {
+            PathfinderLog.setReplanReason("coarse_plan_invalid");
             return new RecedingHorizonNavigator.Result(
                RecedingHorizonNavigator.Outcome.COARSE_PLAN_INVALID, st.legs, st.replans, routeReason(nr.waypoints, goalTile, curTile), st.pos, st.idx
             );
          } else {
+            PathfinderLog.setReplanReason("replan");
             st.route = nr.waypoints;
             st.idx = 1;
             return null;

@@ -32,3 +32,24 @@ POST /pf/cancel
 ```
 
 Launch: `tools/launch-pf-test.sh` after `ant bin`. Occupancy, body clearance, eight-way A*, no-corner-cutting, and collision-checked smoothing remain in `PrototypePathfinder` / `GridAStar` (quarter-tile `2.75` world-unit cells).
+
+## Navigation Lab layout
+
+`PfTestRunner` is a localhost facade. Allowlisted scenarios live in `PfScenarioRegistry`; shared checks, preflight, movement-watch, cabinet fingerprinting, and artifact IO live in `PfTestHarness`. Each allowlisted scenario is its own class (same package). Arbitrary remote movement commands are not registered.
+
+Each completed run writes two artifacts under `dev-snapshots/pf/tests/<scenario>/`:
+
+- `<run_id>.jsonl` — existing pf-test header + result body
+- `<run_id>.navreplay.jsonl` — **NavReplay v1** (world occupancy, goal, raw/smoothed routes, observations, decisions, outcome)
+
+Offline replay (no live session):
+
+```
+java -cp bin/hafen.jar haven.pathfinding.NavReplayRunner path/to/<run_id>.navreplay.jsonl
+```
+
+or `java -cp hafen.jar haven.dev.DebugReplay` on a `feature=navreplay` snapshot. Replay calls `PrototypePathfinder.planFromOccupancy` (the same `planCore` used live).
+
+## Overlays (`:pf debug` / `CFG.DEBUG_PATHFIND`)
+
+`PathfinderDebug` (registered from `DebugBoot`) paints: raw obstacles (`#` solid), body-inflated obstacles (`+` inflated), dynamic hazards (`hz`), start and goal regions, raw A* route, smoothed route, active waypoint (`wp`), replanning reason (HUD), and server-confirmed position (`srv`).

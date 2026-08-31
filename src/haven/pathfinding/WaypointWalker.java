@@ -65,6 +65,7 @@ public final class WaypointWalker {
                }
 
                env.click(waypoint);
+               PathfinderLog.setActiveWaypoint(waypoint);
                l.event(String.format("issue wp %d/%d replan=%d at=(%.1f,%.1f) from=(%.1f,%.1f)", i, total, replan, waypoint.x, waypoint.y, before.x, before.y));
                WaypointGate gate = new WaypointGate(params.request(waypoint));
                WaypointGate.Outcome oc = gate.start(obs);
@@ -148,6 +149,7 @@ public final class WaypointWalker {
             passenger = isPassenger((Following)mv);
          }
 
+         PathfinderLog.recordConfirmedPos(me.rc);
          return new WaypointGate.Observation(System.currentTimeMillis(), me.rc, mv != null, me.vehicleId(), passenger, cancelled);
       } else {
          return null;
