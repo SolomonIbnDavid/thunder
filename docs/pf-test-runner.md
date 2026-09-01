@@ -13,6 +13,19 @@ Allowlisted localhost scenarios driven through `DevControl` (`POST /pf/run?scena
 | `select_cave_transition_approach` | read-only selection | Minehole / ladder / cellar door / stairs |
 | `select_door_gate_approach` | read-only selection | Door / gate approach; state reported, opening not authorized |
 | `select_waterline_approach` | read-only selection | Land-side stand beside confirmed water |
+| `surface_long_open_ground` | surface travel | Open-ground streaming; `NO_FIXTURE` if no spot |
+| `surface_single_tree_detour` | surface travel | Local obstacle/corridor fixture |
+| `surface_dense_forest` | surface travel | Local obstacle/corridor fixture |
+| `surface_clustered_obstacles` | surface travel | Local obstacle/corridor fixture |
+| `surface_one_tile_corridor` | surface travel | Local obstacle/corridor fixture |
+| `surface_diagonal_corridor` | surface travel | Local obstacle/corridor fixture |
+| `surface_buildings_fences` | surface travel | Local obstacle/corridor fixture |
+| `surface_water_boundary` | surface travel | Fail closed `NO_FIXTURE` (no automatic fixture) |
+| `surface_cliff_boundary` | surface travel | Fail closed `NO_FIXTURE` |
+| `surface_moving_neutral` | surface travel | Fail closed `NO_FIXTURE` |
+| `surface_hostile_exclusion` | surface travel | Fail closed `NO_FIXTURE` |
+| `surface_unknown_geometry` | surface travel | Fail closed `NO_FIXTURE` |
+| `surface_explore_frontier` | surface travel | Fail closed `NO_FIXTURE` |
 | `move_to_marker` | movement | Named map marker |
 | `move_to_auto_open_ground` | movement | Marker-free open ground |
 | `move_to_auto_obstacle_corridor` | movement | Marker-free corridor |
@@ -34,6 +47,8 @@ POST /pf/cancel
 Launch: `tools/launch-pf-test.sh` after `ant bin`. Occupancy, body clearance, eight-way A*, no-corner-cutting, and collision-checked smoothing live in `HavenNavigationCore` (`LocalPlanner` / `GridAStar`, quarter-tile `2.75` world-unit cells). Thunder adapters (`PrototypePathfinder`, `ThunderNavAdapter`) convert live `GameUI` state into core inputs. `GET /status` includes `navigation_core_git`.
 
 Phase 1 live-gate: Navigation Lab jar launched and bound `18762`, but the session stayed on the login screen (`no matching saved account` for Rip Van Winkle). Offline NavReplay still loads without a game connection.
+
+Phase 3 live-gate: Navigation Lab was down on `18762`/`18761` at phase start (no in-game session). Surface travel scenarios fail closed with `NO_FIXTURE` / `NO_GAME` when a live fixture or session is missing. Deterministic core/replay coverage is the recorded gate when login is an external blocker.
 
 ## Navigation Lab layout
 

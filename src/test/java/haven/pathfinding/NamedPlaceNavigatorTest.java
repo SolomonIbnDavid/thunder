@@ -477,12 +477,20 @@ public class NamedPlaceNavigatorTest {
       Assertions.assertEquals(end, arr.end);
       Assertions.assertEquals(fallback, NamedPlaceNavigator.walkerResult(Result.ARRIVED, null, fallback).end);
 
-      for (Result r : new Result[]{Result.REJECTED, Result.SHORT_STOP, Result.TIMEOUT}) {
+      for (Result r : new Result[]{Result.REJECTED, Result.TIMEOUT}) {
          LegResult lr = NamedPlaceNavigator.walkerResult(r, end, fallback);
          Assertions.assertEquals(haven.pathfinding.RecedingHorizonNavigator.LegResult.Outcome.FAILED, lr.outcome, r.toString());
          Assertions.assertEquals("walker " + r, lr.failure);
          Assertions.assertEquals(end, lr.end);
       }
+      Assertions.assertEquals(
+         haven.pathfinding.RecedingHorizonNavigator.LegResult.Outcome.STOPPED_EARLY,
+         NamedPlaceNavigator.walkerResult(Result.SHORT_STOP, end, fallback).outcome
+      );
+      Assertions.assertEquals(
+         haven.pathfinding.RecedingHorizonNavigator.LegResult.Outcome.STUCK,
+         NamedPlaceNavigator.walkerResult(Result.STUCK, end, fallback).outcome
+      );
 
       LegResult canc = NamedPlaceNavigator.walkerCancelled(new InterruptedException("Waypoint walk cancelled"), end, fallback);
       Assertions.assertEquals(haven.pathfinding.RecedingHorizonNavigator.LegResult.Outcome.CANCELLED, canc.outcome);

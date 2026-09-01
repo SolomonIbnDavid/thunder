@@ -124,6 +124,28 @@ public class NavReplayTest {
    }
 
    @Test
+   void parseKeepsOptionalPhase3DecisionFields() {
+      JSONObject doc = new JSONObject()
+         .put("format", NavReplay.FORMAT)
+         .put("version", 1)
+         .put("decisions", new org.json.JSONArray().put(
+            new JSONObject()
+               .put("kind", "SEND_MOVEMENT")
+               .put("reason", "STOPPED_EARLY")
+               .put("recovery", 1)
+               .put("selected_index", 2)
+               .put("considered_index", 4)
+               .put("corridor_valid", true)
+               .put("blacklist", true)
+         ));
+      JSONObject parsed = NavReplay.parseObject(doc);
+      JSONObject d = parsed.getJSONArray("decisions").getJSONObject(0);
+      Assertions.assertEquals(1, d.getInt("recovery"));
+      Assertions.assertTrue(d.getBoolean("blacklist"));
+      Assertions.assertEquals("STOPPED_EARLY", d.getString("reason"));
+   }
+
+   @Test
    void parseRejectsWrongVersion() {
       JSONObject bad = new JSONObject().put("format", "NavReplay").put("version", 2);
       Assertions.assertThrows(IllegalArgumentException.class, () -> NavReplay.parseObject(bad));

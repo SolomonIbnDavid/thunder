@@ -9,6 +9,7 @@ import haven.Gob;
 import haven.MCache;
 import haven.MapFile;
 import haven.NamedPlaceResolver.Place;
+import haven.nav.NavPlanStatus;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -133,7 +134,8 @@ public final class NamedPlaceNavigator {
                   0,
                   walkBudgetMs,
                   params == null ? WaypointWalker.Params.DEFAULT : params,
-                  listener == null ? NamedPlaceNavigator.NOOP : listener
+                  listener == null ? NamedPlaceNavigator.NOOP : listener,
+                  NavPlanStatus.valueOf(plan.status.name())
                );
                return NamedPlaceNavigator.walkerResult(r, NamedPlaceNavigator.observePos(gui), before != null ? before : from);
             } catch (InterruptedException var5) {
@@ -153,8 +155,11 @@ public final class NamedPlaceNavigator {
       switch (r) {
          case ARRIVED:
             return RecedingHorizonNavigator.LegResult.success(at);
-         case REJECTED:
          case SHORT_STOP:
+            return RecedingHorizonNavigator.LegResult.stoppedEarly("walker " + r, at);
+         case STUCK:
+            return RecedingHorizonNavigator.LegResult.stuck("walker " + r, at);
+         case REJECTED:
          case TIMEOUT:
             return RecedingHorizonNavigator.LegResult.failed("walker " + r, at);
          default:

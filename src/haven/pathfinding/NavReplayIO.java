@@ -155,11 +155,38 @@ public final class NavReplayIO {
          }
          JSONObject d = new JSONObject();
          d.put("seq", seq++);
-         d.put("kind", "PLAN");
-         d.put("reason", src.optString("reason", ""));
-         d.put("clip", src.optString("clip", ""));
-         d.put("waypoint_count", src.optInt("waypoint_count"));
-         d.put("expanded", src.optInt("expanded"));
+         if (src.has("kind") && src.has("recovery")) {
+            d.put("kind", src.optString("kind", "STREAM"));
+            d.put("reason", src.optString("reason", ""));
+            d.put("recovery", src.optInt("recovery"));
+            d.put("plan_ms", src.optLong("plan_ms"));
+            if (src.has("target")) {
+               d.put("target", src.get("target"));
+            }
+            if (src.has("selected_index")) {
+               d.put("selected_index", src.get("selected_index"));
+               d.put("considered_index", src.opt("considered_index"));
+               d.put("corridor_valid", src.opt("corridor_valid"));
+            }
+            if (src.has("why_shorter")) {
+               d.put("why_shorter", src.get("why_shorter"));
+            }
+            if (src.has("outcome")) {
+               d.put("outcome", src.get("outcome"));
+            }
+            if (src.has("escape")) {
+               d.put("escape", src.get("escape"));
+            }
+            if (src.has("blacklist")) {
+               d.put("blacklist", src.get("blacklist"));
+            }
+         } else {
+            d.put("kind", "PLAN");
+            d.put("reason", src.optString("reason", ""));
+            d.put("clip", src.optString("clip", ""));
+            d.put("waypoint_count", src.optInt("waypoint_count"));
+            d.put("expanded", src.optInt("expanded"));
+         }
          arr.put(d);
       }
       String replan = PathfinderLog.lastReplanReason();

@@ -41,7 +41,7 @@ public class DevControlPortTest {
    void pfScenarioListSerializesWithBundledJsonLibrary() {
       JSONObject result = DevControl.pfScenarios();
       Assertions.assertTrue(result.getBoolean("ok"));
-      Assertions.assertEquals(17, result.getJSONArray("scenarios").length());
+      Assertions.assertEquals(30, result.getJSONArray("scenarios").length());
       Assertions.assertEquals("observe", result.getJSONArray("scenarios").getString(0));
       Assertions.assertEquals("basement_cabinet_identify", result.getJSONArray("scenarios").getString(1));
       Assertions.assertEquals("move_to_marker", result.getJSONArray("scenarios").getString(2));
@@ -59,6 +59,7 @@ public class DevControlPortTest {
       Assertions.assertEquals("select_cave_transition_approach", result.getJSONArray("scenarios").getString(14));
       Assertions.assertEquals("select_door_gate_approach", result.getJSONArray("scenarios").getString(15));
       Assertions.assertEquals("select_waterline_approach", result.getJSONArray("scenarios").getString(16));
+      Assertions.assertEquals("surface_long_open_ground", result.getJSONArray("scenarios").getString(17));
    }
 
    private static void resetCache() throws Exception {

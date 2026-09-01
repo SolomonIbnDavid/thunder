@@ -31,6 +31,9 @@ final class PfScenarioRegistry {
       register(new SelectCaveTransitionApproachScenario());
       register(new SelectDoorGateApproachScenario());
       register(new SelectWaterlineApproachScenario());
+      for (SurfaceTravelScenario.Kind k : SurfaceTravelScenario.Kind.values()) {
+         register(new SurfaceTravelScenario(k));
+      }
    }
 
    private PfScenarioRegistry() {

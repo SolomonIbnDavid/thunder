@@ -41,6 +41,8 @@ Phase 1 live-gate (fresh Navigation Lab jar): the client reached the login scree
 
 HavenNavigationCore (Phase 2): occupancy raster helpers, body clearance, eight-way A*, no-corner-cutting, collision-checked smoothing, receding-horizon control, goal-region selection, and NavReplay v1 parse live in the standalone Java 8 module `HavenNavigationCore/`. Thunder compiles against and ships `bin/HavenNavigationCore.jar` (`Class-Path` on `navigation-lab.jar`). `GET /status` reports `navigation_core_git` / `navigation_core_title` from the core JAR manifest. `PrototypePathfinder` keeps GameUI/Gob rasterization and command execution; planning calls `LocalPlanner`.
 
+Phase 3 continuous surface execution: `SurfaceController` / `SurfaceStream` in the shared core stream movement to the farthest legal smoothed waypoint, hand off while moving when the next corridor is still valid, and require idle-within-tolerance only at the original `NavGoal`. Local/receding-horizon completion is not success. Early stops, corridor invalidation, relevant obstacle changes, mobility changes, and deviation trigger bounded recovery (rebuild snapshot → failed-segment blacklist → high-clearance escape cell → original-goal replan → `STUCK`). Thunder `WaypointWalker` only executes those decisions. NavReplay v1 keeps optional fields for selected/considered waypoints, corridor checks, recovery count, blacklist, and escape.
+
 Phases:
 
 1. **Mechanics probe** — record polygons, occupancy, clicks, vanilla steps.

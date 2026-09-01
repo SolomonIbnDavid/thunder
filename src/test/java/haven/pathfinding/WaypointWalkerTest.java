@@ -99,31 +99,20 @@ public class WaypointWalkerTest {
       WaypointWalkerTest.FakeEnv env = new WaypointWalkerTest.FakeEnv();
       WaypointWalkerTest.Recorder rec = new WaypointWalkerTest.Recorder();
       env.obs(0L, 0.0, 0.0, false);
-      env.obs(0L, 0.0, 0.0, false);
-      env.obs(100L, 0.5, 0.0, true);
-      env.obs(300L, 2.0, 0.0, true);
-      env.obs(800L, 8.0, 0.0, true);
-      env.obs(1000L, 10.0, 0.0, true);
-      env.obs(1500L, 10.0, 0.0, false);
-      env.obs(1600L, 10.0, 0.0, false);
-      env.obs(1600L, 10.0, 0.0, false);
-      env.obs(1700L, 10.5, 0.0, true);
-      env.obs(2000L, 14.0, 0.0, true);
-      env.obs(2500L, 20.0, 0.0, true);
-      env.obs(3000L, 20.0, 0.0, false);
+      env.obs(100L, 2.0, 0.0, true);
+      env.obs(800L, 10.0, 0.0, true);
+      env.obs(1500L, 16.0, 0.0, true);
+      env.obs(2000L, 20.0, 0.0, true);
+      env.obs(2500L, 20.0, 0.0, false);
       Assertions.assertEquals(
          Result.ARRIVED,
          WaypointWalker.execute(env, bot(), List.of(Coord2d.of(0.0, 0.0), Coord2d.of(10.0, 0.0), Coord2d.of(20.0, 0.0)), 3, 20000L, Params.DEFAULT, rec)
       );
-      Assertions.assertEquals(
-         List.of(Coord2d.of(10.0, 0.0), Coord2d.of(20.0, 0.0)), env.clicks, "exactly one floor click per waypoint, none for the start position"
-      );
-      Assertions.assertTrue(rec.events.stream().anyMatch(e -> e.contains("issue wp 1/2 replan=3 at=(10.0,0.0) from=(0.0,0.0)")), rec.events.toString());
-      Assertions.assertTrue(rec.events.stream().anyMatch(e -> e.contains("gate reached wp 1/2 left=0.00")), rec.events.toString());
+      Assertions.assertEquals(List.of(Coord2d.of(20.0, 0.0)), env.clicks, "open-ground streaming clicks the farthest smoothed waypoint once");
+      Assertions.assertTrue(rec.events.stream().anyMatch(e -> e.contains("issue stream replan=3 at=(20.0,0.0)")), rec.events.toString());
+      Assertions.assertTrue(rec.events.stream().anyMatch(e -> e.contains("gate reached stream")), rec.events.toString());
       Assertions.assertEquals("waypoint", rec.waits.get(0)[0]);
-      Assertions.assertEquals(20000L, rec.waits.get(0)[1]);
-      Assertions.assertEquals("wp 1/2 replan=3", rec.waits.get(0)[2]);
-      Assertions.assertEquals("wp 2/2 replan=3", rec.waits.get(1)[2]);
+      Assertions.assertEquals("stream replan=3", rec.waits.get(0)[2]);
       Assertions.assertTrue(rec.fails.isEmpty(), rec.fails.toString());
       Assertions.assertTrue(rec.gateFails.isEmpty(), rec.gateFails.toString());
       Assertions.assertEquals(0, rec.dumpStuckCalls);
@@ -133,8 +122,6 @@ public class WaypointWalkerTest {
    void skipsWaypointsAlreadyWithinEps() throws InterruptedException {
       WaypointWalkerTest.FakeEnv env = new WaypointWalkerTest.FakeEnv();
       WaypointWalkerTest.Recorder rec = new WaypointWalkerTest.Recorder();
-      env.obs(0L, 0.0, 0.0, false);
-      env.obs(0L, 0.0, 0.0, false);
       env.obs(0L, 0.0, 0.0, false);
       env.obs(100L, 0.5, 0.0, true);
       env.obs(300L, 2.0, 0.0, true);
@@ -153,7 +140,6 @@ public class WaypointWalkerTest {
       WaypointWalkerTest.FakeEnv env = new WaypointWalkerTest.FakeEnv();
       WaypointWalkerTest.Recorder rec = new WaypointWalkerTest.Recorder();
       env.obs(0L, 0.0, 0.0, false);
-      env.obs(0L, 0.0, 0.0, false);
       env.obs(100L, 0.5, 0.0, true);
       env.obs(500L, 5.0, 0.0, true);
       env.obs(800L, 6.5, 0.0, false);
@@ -161,7 +147,7 @@ public class WaypointWalkerTest {
          Result.SHORT_STOP, WaypointWalker.execute(env, bot(), List.of(Coord2d.of(0.0, 0.0), Coord2d.of(10.0, 0.0)), 0, 20000L, Params.DEFAULT, rec)
       );
       String[] gf = rec.gateFails.get(0);
-      Assertions.assertTrue(gf[0].startsWith("short stop wp 1/1 left=3.50"), gf[0]);
+      Assertions.assertTrue(gf[0].startsWith("short stop stream left=3.50"), gf[0]);
       Assertions.assertEquals("STOPPED_SHORT", gf[1]);
       Assertions.assertTrue(gf[2].contains("moving=no"), gf[2]);
       Assertions.assertEquals(0, rec.dumpStuckCalls, "a short stop is a retry signal, not a stuck dump");
@@ -172,14 +158,13 @@ public class WaypointWalkerTest {
       WaypointWalkerTest.FakeEnv env = new WaypointWalkerTest.FakeEnv();
       WaypointWalkerTest.Recorder rec = new WaypointWalkerTest.Recorder();
       env.obs(0L, 0.0, 0.0, false);
-      env.obs(0L, 0.0, 0.0, false);
       env.obs(400L, 0.0, 0.0, false);
       env.obs(800L, 0.0, 0.0, false);
       Assertions.assertEquals(
          Result.REJECTED, WaypointWalker.execute(env, bot(), List.of(Coord2d.of(0.0, 0.0), Coord2d.of(10.0, 0.0)), 0, 20000L, Params.DEFAULT, rec)
       );
       String[] gf = rec.gateFails.get(0);
-      Assertions.assertTrue(gf[0].startsWith("wp 1/1 replan=0 abandoned"), gf[0]);
+      Assertions.assertTrue(gf[0].startsWith("wp stream abandoned"), gf[0]);
       Assertions.assertEquals("START_TIMEOUT", gf[1]);
       Assertions.assertEquals(1, rec.dumpStuckCalls);
    }
@@ -189,7 +174,6 @@ public class WaypointWalkerTest {
       WaypointWalkerTest.FakeEnv env = new WaypointWalkerTest.FakeEnv();
       WaypointWalkerTest.Recorder rec = new WaypointWalkerTest.Recorder();
       env.obs(0L, 0.0, 0.0, false);
-      env.obs(0L, 0.0, 0.0, false);
       env.obs(100L, 1.0, 0.0, true);
       env.obs(19900L, 8.0, 0.0, true);
       env.obs(20000L, 8.1, 0.0, true);
@@ -197,7 +181,7 @@ public class WaypointWalkerTest {
          Result.TIMEOUT, WaypointWalker.execute(env, bot(), List.of(Coord2d.of(0.0, 0.0), Coord2d.of(10.0, 0.0)), 2, 20000L, Params.DEFAULT, rec)
       );
       String[] gf = rec.gateFails.get(0);
-      Assertions.assertTrue(gf[0].startsWith("wp 1/1 replan=2 timed out"), gf[0]);
+      Assertions.assertTrue(gf[0].startsWith("wp stream timed out"), gf[0]);
       Assertions.assertEquals("WALK_TIMEOUT", gf[1]);
       Assertions.assertEquals(1, rec.dumpStuckCalls);
    }
@@ -206,7 +190,6 @@ public class WaypointWalkerTest {
    void noProgressTimesOutTheLeg() throws InterruptedException {
       WaypointWalkerTest.FakeEnv env = new WaypointWalkerTest.FakeEnv();
       WaypointWalkerTest.Recorder rec = new WaypointWalkerTest.Recorder();
-      env.obs(0L, 0.0, 0.0, false);
       env.obs(0L, 0.0, 0.0, false);
       env.obs(100L, 0.5, 0.0, true);
       env.obs(3100L, 0.5, 0.0, true);
@@ -222,13 +205,13 @@ public class WaypointWalkerTest {
       WaypointWalkerTest.FakeEnv env = new WaypointWalkerTest.FakeEnv();
       WaypointWalkerTest.Recorder rec = new WaypointWalkerTest.Recorder();
       env.obs(0L, 0.0, 0.0, false);
-      env.obs(0L, 0.0, 0.0, false);
-      env.clockAt(1, 20000L);
+      env.obs(100L, 0.0, 0.0, false);
+      env.clockAt(1, 20001L);
       Assertions.assertEquals(
          Result.TIMEOUT, WaypointWalker.execute(env, bot(), List.of(Coord2d.of(0.0, 0.0), Coord2d.of(10.0, 0.0)), 0, 20000L, Params.DEFAULT, rec)
       );
       String[] gf = rec.gateFails.get(0);
-      Assertions.assertTrue(gf[0].startsWith("waypoint budget exhausted wp 1/1 (gate WAITING_START)"), gf[0]);
+      Assertions.assertTrue(gf[0].startsWith("waypoint budget exhausted"), gf[0]);
       Assertions.assertEquals(1, env.clicks.size());
       Assertions.assertEquals(1, rec.dumpStuckCalls);
    }
@@ -238,10 +221,9 @@ public class WaypointWalkerTest {
       WaypointWalkerTest.FakeEnv env = new WaypointWalkerTest.FakeEnv();
       WaypointWalkerTest.Recorder rec = new WaypointWalkerTest.Recorder();
       env.obs(0L, 0.0, 0.0, false);
-      env.obs(0L, 0.0, 0.0, false);
       env.obs(100L, 1.0, 0.0, true);
       env.obs(150L, 1.0, 0.0, true);
-      env.clockAt(3, 25000L);
+      env.clockAt(2, 25000L);
       Assertions.assertEquals(
          Result.TIMEOUT, WaypointWalker.execute(env, bot(), List.of(Coord2d.of(0.0, 0.0), Coord2d.of(10.0, 0.0)), 0, 20000L, Params.DEFAULT, rec)
       );
@@ -254,7 +236,6 @@ public class WaypointWalkerTest {
       WaypointWalkerTest.FakeEnv env = new WaypointWalkerTest.FakeEnv();
       WaypointWalkerTest.Recorder rec = new WaypointWalkerTest.Recorder();
       env.obs(0L, 0.0, 0.0, false);
-      env.obs(0L, 0.0, 0.0, false);
       env.obs(100L, 1.0, 0.0, true);
       env.obs(200L, 2.0, 0.0, true, 0L, false, true);
       InterruptedException e = (InterruptedException)Assertions.assertThrows(
@@ -263,7 +244,7 @@ public class WaypointWalkerTest {
       );
       Assertions.assertEquals("Waypoint walk cancelled", e.getMessage());
       String[] gf = rec.gateFails.get(0);
-      Assertions.assertTrue(gf[0].startsWith("cancelled wp 1/1"), gf[0]);
+      Assertions.assertTrue(gf[0].startsWith("cancelled stream"), gf[0]);
       Assertions.assertEquals("CANCELLED", gf[1]);
       Assertions.assertEquals(1, env.clicks.size());
       Assertions.assertEquals(0, rec.dumpStuckCalls);
@@ -277,8 +258,8 @@ public class WaypointWalkerTest {
       Assertions.assertEquals(
          Result.REJECTED, WaypointWalker.execute(env, bot(), List.of(Coord2d.of(0.0, 0.0), Coord2d.of(10.0, 0.0)), 0, 20000L, Params.DEFAULT, rec)
       );
-      Assertions.assertEquals("player gone before wp 1/1", rec.fails.get(0));
-      Assertions.assertTrue(env.clicks.isEmpty());
+      Assertions.assertEquals("player gone wp stream", rec.fails.get(0));
+      Assertions.assertEquals(1, env.clicks.size());
       Assertions.assertEquals(0, rec.dumpStuckCalls);
    }
 
@@ -287,12 +268,11 @@ public class WaypointWalkerTest {
       WaypointWalkerTest.FakeEnv env = new WaypointWalkerTest.FakeEnv();
       WaypointWalkerTest.Recorder rec = new WaypointWalkerTest.Recorder();
       env.obs(0L, 0.0, 0.0, false);
-      env.obs(0L, 0.0, 0.0, false);
       env.obs(100L, 1.0, 0.0, true);
       Assertions.assertEquals(
          Result.REJECTED, WaypointWalker.execute(env, bot(), List.of(Coord2d.of(0.0, 0.0), Coord2d.of(10.0, 0.0)), 0, 20000L, Params.DEFAULT, rec)
       );
-      Assertions.assertEquals("player gone wp 1/1", rec.fails.get(0));
+      Assertions.assertEquals("player gone wp stream", rec.fails.get(0));
       Assertions.assertEquals(1, env.clicks.size());
       Assertions.assertEquals(0, rec.dumpStuckCalls);
    }

@@ -239,6 +239,37 @@ public class RecedingHorizonNavigatorTest {
    }
 
    @Test
+   void stoppedEarlyReplansFromActualPosition() {
+      Route fresh = openRoute(4, 1, Coord.of(1, 0), Coord.of(2, 0));
+      RecedingHorizonNavigatorTest.ScriptedLocal local = new RecedingHorizonNavigatorTest.ScriptedLocal()
+         .plan(plan(Status.REACHED, Coord2d.of(0.0, 0.0), Coord2d.of(2.0, 0.0)))
+         .plan(plan(Status.REACHED, Coord2d.of(1.0, 0.0), Coord2d.of(2.0, 0.0)));
+      RecedingHorizonNavigatorTest.ScriptedWalker walker = new RecedingHorizonNavigatorTest.ScriptedWalker()
+         .walk(LegResult.stoppedEarly("stopped_early", Coord2d.of(1.0, 0.0)))
+         .walk(success(Coord2d.of(2.0, 0.0)));
+      RecedingHorizonNavigatorTest.ScriptedCoarse coarse = new RecedingHorizonNavigatorTest.ScriptedCoarse().plan(fresh);
+      Result r = new RecedingHorizonNavigator(local, walker, coarse, TILES)
+         .run(Coord.of(2, 0), List.of(Coord.of(0, 0), Coord.of(2, 0)), Coord2d.of(0.0, 0.0));
+      Assertions.assertEquals(Outcome.REACHED_DESTINATION, r.outcome);
+      Assertions.assertEquals(1, r.replans);
+      Assertions.assertEquals(Coord.of(1, 0), coarse.starts.get(0));
+      Assertions.assertEquals(2, walker.calls);
+   }
+
+   @Test
+   void stuckIsTypedAndDoesNotReplan() {
+      RecedingHorizonNavigatorTest.ScriptedLocal local = new RecedingHorizonNavigatorTest.ScriptedLocal()
+         .plan(plan(Status.REACHED, Coord2d.of(0.0, 0.0), Coord2d.of(2.0, 0.0)));
+      RecedingHorizonNavigatorTest.ScriptedWalker walker = new RecedingHorizonNavigatorTest.ScriptedWalker()
+         .walk(LegResult.stuck("STUCK", Coord2d.of(1.0, 0.0)));
+      RecedingHorizonNavigatorTest.ScriptedCoarse coarse = new RecedingHorizonNavigatorTest.ScriptedCoarse();
+      Result r = new RecedingHorizonNavigator(local, walker, coarse, TILES)
+         .run(Coord.of(2, 0), List.of(Coord.of(0, 0), Coord.of(2, 0)), Coord2d.of(0.0, 0.0));
+      Assertions.assertEquals(Outcome.STUCK, r.outcome);
+      Assertions.assertTrue(coarse.starts.isEmpty());
+   }
+
+   @Test
    void staleCoarsePlanIsReplacedByReplan() {
       Route fresh = walledRoute(3, 3, Coord.of(0, 0), Coord.of(2, 0), Collections.singletonList(Coord.of(1, 0)));
       Assertions.assertTrue(fresh.reached(), "the walled grid still has a detour: " + fresh);

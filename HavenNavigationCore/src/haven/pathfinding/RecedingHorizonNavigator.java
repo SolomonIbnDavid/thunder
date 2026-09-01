@@ -54,25 +54,30 @@ public final class RecedingHorizonNavigator {
             RecedingHorizonNavigator.LocalPlan local = this.localPlanner.plan(st.pos, target);
             switch (local.status) {
                case REACHED:
-                  RecedingHorizonNavigator.Result termxxx = this.walkLeg(st, local);
+                  RecedingHorizonNavigator.Result termxxx = this.walkLeg(st, local, goalTile);
                   if (termxxx != null) {
                      return termxxx;
                   }
 
-                  st.idx++;
+                  if (!st.skipAdvance) {
+                     st.idx++;
+                  }
+                  st.skipAdvance = false;
                   break;
                case CLIPPED:
-                  RecedingHorizonNavigator.Result termxx = this.walkLeg(st, local);
+                  RecedingHorizonNavigator.Result termxx = this.walkLeg(st, local, goalTile);
                   if (termxx != null) {
                      return termxx;
                   }
+                  st.skipAdvance = false;
                   break;
                case SNAPPED:
                case PARTIAL:
-                  RecedingHorizonNavigator.Result termx = this.walkLeg(st, local);
+                  RecedingHorizonNavigator.Result termx = this.walkLeg(st, local, goalTile);
                   if (termx != null) {
                      return termx;
                   }
+                  st.skipAdvance = false;
 
                   termx = this.replan(st, goalTile);
                   if (termx != null) {
@@ -94,7 +99,7 @@ public final class RecedingHorizonNavigator {
       }
    }
 
-   private RecedingHorizonNavigator.Result walkLeg(RecedingHorizonNavigator.State st, RecedingHorizonNavigator.LocalPlan plan) {
+   private RecedingHorizonNavigator.Result walkLeg(RecedingHorizonNavigator.State st, RecedingHorizonNavigator.LocalPlan plan, Coord goalTile) {
       if (st.legs >= this.bounds.maxLegs) {
          return new RecedingHorizonNavigator.Result(RecedingHorizonNavigator.Outcome.LEG_LIMIT_EXHAUSTED, st.legs, st.replans, null, st.pos, st.idx);
       } else {
@@ -104,6 +109,16 @@ public final class RecedingHorizonNavigator {
             case SUCCESS:
                st.pos = r.end;
                return null;
+            case STOPPED_EARLY:
+               st.pos = r.end;
+               noteReplan("STOPPED_EARLY");
+               RecedingHorizonNavigator.Result early = this.replan(st, goalTile);
+               if (early == null) {
+                  st.skipAdvance = true;
+               }
+               return early;
+            case STUCK:
+               return new RecedingHorizonNavigator.Result(RecedingHorizonNavigator.Outcome.STUCK, st.legs, st.replans, r.failure, r.end, st.idx);
             case FAILED:
                return new RecedingHorizonNavigator.Result(RecedingHorizonNavigator.Outcome.TERMINAL_FAILURE, st.legs, st.replans, r.failure, r.end, st.idx);
             case CANCELLED:
@@ -229,6 +244,14 @@ public final class RecedingHorizonNavigator {
          return new RecedingHorizonNavigator.LegResult(RecedingHorizonNavigator.LegResult.Outcome.CANCELLED, failure, end);
       }
 
+      public static RecedingHorizonNavigator.LegResult stoppedEarly(String failure, Coord2d end) {
+         return new RecedingHorizonNavigator.LegResult(RecedingHorizonNavigator.LegResult.Outcome.STOPPED_EARLY, failure, end);
+      }
+
+      public static RecedingHorizonNavigator.LegResult stuck(String failure, Coord2d end) {
+         return new RecedingHorizonNavigator.LegResult(RecedingHorizonNavigator.LegResult.Outcome.STUCK, failure, end);
+      }
+
       @Override
       public String toString() {
          return String.format("LegResult[%s%s, end=%s]", this.outcome, this.failure == null ? "" : " (" + this.failure + ")", this.end);
@@ -237,7 +260,9 @@ public final class RecedingHorizonNavigator {
       public static enum Outcome {
          SUCCESS,
          FAILED,
-         CANCELLED;
+         CANCELLED,
+         STOPPED_EARLY,
+         STUCK;
       }
    }
 
@@ -289,6 +314,7 @@ public final class RecedingHorizonNavigator {
       COARSE_PLAN_FAILED,
       COARSE_PLAN_INVALID,
       TERMINAL_FAILURE,
+      STUCK,
       CANCELLED;
    }
 
@@ -341,6 +367,7 @@ public final class RecedingHorizonNavigator {
       int idx = 1;
       int legs = 0;
       int replans = 0;
+      boolean skipAdvance;
 
       State(List<Coord> route, Coord2d pos) {
          this.route = route;

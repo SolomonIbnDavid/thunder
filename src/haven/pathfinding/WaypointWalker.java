@@ -8,6 +8,10 @@ import haven.GameUI;
 import haven.Gob;
 import haven.Moving;
 import haven.OCache;
+import haven.nav.NavDecision;
+import haven.nav.NavObservation;
+import haven.nav.NavOutcome;
+import haven.nav.NavPlanStatus;
 import java.util.List;
 
 public final class WaypointWalker {
@@ -31,109 +35,158 @@ public final class WaypointWalker {
          public long now() {
             return System.currentTimeMillis();
          }
+
+         @Override
+         public OccupancyGrid occupancy() {
+            return PathfinderLog.lastOccupancy();
+         }
+
+         @Override
+         public OccupancyGrid refreshOccupancy() {
+            PrototypePathfinder.Scene scene = PrototypePathfinder.observe(gui);
+            return scene == null ? null : scene.occupancy;
+         }
       };
    }
 
    public static WaypointWalker.Result execute(GameUI gui, Bot bot, List<Coord2d> route, int replan, long walkBudgetMs, WaypointWalker.Listener l) throws InterruptedException {
-      return execute(liveEnv(gui), bot, route, replan, walkBudgetMs, WaypointWalker.Params.DEFAULT, l);
+      return execute(liveEnv(gui), bot, route, replan, walkBudgetMs, WaypointWalker.Params.DEFAULT, l, NavPlanStatus.REACHED);
    }
 
    public static WaypointWalker.Result execute(WaypointWalker.Env env, Bot bot, List<Coord2d> route, int replan, long walkBudgetMs, WaypointWalker.Listener l) throws InterruptedException {
-      return execute(env, bot, route, replan, walkBudgetMs, WaypointWalker.Params.DEFAULT, l);
+      return execute(env, bot, route, replan, walkBudgetMs, WaypointWalker.Params.DEFAULT, l, NavPlanStatus.REACHED);
    }
 
    public static WaypointWalker.Result execute(
       WaypointWalker.Env env, Bot bot, List<Coord2d> route, int replan, long walkBudgetMs, WaypointWalker.Params params, WaypointWalker.Listener l
    ) throws InterruptedException {
-      if (route != null && route.size() >= 2) {
-         long deadline = env.now() + walkBudgetMs;
-         int total = route.size() - 1;
+      return execute(env, bot, route, replan, walkBudgetMs, params, l, NavPlanStatus.REACHED, null);
+   }
 
-         for (int i = 1; i < route.size(); i++) {
-            WaypointGate.Observation pre = env.observe(false);
-            if (pre == null) {
-               return WaypointWalker.Result.REJECTED;
-            }
+   public static WaypointWalker.Result execute(
+      WaypointWalker.Env env,
+      Bot bot,
+      List<Coord2d> route,
+      int replan,
+      long walkBudgetMs,
+      WaypointWalker.Params params,
+      WaypointWalker.Listener l,
+      NavPlanStatus planStatus
+   ) throws InterruptedException {
+      return execute(env, bot, route, replan, walkBudgetMs, params, l, planStatus, null);
+   }
 
-            Coord2d waypoint = route.get(i);
-            if (!(pre.pos.dist(waypoint) <= params.eps)) {
-               Coord2d before = pre.pos;
-               WaypointGate.Observation obs = env.observe(false);
-               if (obs == null) {
-                  l.fail("player gone before wp " + i + "/" + total);
-                  return WaypointWalker.Result.REJECTED;
-               }
-
-               env.click(waypoint);
-               PathfinderLog.setActiveWaypoint(waypoint);
-               l.event(String.format("issue wp %d/%d replan=%d at=(%.1f,%.1f) from=(%.1f,%.1f)", i, total, replan, waypoint.x, waypoint.y, before.x, before.y));
-               WaypointGate gate = new WaypointGate(params.request(waypoint));
-               WaypointGate.Outcome oc = gate.start(obs);
-               l.event(String.format("gate wp %d/%d start=%s %s", i, total, oc, obsBrief(obs)));
-               long remaining = deadline - env.now();
-               if (remaining <= 0L) {
-                  l.fail(String.format("waypoint budget exhausted wp %d/%d (gate %s)", i, total, oc), oc, obsBrief(obs));
-                  l.dumpStuck();
-                  return WaypointWalker.Result.TIMEOUT;
-               }
-
-               l.beginWait("waypoint", remaining, String.format("wp %d/%d replan=%d", i, total, replan));
-
-               while (!oc.isTerminal() && env.now() < deadline) {
-                  try {
-                     bot.checkCancelled();
-                     Thread.sleep(50L);
-                  } catch (InterruptedException var22) {
-                     WaypointGate.Observation canc = env.observe(true);
-                     if (canc == null) {
-                        throw var22;
-                     }
-
-                     oc = gate.observe(canc);
-                     break;
-                  }
-
-                  obs = env.observe(false);
-                  if (obs == null) {
-                     l.fail("player gone wp " + i + "/" + total);
-                     return WaypointWalker.Result.REJECTED;
-                  }
-
-                  oc = gate.observe(obs);
-               }
-
-               if (!oc.isTerminal()) {
-                  l.fail(String.format("waypoint budget exhausted wp %d/%d (gate %s)", i, total, oc), oc, obsBrief(obs));
-                  l.dumpStuck();
-                  return WaypointWalker.Result.TIMEOUT;
-               }
-
-               switch (classify(oc)) {
-                  case COMPLETE:
-                     l.event(String.format("gate reached wp %d/%d left=%.2f", i, total, gate.lastDistance()));
-                     break;
-                  case SHORT_STOP:
-                     l.fail(String.format("short stop wp %d/%d left=%.2f", i, total, gate.lastDistance()), oc, obsBrief(obs));
-                     return WaypointWalker.Result.SHORT_STOP;
-                  case REJECTED:
-                     l.fail(String.format("wp %d/%d replan=%d abandoned", i, total, replan), oc, obsBrief(obs));
-                     l.dumpStuck();
-                     return WaypointWalker.Result.REJECTED;
-                  case TIMEOUT:
-                     l.fail(String.format("wp %d/%d replan=%d timed out", i, total, replan), oc, obsBrief(obs));
-                     l.dumpStuck();
-                     return WaypointWalker.Result.TIMEOUT;
-                  case ABORT:
-                     l.fail(String.format("cancelled wp %d/%d", i, total), oc, obsBrief(obs));
-                     throw new InterruptedException("Waypoint walk cancelled");
-               }
-            }
-         }
-
-         return WaypointWalker.Result.ARRIVED;
-      } else {
+   public static WaypointWalker.Result execute(
+      WaypointWalker.Env env,
+      Bot bot,
+      List<Coord2d> route,
+      int replan,
+      long walkBudgetMs,
+      WaypointWalker.Params params,
+      WaypointWalker.Listener l,
+      NavPlanStatus planStatus,
+      Coord2d originalGoal
+   ) throws InterruptedException {
+      if (route == null || route.size() < 2) {
          return WaypointWalker.Result.ARRIVED;
       }
+      Coord2d goal = originalGoal != null ? originalGoal : route.get(route.size() - 1);
+      WaypointWalker.Params p = params == null ? WaypointWalker.Params.DEFAULT : params;
+      SurfaceController ctl = SurfaceController.of(goal, route, planStatus, p.eps, p.moveProgress, p.startTimeoutMs, p.walkTimeoutMs, p.jiggleWindowMs);
+      long deadline = env.now() + walkBudgetMs;
+      OccupancyGrid occ = env.occupancy();
+      boolean first = true;
+      WaypointGate.Observation obs = null;
+      l.beginWait("waypoint", walkBudgetMs, "stream replan=" + replan);
+      while (true) {
+         if (env.now() > deadline) {
+            l.fail("waypoint budget exhausted (gate " + (obs == null ? "none" : "PROGRESSING") + ")", null, obsBrief(obs));
+            l.dumpStuck();
+            return WaypointWalker.Result.TIMEOUT;
+         }
+         obs = env.observe(false);
+         if (obs == null) {
+            l.fail(first ? "player gone before wp 1/" + (route.size() - 1) : "player gone wp stream");
+            return WaypointWalker.Result.REJECTED;
+         }
+         first = false;
+         NavObservation navObs = new NavObservation(obs.tMs, obs.pos, obs.moving, obs.cancelled, obs.vehicleId, obs.passenger, null, null);
+         SurfaceController.Tick tick = ctl.step(navObs, occ);
+         for (int spin = 0; tick.decision.kind == NavDecision.Kind.REPLAN && spin < 4; spin++) {
+            OccupancyGrid fresh = env.refreshOccupancy();
+            if (fresh != null) {
+               occ = fresh;
+               tick = ctl.step(navObs, occ);
+            } else if (tick.reason == SurfaceStream.Reason.STOPPED_EARLY) {
+               l.fail("short stop stream left=" + String.format("%.2f", obs.pos.dist(goal)), WaypointGate.Outcome.STOPPED_SHORT, obsBrief(obs));
+               return WaypointWalker.Result.SHORT_STOP;
+            } else if (tick.reason == SurfaceStream.Reason.NO_PROGRESS) {
+               l.fail("wp stream timed out", WaypointGate.Outcome.NO_PROGRESS, obsBrief(obs));
+               l.dumpStuck();
+               return WaypointWalker.Result.TIMEOUT;
+            } else {
+               break;
+            }
+         }
+         PathfinderLog.setActiveWaypoint(tick.pick == null ? ctl.lastSent() : tick.pick.selected);
+         PathfinderLog.recordExec(tick);
+         if (tick.decision.kind == NavDecision.Kind.SEND_MOVEMENT && tick.decision.target != null) {
+            Coord2d before = obs.pos;
+            env.click(tick.decision.target);
+            PathfinderLog.setActiveWaypoint(tick.decision.target);
+            l.event(String.format("issue stream replan=%d at=(%.1f,%.1f) from=(%.1f,%.1f) reason=%s", replan, tick.decision.target.x, tick.decision.target.y, before.x, before.y, tick.reason));
+         }
+         if (tick.decision.kind == NavDecision.Kind.TERMINATE) {
+            return finish(tick, obs, goal, l);
+         }
+         try {
+            bot.checkCancelled();
+            Thread.sleep(50L);
+         } catch (InterruptedException ex) {
+            WaypointGate.Observation canc = env.observe(true);
+            if (canc == null) {
+               throw ex;
+            }
+            NavObservation cobs = new NavObservation(canc.tMs, canc.pos, canc.moving, true, canc.vehicleId, canc.passenger, null, null);
+            SurfaceController.Tick ct = ctl.step(cobs, occ);
+            l.fail("cancelled stream", WaypointGate.Outcome.CANCELLED, obsBrief(canc));
+            throw new InterruptedException("Waypoint walk cancelled");
+         }
+      }
+   }
+
+   private static WaypointWalker.Result finish(SurfaceController.Tick tick, WaypointGate.Observation obs, Coord2d goal, WaypointWalker.Listener l) throws InterruptedException {
+      NavOutcome out = tick.decision.outcome;
+      if (out == NavOutcome.REACHED) {
+         l.event(String.format("gate reached stream left=%.2f", obs == null || goal == null ? 0.0 : obs.pos.dist(goal)));
+         return WaypointWalker.Result.ARRIVED;
+      }
+      if (out == NavOutcome.CANCELLED) {
+         l.fail("cancelled stream", WaypointGate.Outcome.CANCELLED, obsBrief(obs));
+         throw new InterruptedException("Waypoint walk cancelled");
+      }
+      if (out == NavOutcome.STUCK) {
+         l.fail("stuck " + tick.decision.reason, WaypointGate.Outcome.STOPPED_SHORT, obsBrief(obs));
+         l.dumpStuck();
+         return WaypointWalker.Result.STUCK;
+      }
+      if (tick.reason == SurfaceStream.Reason.HORIZON_ADVANCE) {
+         l.fail("horizon is not success stream left=" + String.format("%.2f", obs == null || goal == null ? 0.0 : obs.pos.dist(goal)), WaypointGate.Outcome.STOPPED_SHORT, obsBrief(obs));
+         return WaypointWalker.Result.SHORT_STOP;
+      }
+      if (out == NavOutcome.BUDGET_EXHAUSTED) {
+         String gate = tick.reason == SurfaceStream.Reason.WALK_TIMEOUT ? "WALK_TIMEOUT" : tick.reason == SurfaceStream.Reason.NO_PROGRESS ? "NO_PROGRESS" : "TIMEOUT";
+         l.fail("wp stream timed out", WaypointGate.Outcome.valueOf(tick.reason == SurfaceStream.Reason.NO_PROGRESS ? "NO_PROGRESS" : "WALK_TIMEOUT"), obsBrief(obs));
+         l.dumpStuck();
+         return WaypointWalker.Result.TIMEOUT;
+      }
+      if (tick.reason == SurfaceStream.Reason.START_TIMEOUT) {
+         l.fail("wp stream abandoned", WaypointGate.Outcome.START_TIMEOUT, obsBrief(obs));
+         l.dumpStuck();
+         return WaypointWalker.Result.REJECTED;
+      }
+      l.fail("wp stream " + tick.reason, null, obsBrief(obs));
+      return WaypointWalker.Result.REJECTED;
    }
 
    public static WaypointGate.Observation observe(GameUI gui) {
@@ -236,6 +289,14 @@ public final class WaypointWalker {
       void click(Coord2d var1);
 
       long now();
+
+      default OccupancyGrid occupancy() {
+         return null;
+      }
+
+      default OccupancyGrid refreshOccupancy() {
+         return occupancy();
+      }
    }
 
    public static enum GateClass {
@@ -295,6 +356,7 @@ public final class WaypointWalker {
       ARRIVED,
       REJECTED,
       SHORT_STOP,
-      TIMEOUT;
+      TIMEOUT,
+      STUCK;
    }
 }

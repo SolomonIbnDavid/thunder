@@ -63,7 +63,20 @@ public class PfTestRunnerTest {
       "select_boulder_approach",
       "select_cave_transition_approach",
       "select_door_gate_approach",
-      "select_waterline_approach"
+      "select_waterline_approach",
+      "surface_long_open_ground",
+      "surface_single_tree_detour",
+      "surface_dense_forest",
+      "surface_clustered_obstacles",
+      "surface_one_tile_corridor",
+      "surface_diagonal_corridor",
+      "surface_buildings_fences",
+      "surface_water_boundary",
+      "surface_cliff_boundary",
+      "surface_moving_neutral",
+      "surface_hostile_exclusion",
+      "surface_unknown_geometry",
+      "surface_explore_frontier"
    );
 
    @Test
@@ -414,6 +427,8 @@ public class PfTestRunnerTest {
       Assertions.assertTrue(checks.get(0).getString("detail").contains("walker TIMEOUT"));
       r = run(RunStatus.NAVIGATED, Kind.REACHED, Outcome.COARSE_PLAN_FAILED, "coarse CROSS_SEGMENT", Coord2d.of(3.0, 3.0), Coord.of(30, 30), 1L);
       Assertions.assertTrue(((JSONObject)MoveToMarkerScenario.outcomeChecks(r, "Home", false).get(0)).getString("detail").contains("coarse CROSS_SEGMENT"));
+      r = run(RunStatus.NAVIGATED, Kind.REACHED, Outcome.STUCK, "recovery exhausted", Coord2d.of(2.0, 2.0), Coord.of(30, 30), 1L);
+      Assertions.assertTrue(((JSONObject)MoveToMarkerScenario.outcomeChecks(r, "Home", false).get(0)).getString("detail").contains("recovery exhausted"));
    }
 
    @Test
@@ -613,7 +628,7 @@ public class PfTestRunnerTest {
       JSONObject c = MoveToAutoOpenGroundScenario.walkCheck(m);
       Assertions.assertEquals("pass", c.getString("status"));
 
-      for (Result r : List.of(Result.REJECTED, Result.SHORT_STOP, Result.TIMEOUT)) {
+      for (Result r : List.of(Result.REJECTED, Result.SHORT_STOP, Result.TIMEOUT, Result.STUCK)) {
          m = mv(Status.REACHED, 10, 2, r, null, Coord2d.of(100.0, 100.0), 5000L);
          assertFailCheck(MoveToAutoOpenGroundScenario.walkCheck(m), "walk_completed", r.name());
       }
@@ -1024,7 +1039,7 @@ public class PfTestRunnerTest {
       Coord2d end = sel.targetWorld;
       Plan plan = Plan.fabricated(Arrays.asList(start, mid, end), true, false, 12, 1, Status.REACHED);
 
-      for (Result r : List.of(Result.REJECTED, Result.SHORT_STOP, Result.TIMEOUT)) {
+      for (Result r : List.of(Result.REJECTED, Result.SHORT_STOP, Result.TIMEOUT, Result.STUCK)) {
          MoveResult m = mv(Status.REACHED, 12, 1, r, null, Coord2d.of(100.0, 100.0), 5000L);
          JSONObject body = MoveToAutoObstacleCorridorScenario.completedBody(sel, plan, m, false, null);
          Assertions.assertEquals("FAIL", body.getString("verdict"));
@@ -3019,7 +3034,8 @@ public class PfTestRunnerTest {
          Outcome.LEG_LIMIT_EXHAUSTED,
          Outcome.REPLAN_LIMIT_EXHAUSTED,
          Outcome.COARSE_PLAN_FAILED,
-         Outcome.COARSE_PLAN_INVALID
+         Outcome.COARSE_PLAN_INVALID,
+         Outcome.STUCK
       }) {
          String detail = oc != Outcome.CANCELLED && oc != Outcome.TERMINAL_FAILURE ? "coarse " + oc : "walker " + oc;
          haven.pathfinding.CoarseTileNavigator.Run r = coarseRun(

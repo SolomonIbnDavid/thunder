@@ -236,6 +236,9 @@ final class MoveToMarkerScenario implements PfTestRunner.Scenario {
                      PfTestRunner.check("navigation_completed", false, "coarse plan invalid: " + (navRun.detail == null ? "unknown" : navRun.detail))
                   );
                   break;
+               case STUCK:
+                  checks.add(PfTestRunner.check("navigation_completed", false, "stuck: " + (navRun.detail == null ? "recovery exhausted" : navRun.detail)));
+                  break;
                default:
                   throw new AssertionError(navRun.navOutcome);
             }

@@ -138,7 +138,8 @@ final class MoveToAutoOpenGroundScenario implements PfTestRunner.Scenario {
 
          try {
             WaypointWalker.Result r = WaypointWalker.execute(
-               WaypointWalker.liveEnv(gui), bot, plan.waypoints, 0, walkBudgetMs, params, NamedPlaceNavigator.NOOP
+               WaypointWalker.liveEnv(gui), bot, plan.waypoints, 0, walkBudgetMs, params, NamedPlaceNavigator.NOOP,
+               haven.nav.NavPlanStatus.valueOf(plan.status.name()), fallbackPos
             );
             Coord2d after = PfTestHarness.observePos(gui);
             return new MoveToAutoOpenGroundScenario.MoveResult(
@@ -234,6 +235,8 @@ final class MoveToAutoOpenGroundScenario implements PfTestRunner.Scenario {
                return PfTestRunner.check("walk_completed", false, "walker REJECTED: click never accepted / vehicle state changed");
             case SHORT_STOP:
                return PfTestRunner.check("walk_completed", false, "walker SHORT_STOP: stopped short of a waypoint");
+            case STUCK:
+               return PfTestRunner.check("walk_completed", false, "walker STUCK: recovery exhausted");
             case TIMEOUT:
                return PfTestRunner.check("walk_completed", false, "walker TIMEOUT: walk budget exhausted (60000ms)");
             default:
