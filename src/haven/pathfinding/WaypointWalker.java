@@ -8,6 +8,7 @@ import haven.GameUI;
 import haven.Gob;
 import haven.Moving;
 import haven.OCache;
+import haven.nav.GraphNode;
 import haven.nav.InteractionSpec;
 import haven.nav.NavDecision;
 import haven.nav.NavObservation;
@@ -128,7 +129,7 @@ public final class WaypointWalker {
             return WaypointWalker.Result.REJECTED;
          }
          first = false;
-         NavObservation navObs = new NavObservation(obs.tMs, obs.pos, obs.moving, obs.cancelled, obs.vehicleId, obs.passenger, null, null);
+         NavObservation navObs = new NavObservation(obs.tMs, obs.pos, obs.moving, obs.cancelled, obs.vehicleId, obs.passenger, obs.worldId, obs.segmentId);
          SurfaceController.Tick tick = ctl.step(navObs, occ);
          for (int spin = 0; tick.decision.kind == NavDecision.Kind.REPLAN && spin < 4; spin++) {
             OccupancyGrid fresh = env.refreshOccupancy();
@@ -152,6 +153,10 @@ public final class WaypointWalker {
             l.event("ready to interact");
             return WaypointWalker.Result.READY_TO_INTERACT;
          }
+         if (tick.decision.kind == NavDecision.Kind.TRANSITION) {
+            l.event("transition");
+            return WaypointWalker.Result.TRANSITION;
+         }
          if (tick.decision.kind == NavDecision.Kind.SEND_MOVEMENT && tick.decision.target != null) {
             Coord2d before = obs.pos;
             env.click(tick.decision.target);
@@ -169,7 +174,7 @@ public final class WaypointWalker {
             if (canc == null) {
                throw ex;
             }
-            NavObservation cobs = new NavObservation(canc.tMs, canc.pos, canc.moving, true, canc.vehicleId, canc.passenger, null, null);
+            NavObservation cobs = new NavObservation(canc.tMs, canc.pos, canc.moving, true, canc.vehicleId, canc.passenger, canc.worldId, canc.segmentId);
             SurfaceController.Tick ct = ctl.step(cobs, occ);
             l.fail("cancelled stream", WaypointGate.Outcome.CANCELLED, obsBrief(canc));
             throw new InterruptedException("Waypoint walk cancelled");
@@ -182,6 +187,10 @@ public final class WaypointWalker {
       if (out == NavOutcome.REACHED) {
          l.event(String.format("gate reached stream left=%.2f", obs == null || goal == null ? 0.0 : obs.pos.dist(goal)));
          return WaypointWalker.Result.ARRIVED;
+      }
+      if (out == NavOutcome.TRANSITION_FAILED) {
+         l.fail("transition failed " + tick.decision.reason, null, obsBrief(obs));
+         return WaypointWalker.Result.REJECTED;
       }
       if (out == NavOutcome.CANCELLED) {
          l.fail("cancelled stream", WaypointGate.Outcome.CANCELLED, obsBrief(obs));
@@ -225,7 +234,17 @@ public final class WaypointWalker {
          }
 
          PathfinderLog.recordConfirmedPos(me.rc);
-         return new WaypointGate.Observation(System.currentTimeMillis(), me.rc, mv != null, me.vehicleId(), passenger, cancelled);
+         GraphNode node = WorldGraphAdapter.current(gui);
+         return new WaypointGate.Observation(
+            System.currentTimeMillis(),
+            me.rc,
+            mv != null,
+            me.vehicleId(),
+            passenger,
+            cancelled,
+            node == null ? null : node.worldId,
+            node == null ? null : node.segmentId
+         );
       } else {
          return null;
       }
@@ -377,6 +396,7 @@ public final class WaypointWalker {
    public static enum Result {
       ARRIVED,
       READY_TO_INTERACT,
+      TRANSITION,
       REJECTED,
       SHORT_STOP,
       TIMEOUT,

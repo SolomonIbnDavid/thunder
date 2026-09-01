@@ -31,6 +31,18 @@ public final class MobilityProfile {
       return new MobilityProfile(true, false, false, false, false, false, false);
    }
 
+   public static MobilityProfile swim() {
+      return new MobilityProfile(true, true, false, false, true, false, false);
+   }
+
+   public static MobilityProfile boat() {
+      return new MobilityProfile(false, false, true, false, true, true, true);
+   }
+
+   public static MobilityProfile cart() {
+      return new MobilityProfile(true, false, false, true, false, true, true);
+   }
+
    public boolean vehicle() {
       return this.boat || this.cart;
    }

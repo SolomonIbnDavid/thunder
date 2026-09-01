@@ -36,6 +36,7 @@ public final class PathfinderLog {
    private static volatile Coord2d lastConfirmedPos;
    private static volatile List<Coord2d> lastHazards = Collections.emptyList();
    private static volatile JSONObject lastInteraction;
+   private static volatile JSONObject lastGraph;
    private static final ThreadLocal<String> target = new ThreadLocal<>();
    private static final ThreadLocal<Integer> probeDepth = ThreadLocal.withInitial(() -> 0);
 
@@ -232,6 +233,14 @@ public final class PathfinderLog {
 
    public static JSONObject lastInteraction() {
       return lastInteraction;
+   }
+
+   public static void recordGraph(JSONObject graph) {
+      lastGraph = graph;
+   }
+
+   public static JSONObject lastGraph() {
+      return lastGraph;
    }
 
    private static Coord2d point2d(Object v) {

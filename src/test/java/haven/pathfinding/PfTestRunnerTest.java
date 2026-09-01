@@ -83,7 +83,20 @@ public class PfTestRunnerTest {
       "interact_cupboard",
       "interact_door_gate",
       "interact_field_crop",
-      "interact_narrow_interior"
+      "interact_narrow_interior",
+      "transition_door_gate",
+      "transition_cellar_stairs",
+      "transition_cave",
+      "transition_ladder",
+      "transition_minehole",
+      "boat_board",
+      "boat_travel",
+      "boat_disembark",
+      "vehicle_enter",
+      "vehicle_travel",
+      "vehicle_exit",
+      "hearth_travel",
+      "explore_frontier"
    );
 
    @Test

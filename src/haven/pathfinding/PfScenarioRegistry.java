@@ -37,6 +37,9 @@ final class PfScenarioRegistry {
       for (InteractScenario.Kind k : InteractScenario.Kind.values()) {
          register(new InteractScenario(k));
       }
+      for (TransitionScenario.Kind k : TransitionScenario.Kind.values()) {
+         register(new TransitionScenario(k));
+      }
    }
 
    private PfScenarioRegistry() {

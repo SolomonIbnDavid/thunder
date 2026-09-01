@@ -17,6 +17,14 @@ public interface CoarseTileSource {
       }
    }
 
+   static CoarseTileSource.Tile classify(String name, haven.nav.MobilityProfile mob) {
+      if (TerrainPolicy.isUnknownTile(name)) {
+         return CoarseTileSource.Tile.UNKNOWN;
+      } else {
+         return TerrainPolicy.terrainBlocks(name, mob) ? CoarseTileSource.Tile.BLOCKED : CoarseTileSource.Tile.FREE;
+      }
+   }
+
    static CoarseTileSource fromNames(int w, final int h, String[] names) {
       if (w > 0 && h > 0) {
          final String[] copy = names == null ? new String[0] : Arrays.copyOf(names, names.length);

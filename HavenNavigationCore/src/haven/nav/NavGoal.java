@@ -48,4 +48,12 @@ public final class NavGoal {
       }
       return new NavGoal(Kind.INTERACTION, spec.origin, Collections.emptyList(), spec.targetId, spec);
    }
+
+   public static NavGoal transition(String targetId) {
+      return new NavGoal(Kind.TRANSITION, null, Collections.emptyList(), targetId);
+   }
+
+   public static NavGoal exploreFrontier(Coord2d hint) {
+      return new NavGoal(Kind.EXPLORE_FRONTIER, hint, Collections.emptyList(), null);
+   }
 }

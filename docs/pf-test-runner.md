@@ -33,6 +33,19 @@ Allowlisted localhost scenarios driven through `DevControl` (`POST /pf/run?scena
 | `interact_door_gate` | interaction | Pose + open/topology `sdt` change; no traversal |
 | `interact_field_crop` | interaction | Pose + crop/inventory change |
 | `interact_narrow_interior` | interaction | Narrow cupboard pose + window |
+| `transition_door_gate` | transition | Phase 5 door/gate; authoritative `sdt`; `NO_FIXTURE` if none |
+| `transition_cellar_stairs` | transition | Cellar door/stairs; observed landing node |
+| `transition_cave` | transition | Cave entrance; no numeric layer guess |
+| `transition_ladder` | transition | Ladder; observed landing |
+| `transition_minehole` | transition | Minehole; observed landing |
+| `boat_board` | mobility | Board; wait vehicle state |
+| `boat_travel` | mobility | Water legal only while aboard |
+| `boat_disembark` | mobility | Wait land state; restore policy |
+| `vehicle_enter` | mobility | Cart/wagon enter |
+| `vehicle_travel` | mobility | Travel under vehicle footprint |
+| `vehicle_exit` | mobility | Exit confirmation |
+| `hearth_travel` | transition | Observed hearth landing only |
+| `explore_frontier` | explore | Known-safe frontier; bounded |
 
 Control port (pf-test client): `http://127.0.0.1:18762/`
 | `move_to_marker` | movement | Named map marker |

@@ -40,6 +40,10 @@ public final class NavReplayIO {
       if (interaction != null) {
          o.put("interaction", interaction);
       }
+      JSONObject graph = PathfinderLog.lastGraph();
+      if (graph != null) {
+         o.put("graph", graph);
+      }
       return o;
    }
 

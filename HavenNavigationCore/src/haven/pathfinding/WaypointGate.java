@@ -163,8 +163,16 @@ public final class WaypointGate {
       public final long vehicleId;
       public final boolean passenger;
       public final boolean cancelled;
+      public final String worldId;
+      public final String segmentId;
 
       public Observation(long tMs, Coord2d pos, boolean moving, long vehicleId, boolean passenger, boolean cancelled) {
+         this(tMs, pos, moving, vehicleId, passenger, cancelled, null, null);
+      }
+
+      public Observation(
+         long tMs, Coord2d pos, boolean moving, long vehicleId, boolean passenger, boolean cancelled, String worldId, String segmentId
+      ) {
          if (pos == null) {
             throw new IllegalArgumentException("pos is null");
          } else {
@@ -174,6 +182,8 @@ public final class WaypointGate {
             this.vehicleId = vehicleId;
             this.passenger = passenger;
             this.cancelled = cancelled;
+            this.worldId = worldId;
+            this.segmentId = segmentId;
          }
       }
 

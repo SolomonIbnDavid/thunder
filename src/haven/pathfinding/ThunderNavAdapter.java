@@ -12,9 +12,14 @@ public final class ThunderNavAdapter {
    }
 
    public static NavSnapshot snapshot(PrototypePathfinder.Scene scene) {
+      return snapshot(scene, MobilityProfile.land());
+   }
+
+   public static NavSnapshot snapshot(PrototypePathfinder.Scene scene, MobilityProfile mobility) {
+      MobilityProfile mob = mobility == null ? MobilityProfile.land() : mobility;
       if (scene == null) {
          return new NavSnapshot(
-            System.currentTimeMillis(), "world", null, null, null, PathfinderLog.lastHazards(), null, null, LocalPlanner.DEFAULT_AGENT_RADIUS, false, MobilityProfile.land()
+            System.currentTimeMillis(), "world", null, null, null, PathfinderLog.lastHazards(), null, null, TerrainPolicy.agentRadius(mob, 4.5), false, mob
          );
       }
       List<Coord2d[]> obstacles = new ArrayList<>();
@@ -34,9 +39,9 @@ public final class ThunderNavAdapter {
          PathfinderLog.lastHazards(),
          scene.player,
          scene.playerCell,
-         scene.radius,
+         TerrainPolicy.agentRadius(mob, scene.radius),
          scene.moving,
-         MobilityProfile.land()
+         mob
       );
    }
 }

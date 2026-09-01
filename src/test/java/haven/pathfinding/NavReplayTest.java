@@ -39,6 +39,7 @@ public class NavReplayTest {
       PathfinderLog.recordOccupancy(occ);
       PathfinderLog.recordConfirmedPos(Coord2d.of(1.25, 1.5));
       PathfinderLog.recordInteraction(null);
+      PathfinderLog.recordGraph(null);
       PfTestRunner.Run run = new PfTestRunner.Run("observe");
       JSONObject result = new JSONObject().put("status", "completed").put("verdict", "PASS");
       JSONObject doc = NavReplayIO.document(run, result);

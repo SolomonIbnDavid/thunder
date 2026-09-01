@@ -17,7 +17,7 @@ public class NavContractTest {
    void goalKindsAndPlanStatusesExist() {
       Assertions.assertEquals(5, NavGoal.Kind.values().length);
       Assertions.assertEquals(5, NavPlanStatus.values().length);
-      Assertions.assertEquals(9, NavOutcome.values().length);
+      Assertions.assertEquals(10, NavOutcome.values().length);
       Assertions.assertEquals(6, NavDecision.Kind.values().length);
    }
 

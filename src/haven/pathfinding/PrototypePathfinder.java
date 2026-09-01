@@ -548,7 +548,7 @@ public final class PrototypePathfinder {
             try {
                Resource res = gui.ui.sess.glob.map.tilesetr(gui.ui.sess.glob.map.gettile(wc.floor(MCache.tilesz)));
                name = res == null ? "" : res.name;
-               if (TerrainPolicy.terrainBlocks(name)) {
+               if (TerrainPolicy.terrainBlocks(name, WorldGraphAdapter.mobility(gui != null && gui.map != null ? gui.map.player() : null))) {
                   grid.block(x, y);
                   mask[y * grid.w + x] = true;
                }
@@ -873,15 +873,15 @@ public final class PrototypePathfinder {
 
 
    public static double agentRadius(Gob player) {
+      double r = 4.5;
       try {
-         double r = boundingRadius(player.rc, Hitbox.worldPolygons(player));
-         if (r > 0.5) {
-            return r;
+         double b = boundingRadius(player.rc, Hitbox.worldPolygons(player));
+         if (b > 0.5) {
+            r = b;
          }
       } catch (Loading var3) {
       }
-
-      return 4.5;
+      return TerrainPolicy.agentRadius(WorldGraphAdapter.mobility(player), r);
    }
 
    public static void rasterPolygon(boolean[] blocked, Coord2d origin, int w, int h, Coord2d[] polygon, double pad) {
