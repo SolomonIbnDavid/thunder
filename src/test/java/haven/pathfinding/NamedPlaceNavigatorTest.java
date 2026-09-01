@@ -488,6 +488,10 @@ public class NamedPlaceNavigatorTest {
          NamedPlaceNavigator.walkerResult(Result.SHORT_STOP, end, fallback).outcome
       );
       Assertions.assertEquals(
+         haven.pathfinding.RecedingHorizonNavigator.LegResult.Outcome.SUCCESS,
+         NamedPlaceNavigator.walkerResult(Result.READY_TO_INTERACT, end, fallback).outcome
+      );
+      Assertions.assertEquals(
          haven.pathfinding.RecedingHorizonNavigator.LegResult.Outcome.STUCK,
          NamedPlaceNavigator.walkerResult(Result.STUCK, end, fallback).outcome
       );

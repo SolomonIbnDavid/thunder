@@ -3,6 +3,8 @@ package haven.pathfinding;
 import auto.Bot;
 import auto.Bot.BotAction;
 import haven.Coord2d;
+import haven.nav.InteractionSpec;
+import haven.nav.NavPlanStatus;
 import haven.pathfinding.WaypointGate.Observation;
 import haven.pathfinding.WaypointGate.Outcome;
 import haven.pathfinding.WaypointGate.Request;
@@ -297,6 +299,41 @@ public class WaypointWalkerTest {
          Assertions.assertTrue(rec.fails.isEmpty());
          Assertions.assertTrue(rec.gateFails.isEmpty());
       }
+   }
+
+   @Test
+   void interactionArrivalIsNotMovementSuccessAndDoesNotClick() throws InterruptedException {
+      WaypointWalkerTest.FakeEnv env = new WaypointWalkerTest.FakeEnv();
+      WaypointWalkerTest.Recorder rec = new WaypointWalkerTest.Recorder();
+      env.obs(0L, 20.0, 0.0, false);
+      InteractionSpec spec = new InteractionSpec(
+         "t1", Coord2d.of(20.0, 0.0), Coord2d.of(1.375, 1.375), InteractionSpec.ALL_SIDES, 0.5, 16.5, 0, null, "target_gone"
+      );
+      Assertions.assertEquals(
+         Result.READY_TO_INTERACT,
+         WaypointWalker.execute(
+            env, bot(), List.of(Coord2d.of(0.0, 0.0), Coord2d.of(20.0, 0.0)), 0, 20000L, Params.DEFAULT, rec,
+            NavPlanStatus.REACHED, Coord2d.of(20.0, 0.0), spec
+         )
+      );
+      Assertions.assertTrue(env.clicks.isEmpty(), env.clicks.toString());
+      Assertions.assertTrue(rec.events.stream().anyMatch(e -> e.contains("ready to interact")), rec.events.toString());
+   }
+
+   @Test
+   void interactionWithTooShortRouteIsReadyWithoutClick() throws InterruptedException {
+      WaypointWalkerTest.FakeEnv env = new WaypointWalkerTest.FakeEnv();
+      InteractionSpec spec = new InteractionSpec(
+         "t1", Coord2d.of(0.0, 0.0), Coord2d.of(1.375, 1.375), InteractionSpec.ALL_SIDES, 0.5, 16.5, 0, null, "target_gone"
+      );
+      Assertions.assertEquals(
+         Result.READY_TO_INTERACT,
+         WaypointWalker.execute(
+            env, bot(), List.of(Coord2d.of(0.0, 0.0)), 0, 20000L, Params.DEFAULT, new WaypointWalkerTest.Recorder(),
+            NavPlanStatus.REACHED, Coord2d.of(0.0, 0.0), spec
+         )
+      );
+      Assertions.assertTrue(env.clicks.isEmpty());
    }
 
    private static final class FakeEnv implements Env {

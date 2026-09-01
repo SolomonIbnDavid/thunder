@@ -76,7 +76,14 @@ public class PfTestRunnerTest {
       "surface_moving_neutral",
       "surface_hostile_exclusion",
       "surface_unknown_geometry",
-      "surface_explore_frontier"
+      "surface_explore_frontier",
+      "interact_forageable",
+      "interact_tree",
+      "interact_boulder",
+      "interact_cupboard",
+      "interact_door_gate",
+      "interact_field_crop",
+      "interact_narrow_interior"
    );
 
    @Test

@@ -33,6 +33,7 @@ public final class SurfaceStream {
       HANDOFF,
       STREAM,
       ARRIVED,
+      INTERACT,
       STUCK,
       CANCELLED;
    }

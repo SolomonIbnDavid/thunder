@@ -38,6 +38,7 @@ public class NavReplayTest {
       );
       PathfinderLog.recordOccupancy(occ);
       PathfinderLog.recordConfirmedPos(Coord2d.of(1.25, 1.5));
+      PathfinderLog.recordInteraction(null);
       PfTestRunner.Run run = new PfTestRunner.Run("observe");
       JSONObject result = new JSONObject().put("status", "completed").put("verdict", "PASS");
       JSONObject doc = NavReplayIO.document(run, result);
@@ -143,6 +144,32 @@ public class NavReplayTest {
       Assertions.assertEquals(1, d.getInt("recovery"));
       Assertions.assertTrue(d.getBoolean("blacklist"));
       Assertions.assertEquals("STOPPED_EARLY", d.getString("reason"));
+   }
+
+   @Test
+   void optionalInteractionEvidenceKeepsV1() {
+      PathfinderLog.recordInteraction(
+         new JSONObject()
+            .put("target_id", "9")
+            .put("selected", new org.json.JSONArray().put(3.0).put(4.0))
+            .put("min_dist", 0.5)
+            .put("max_dist", 16.5)
+            .put("expected_result", "window_opened")
+            .put("decision", "INTERACT")
+      );
+      try {
+         Occupancy occ = Occupancy.capture(
+            Coord2d.of(0.0, 0.0), 2, 2, 2.75, new boolean[4], new boolean[4], new boolean[4], Coord.of(0, 0), Coord.of(1, 1), Coord.of(1, 1), List.of()
+         );
+         PathfinderLog.recordOccupancy(occ);
+         JSONObject doc = NavReplayIO.document(new PfTestRunner.Run("interact_cupboard"), new JSONObject().put("status", "completed").put("verdict", "FAIL"));
+         Assertions.assertEquals("INTERACTION", doc.getJSONObject("goal").getString("kind"));
+         Assertions.assertEquals("9", doc.getJSONObject("interaction").getString("target_id"));
+         JSONObject parsed = NavReplay.parseObject(new JSONObject(doc.toString()));
+         Assertions.assertEquals(1, parsed.getInt("version"));
+      } finally {
+         PathfinderLog.recordInteraction(null);
+      }
    }
 
    @Test

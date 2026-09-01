@@ -35,6 +35,7 @@ public final class PathfinderLog {
    private static volatile Coord2d lastActiveWaypoint;
    private static volatile Coord2d lastConfirmedPos;
    private static volatile List<Coord2d> lastHazards = Collections.emptyList();
+   private static volatile JSONObject lastInteraction;
    private static final ThreadLocal<String> target = new ThreadLocal<>();
    private static final ThreadLocal<Integer> probeDepth = ThreadLocal.withInitial(() -> 0);
 
@@ -213,6 +214,34 @@ public final class PathfinderLog {
 
    public static List<Coord2d> lastHazards() {
       return lastHazards;
+   }
+
+   public static void recordDest(Coord2d dest) {
+      lastDest = dest;
+   }
+
+   public static void recordInteraction(JSONObject interaction) {
+      lastInteraction = interaction;
+      if (interaction != null) {
+         Coord2d sel = point2d(interaction.opt("selected"));
+         if (sel != null) {
+            lastDest = sel;
+         }
+      }
+   }
+
+   public static JSONObject lastInteraction() {
+      return lastInteraction;
+   }
+
+   private static Coord2d point2d(Object v) {
+      if (v instanceof JSONArray) {
+         JSONArray a = (JSONArray) v;
+         if (a.length() >= 2) {
+            return Coord2d.of(a.getDouble(0), a.getDouble(1));
+         }
+      }
+      return null;
    }
 
    public static List<JSONObject> recent() {

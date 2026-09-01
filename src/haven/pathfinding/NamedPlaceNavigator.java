@@ -154,6 +154,7 @@ public final class NamedPlaceNavigator {
       Coord2d at = end != null ? end : fallback;
       switch (r) {
          case ARRIVED:
+         case READY_TO_INTERACT:
             return RecedingHorizonNavigator.LegResult.success(at);
          case SHORT_STOP:
             return RecedingHorizonNavigator.LegResult.stoppedEarly("walker " + r, at);

@@ -2,6 +2,7 @@ package haven.pathfinding;
 
 import haven.Coord;
 import haven.Coord2d;
+import haven.nav.InteractionSpec;
 import haven.nav.NavDecision;
 import haven.nav.NavObservation;
 import haven.nav.NavOutcome;
@@ -20,6 +21,7 @@ public final class SurfaceController {
 
    public final Coord2d originalGoal;
    public final boolean requireIdleForFinal;
+   public final boolean interactionGoal;
    public final double eps;
    public final double moveProgress;
    public final long startTimeoutMs;
@@ -49,6 +51,9 @@ public final class SurfaceController {
    private SurfaceStream.Farthest lastPick;
    private SurfaceStream.Reason lastReason = SurfaceStream.Reason.STREAM;
    private long planMs;
+   private final InteractionSpec interactionSpec;
+   private Coord2d destGoal;
+   private boolean interactIssued;
 
    public SurfaceController(
       Coord2d originalGoal,
@@ -73,6 +78,39 @@ public final class SurfaceController {
       this.walkTimeoutMs = walkTimeoutMs;
       this.jiggleWindowMs = jiggleWindowMs;
       this.requireIdleForFinal = requireIdleForFinal;
+      this.interactionGoal = false;
+      this.interactionSpec = null;
+      this.destGoal = originalGoal;
+   }
+
+   public SurfaceController(
+      Coord2d originalGoal,
+      List<Coord2d> smoothed,
+      NavPlanStatus planStatus,
+      double eps,
+      double moveProgress,
+      long startTimeoutMs,
+      long walkTimeoutMs,
+      long jiggleWindowMs,
+      boolean requireIdleForFinal,
+      boolean interactionGoal,
+      InteractionSpec interactionSpec
+   ) {
+      if (originalGoal == null) {
+         throw new IllegalArgumentException("originalGoal");
+      }
+      this.originalGoal = originalGoal;
+      this.smoothed = smoothed == null ? new ArrayList<Coord2d>() : new ArrayList<Coord2d>(smoothed);
+      this.planStatus = planStatus == null ? NavPlanStatus.REACHED : planStatus;
+      this.eps = eps;
+      this.moveProgress = moveProgress;
+      this.startTimeoutMs = startTimeoutMs;
+      this.walkTimeoutMs = walkTimeoutMs;
+      this.jiggleWindowMs = jiggleWindowMs;
+      this.requireIdleForFinal = requireIdleForFinal;
+      this.interactionGoal = interactionGoal || interactionSpec != null;
+      this.interactionSpec = interactionSpec;
+      this.destGoal = originalGoal;
    }
 
    public static SurfaceController of(Coord2d goal, List<Coord2d> smoothed, NavPlanStatus status, double eps, double moveProgress, long startTimeoutMs, long walkTimeoutMs, long jiggleWindowMs) {
@@ -81,6 +119,28 @@ public final class SurfaceController {
          g = smoothed.get(smoothed.size() - 1);
       }
       return new SurfaceController(g, smoothed, status, eps, moveProgress, startTimeoutMs, walkTimeoutMs, jiggleWindowMs, true);
+   }
+
+   public static SurfaceController forInteraction(
+      Coord2d pose,
+      List<Coord2d> smoothed,
+      NavPlanStatus status,
+      double eps,
+      double moveProgress,
+      long startTimeoutMs,
+      long walkTimeoutMs,
+      long jiggleWindowMs,
+      InteractionSpec spec
+   ) {
+      Coord2d g = pose;
+      if (g == null && smoothed != null && !smoothed.isEmpty()) {
+         g = smoothed.get(smoothed.size() - 1);
+      }
+      return new SurfaceController(g, smoothed, status, eps, moveProgress, startTimeoutMs, walkTimeoutMs, jiggleWindowMs, true, true, spec);
+   }
+
+   private Coord2d dest() {
+      return this.destGoal != null ? this.destGoal : this.originalGoal;
    }
 
    public SurfaceStream.Farthest lastPick() {
@@ -134,8 +194,16 @@ public final class SurfaceController {
          this.lastPos = pos;
          return recoverContinue(pos, this.lastReason, this.lastReason == null ? "recovery" : this.lastReason.name());
       }
-      if (SurfaceStream.arrived(pos, this.originalGoal, this.eps, obs.moving, this.requireIdleForFinal)) {
+      if (SurfaceStream.arrived(pos, dest(), this.eps, obs.moving, this.requireIdleForFinal)) {
          this.lastPos = pos;
+         if (this.interactionGoal) {
+            this.lastReason = SurfaceStream.Reason.INTERACT;
+            if (!this.interactIssued) {
+               this.interactIssued = true;
+               return new Tick(NavDecision.interact(dest(), "server_confirmed"), SurfaceStream.Reason.INTERACT, this.lastPick, this.recoveryCount, this.planMs, null);
+            }
+            return new Tick(NavDecision.wait("server_confirmed"), SurfaceStream.Reason.INTERACT, this.lastPick, this.recoveryCount, this.planMs, null);
+         }
          return terminate(NavOutcome.REACHED, SurfaceStream.Reason.ARRIVED, "server_confirmed");
       }
       if (this.awaitingEscape && this.escapeTarget != null && pos.dist(this.escapeTarget) <= this.eps && !obs.moving) {
@@ -174,7 +242,7 @@ public final class SurfaceController {
             return recover(pos, SurfaceStream.Reason.NO_PROGRESS, "no_progress");
          }
       }
-      if (this.lastSent != null && this.lastMoving && !obs.moving && pos.dist(this.originalGoal) > this.eps) {
+      if (this.lastSent != null && this.lastMoving && !obs.moving && pos.dist(dest()) > this.eps) {
          this.lastPos = pos;
          return recover(pos, SurfaceStream.Reason.STOPPED_EARLY, "stopped_early");
       }
@@ -189,7 +257,7 @@ public final class SurfaceController {
          return recover(pos, SurfaceStream.Reason.CORRIDOR_INVALID, pick.whyShorter == null ? "no_legal_corridor" : pick.whyShorter);
       }
       if (!this.smoothed.isEmpty()
-         && SurfaceStream.wouldBeFalseSuccess(this.planStatus, pos, this.originalGoal, this.eps)
+         && SurfaceStream.wouldBeFalseSuccess(this.planStatus, pos, dest(), this.eps)
          && pos.dist(this.smoothed.get(this.smoothed.size() - 1)) <= this.eps
          && !obs.moving) {
          this.lastPos = pos;
@@ -231,7 +299,7 @@ public final class SurfaceController {
    private Tick recover(Coord2d pos, SurfaceStream.Reason reason, String detail) {
       this.lastReason = reason;
       this.failedFrom = this.lastProgressPos != null ? this.lastProgressPos : pos;
-      this.failedTo = this.lastSent != null ? this.lastSent : this.originalGoal;
+      this.failedTo = this.lastSent != null ? this.lastSent : dest();
       if (this.occupancy == null) {
          if (reason == SurfaceStream.Reason.STOPPED_EARLY || reason == SurfaceStream.Reason.NO_PROGRESS) {
             return new Tick(NavDecision.replan(reason.name()), reason, this.lastPick, this.recoveryCount, this.planMs, null);
@@ -255,8 +323,25 @@ public final class SurfaceController {
       }
       this.recoveryCount++;
       long t0ns = System.nanoTime();
+      if (this.interactionSpec != null) {
+         InteractionGoals.Result next = InteractionGoals.select(pos, this.interactionSpec, this.occupancy);
+         this.planMs = (System.nanoTime() - t0ns) / 1000000L;
+         if (next.ok() && next.selected != null && next.plan != null && next.plan.smoothedRoute != null && next.plan.smoothedRoute.size() >= 2) {
+            this.destGoal = next.selected.world;
+            this.smoothed = new ArrayList<Coord2d>(next.plan.smoothedRoute);
+            this.planStatus = next.plan.status;
+            Coord2d prevSent = this.lastSent;
+            this.lastSent = null;
+            this.awaitingEscape = false;
+            SurfaceStream.Farthest pick = SurfaceStream.farthestValid(pos, this.smoothed, this.occupancy);
+            this.lastPick = pick;
+            if (pick.selected != null && !SurfaceStream.abaOscillation(this.sentBeforeLast, prevSent, pick.selected, this.eps)) {
+               return sendRecovery(pick.selected, pick, null, prevSent);
+            }
+         }
+      }
       OccupancyGrid black = SurfaceStream.blacklistSegment(this.occupancy, this.failedFrom, this.failedTo);
-      NavPlan planned = SurfaceStream.replan(pos, this.originalGoal, this.occupancy, black);
+      NavPlan planned = SurfaceStream.replan(pos, dest(), this.occupancy, black);
       this.planMs = (System.nanoTime() - t0ns) / 1000000L;
       if (planned != null && planned.smoothedRoute != null && planned.smoothedRoute.size() >= 2) {
          this.smoothed = new ArrayList<Coord2d>(planned.smoothedRoute);
@@ -283,7 +368,7 @@ public final class SurfaceController {
       if (this.recoveryCount >= MAX_RECOVERY) {
          return terminate(NavOutcome.STUCK, SurfaceStream.Reason.STUCK, "recovery_exhausted");
       }
-      NavPlan original = SurfaceStream.replan(pos, this.originalGoal, this.occupancy, null);
+      NavPlan original = SurfaceStream.replan(pos, dest(), this.occupancy, null);
       if (original != null && original.smoothedRoute != null && original.smoothedRoute.size() >= 2) {
          this.smoothed = new ArrayList<Coord2d>(original.smoothedRoute);
          this.planStatus = original.status;
@@ -307,7 +392,7 @@ public final class SurfaceController {
    private Tick replanOriginal(Coord2d pos, SurfaceStream.Reason reason, String detail) {
       this.lastReason = reason;
       long t0ns = System.nanoTime();
-      NavPlan planned = SurfaceStream.replan(pos, this.originalGoal, this.occupancy, null);
+      NavPlan planned = SurfaceStream.replan(pos, dest(), this.occupancy, null);
       this.planMs = (System.nanoTime() - t0ns) / 1000000L;
       if (planned != null && planned.smoothedRoute != null && planned.smoothedRoute.size() >= 2) {
          this.smoothed = new ArrayList<Coord2d>(planned.smoothedRoute);

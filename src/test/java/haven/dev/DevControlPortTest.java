@@ -41,7 +41,7 @@ public class DevControlPortTest {
    void pfScenarioListSerializesWithBundledJsonLibrary() {
       JSONObject result = DevControl.pfScenarios();
       Assertions.assertTrue(result.getBoolean("ok"));
-      Assertions.assertEquals(30, result.getJSONArray("scenarios").length());
+      Assertions.assertEquals(37, result.getJSONArray("scenarios").length());
       Assertions.assertEquals("observe", result.getJSONArray("scenarios").getString(0));
       Assertions.assertEquals("basement_cabinet_identify", result.getJSONArray("scenarios").getString(1));
       Assertions.assertEquals("move_to_marker", result.getJSONArray("scenarios").getString(2));

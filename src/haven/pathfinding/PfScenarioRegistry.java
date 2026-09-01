@@ -34,6 +34,9 @@ final class PfScenarioRegistry {
       for (SurfaceTravelScenario.Kind k : SurfaceTravelScenario.Kind.values()) {
          register(new SurfaceTravelScenario(k));
       }
+      for (InteractScenario.Kind k : InteractScenario.Kind.values()) {
+         register(new InteractScenario(k));
+      }
    }
 
    private PfScenarioRegistry() {

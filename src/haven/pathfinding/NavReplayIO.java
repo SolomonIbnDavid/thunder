@@ -36,6 +36,10 @@ public final class NavReplayIO {
       o.put("observations", observationsFrom(result));
       o.put("decisions", decisionsFrom());
       o.put("outcome", outcomeFrom(result));
+      JSONObject interaction = PathfinderLog.lastInteraction();
+      if (interaction != null) {
+         o.put("interaction", interaction);
+      }
       return o;
    }
 
@@ -112,6 +116,7 @@ public final class NavReplayIO {
    }
 
    static Object goalFrom(JSONObject result) {
+      JSONObject inter = PathfinderLog.lastInteraction();
       Coord2d dest = PathfinderLog.lastDest();
       if (dest == null && result != null) {
          JSONObject facts = result.optJSONObject("facts");
@@ -119,6 +124,23 @@ public final class NavReplayIO {
          if (dest == null && facts != null) {
             dest = coord2d(facts.opt("goal"));
          }
+      }
+      if (inter != null) {
+         JSONObject g = new JSONObject();
+         g.put("kind", "INTERACTION");
+         g.put("position", inter.has("selected") ? inter.get("selected") : point(dest));
+         g.put("target_id", inter.opt("target_id"));
+         if (inter.has("footprint")) {
+            g.put("footprint", inter.get("footprint"));
+         }
+         g.put("min_dist", inter.optDouble("min_dist"));
+         g.put("max_dist", inter.optDouble("max_dist"));
+         g.put("allowed_sides", inter.optInt("allowed_sides"));
+         if (inter.has("facing")) {
+            g.put("facing", inter.get("facing"));
+         }
+         g.put("expected_result", inter.optString("expected_result", ""));
+         return g;
       }
       if (dest == null) {
          return JSONObject.NULL;

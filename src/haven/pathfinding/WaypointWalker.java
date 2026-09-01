@@ -8,6 +8,7 @@ import haven.GameUI;
 import haven.Gob;
 import haven.Moving;
 import haven.OCache;
+import haven.nav.InteractionSpec;
 import haven.nav.NavDecision;
 import haven.nav.NavObservation;
 import haven.nav.NavOutcome;
@@ -73,7 +74,7 @@ public final class WaypointWalker {
       WaypointWalker.Listener l,
       NavPlanStatus planStatus
    ) throws InterruptedException {
-      return execute(env, bot, route, replan, walkBudgetMs, params, l, planStatus, null);
+      return execute(env, bot, route, replan, walkBudgetMs, params, l, planStatus, null, null);
    }
 
    public static WaypointWalker.Result execute(
@@ -87,12 +88,29 @@ public final class WaypointWalker {
       NavPlanStatus planStatus,
       Coord2d originalGoal
    ) throws InterruptedException {
+      return execute(env, bot, route, replan, walkBudgetMs, params, l, planStatus, originalGoal, null);
+   }
+
+   public static WaypointWalker.Result execute(
+      WaypointWalker.Env env,
+      Bot bot,
+      List<Coord2d> route,
+      int replan,
+      long walkBudgetMs,
+      WaypointWalker.Params params,
+      WaypointWalker.Listener l,
+      NavPlanStatus planStatus,
+      Coord2d originalGoal,
+      InteractionSpec interaction
+   ) throws InterruptedException {
       if (route == null || route.size() < 2) {
-         return WaypointWalker.Result.ARRIVED;
+         return interaction != null ? WaypointWalker.Result.READY_TO_INTERACT : WaypointWalker.Result.ARRIVED;
       }
       Coord2d goal = originalGoal != null ? originalGoal : route.get(route.size() - 1);
       WaypointWalker.Params p = params == null ? WaypointWalker.Params.DEFAULT : params;
-      SurfaceController ctl = SurfaceController.of(goal, route, planStatus, p.eps, p.moveProgress, p.startTimeoutMs, p.walkTimeoutMs, p.jiggleWindowMs);
+      SurfaceController ctl = interaction != null
+         ? SurfaceController.forInteraction(goal, route, planStatus, p.eps, p.moveProgress, p.startTimeoutMs, p.walkTimeoutMs, p.jiggleWindowMs, interaction)
+         : SurfaceController.of(goal, route, planStatus, p.eps, p.moveProgress, p.startTimeoutMs, p.walkTimeoutMs, p.jiggleWindowMs);
       long deadline = env.now() + walkBudgetMs;
       OccupancyGrid occ = env.occupancy();
       boolean first = true;
@@ -130,6 +148,10 @@ public final class WaypointWalker {
          }
          PathfinderLog.setActiveWaypoint(tick.pick == null ? ctl.lastSent() : tick.pick.selected);
          PathfinderLog.recordExec(tick);
+         if (tick.decision.kind == NavDecision.Kind.INTERACT) {
+            l.event("ready to interact");
+            return WaypointWalker.Result.READY_TO_INTERACT;
+         }
          if (tick.decision.kind == NavDecision.Kind.SEND_MOVEMENT && tick.decision.target != null) {
             Coord2d before = obs.pos;
             env.click(tick.decision.target);
@@ -354,6 +376,7 @@ public final class WaypointWalker {
 
    public static enum Result {
       ARRIVED,
+      READY_TO_INTERACT,
       REJECTED,
       SHORT_STOP,
       TIMEOUT,
