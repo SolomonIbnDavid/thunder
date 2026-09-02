@@ -49,7 +49,18 @@ public final class RecedingHorizonNavigator {
       } else {
          RecedingHorizonNavigator.State st = new RecedingHorizonNavigator.State(route, startPos);
 
-         while (st.idx < st.route.size()) {
+         while (true) {
+            Coord at = this.tileMap.toTile(st.pos);
+            if (at != null && at.equals(goalTile) && st.idx >= st.route.size()) {
+               return new RecedingHorizonNavigator.Result(RecedingHorizonNavigator.Outcome.REACHED_DESTINATION, st.legs, st.replans, null, st.pos, st.idx);
+            }
+            if (st.idx >= st.route.size()) {
+               RecedingHorizonNavigator.Result extra = this.replan(st, goalTile);
+               if (extra != null) {
+                  return extra;
+               }
+               continue;
+            }
             Coord2d target = this.tileMap.toWorld(st.route.get(st.idx));
             RecedingHorizonNavigator.LocalPlan local = this.localPlanner.plan(st.pos, target);
             switch (local.status) {
@@ -94,8 +105,6 @@ public final class RecedingHorizonNavigator {
                   throw new AssertionError(local.status);
             }
          }
-
-         return new RecedingHorizonNavigator.Result(RecedingHorizonNavigator.Outcome.REACHED_DESTINATION, st.legs, st.replans, null, st.pos, st.idx);
       }
    }
 

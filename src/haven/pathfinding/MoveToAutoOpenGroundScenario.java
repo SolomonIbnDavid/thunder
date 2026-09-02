@@ -128,6 +128,85 @@ final class MoveToAutoOpenGroundScenario implements PfTestRunner.Scenario {
       return walkPlan(gui, plan, target, bot, 60000L, 60000L);
    }
 
+   /**
+    * Follow a stand even when the first local plan is PARTIAL/CLIPPED/SNAPPED
+    * or a hop walks into a pinch. Crowded yards need a detour plus a replan;
+    * aborting on the first walker STUCK was stopping Walk reverse next to crates.
+    */
+   static String followTo(GameUI gui, Coord2d dest, Bot bot, long totalBudgetMs) throws InterruptedException {
+      long deadline = System.currentTimeMillis() + totalBudgetMs;
+      int hops = 0;
+      double best = Double.POSITIVE_INFINITY;
+      int stalled = 0;
+      while (System.currentTimeMillis() < deadline && hops < 24) {
+         Coord2d at = PfTestHarness.observePos(gui);
+         if (at != null && dest != null && at.dist(dest) <= 3.0) {
+            return null;
+         }
+         PrototypePathfinder.Plan plan = PrototypePathfinder.planAny(gui, Collections.singletonList(dest), true);
+         if (plan == null || plan.waypoints == null || plan.waypoints.size() < 2 || plan.status == PrototypePathfinder.Plan.Status.FAILED) {
+            Thread.sleep(200L);
+            plan = PrototypePathfinder.planAny(gui, Collections.singletonList(dest), true);
+         }
+         if (plan == null || plan.waypoints == null || plan.waypoints.size() < 2 || plan.status == PrototypePathfinder.Plan.Status.FAILED) {
+            return "no route around obstacles" + (plan == null ? "" : " (" + plan.status + ")");
+         }
+         long hopBudget = Math.min(25000L, deadline - System.currentTimeMillis());
+         if (hopBudget < 1000L) {
+            break;
+         }
+         MoveToAutoOpenGroundScenario.MoveResult mv = walkPlan(gui, plan, dest, bot, hopBudget, hopBudget);
+         hops++;
+         Coord2d now = PfTestHarness.observePos(gui);
+         if (closeEnough(plan, now, dest)) {
+            return null;
+         }
+         if (retryAfterWalk(mv == null ? null : mv.walk)) {
+            Thread.sleep(200L);
+         }
+         double d = now == null || dest == null ? best : now.dist(dest);
+         if (d < best - 2.0) {
+            best = d;
+            stalled = 0;
+         } else {
+            stalled++;
+            if (stalled >= 3) {
+               return "stuck: no progress around obstacles";
+            }
+         }
+      }
+      Coord2d at = PfTestHarness.observePos(gui);
+      if (at != null && dest != null && at.dist(dest) <= 3.0) {
+         return null;
+      }
+      return "did not reach stand";
+   }
+
+   /** One jammed polyline is a replan, not a route abort. */
+   static boolean retryAfterWalk(WaypointWalker.Result walk) {
+      return walk == WaypointWalker.Result.STUCK
+         || walk == WaypointWalker.Result.TIMEOUT
+         || walk == WaypointWalker.Result.SHORT_STOP;
+   }
+
+   /**
+    * A stand behind a desk is often occupancy-SNAPPED to the nearest free cell.
+    * Arriving there (within a tile and a half) is reaching the stand, not a stall.
+    */
+   static boolean closeEnough(PrototypePathfinder.Plan plan, Coord2d now, Coord2d dest) {
+      if (now == null || dest == null) {
+         return false;
+      }
+      if (now.dist(dest) <= 8.0) {
+         return true;
+      }
+      if (plan == null || plan.status != PrototypePathfinder.Plan.Status.SNAPPED || plan.waypoints == null || plan.waypoints.isEmpty()) {
+         return false;
+      }
+      Coord2d end = plan.waypoints.get(plan.waypoints.size() - 1);
+      return end != null && now.dist(end) <= 3.0 && now.dist(dest) <= 16.5;
+   }
+
    static MoveToAutoOpenGroundScenario.MoveResult walkPlan(
       GameUI gui, PrototypePathfinder.Plan plan, Coord2d fallbackPos, Bot bot, long waypointTimeoutMs, long walkBudgetMs
    ) {

@@ -40,12 +40,13 @@ public final class WaypointWalker {
 
          @Override
          public OccupancyGrid occupancy() {
-            return PathfinderLog.lastOccupancy();
+            OccupancyGrid cached = PathfinderLog.lastOccupancy();
+            return cached != null ? cached : refreshOccupancy();
          }
 
          @Override
          public OccupancyGrid refreshOccupancy() {
-            PrototypePathfinder.Scene scene = PrototypePathfinder.observe(gui);
+            PrototypePathfinder.Scene scene = PrototypePathfinder.observe(gui, false);
             return scene == null ? null : scene.occupancy;
          }
       };
@@ -109,11 +110,19 @@ public final class WaypointWalker {
       }
       Coord2d goal = originalGoal != null ? originalGoal : route.get(route.size() - 1);
       WaypointWalker.Params p = params == null ? WaypointWalker.Params.DEFAULT : params;
-      SurfaceController ctl = interaction != null
-         ? SurfaceController.forInteraction(goal, route, planStatus, p.eps, p.moveProgress, p.startTimeoutMs, p.walkTimeoutMs, p.jiggleWindowMs, interaction)
-         : SurfaceController.of(goal, route, planStatus, p.eps, p.moveProgress, p.startTimeoutMs, p.walkTimeoutMs, p.jiggleWindowMs);
+         SurfaceController ctl = interaction != null
+            ? SurfaceController.forInteraction(goal, route, planStatus, p.eps, p.moveProgress, p.startTimeoutMs, p.walkTimeoutMs, p.jiggleWindowMs, interaction)
+            : SurfaceController.of(goal, route, planStatus, p.eps, p.moveProgress, p.startTimeoutMs, p.walkTimeoutMs, p.jiggleWindowMs);
+         if (interaction != null) {
+            ctl.setExactGeometry(PathfinderLog.lastSolids(), PathfinderLog.lastPlayerBody());
+         }
       long deadline = env.now() + walkBudgetMs;
       OccupancyGrid occ = env.occupancy();
+      if (occ == null) {
+         // Occupancy was invalidated (e.g. after a surface transition): rebuild
+         // instead of handing a null/stale grid to SurfaceController.
+         occ = env.refreshOccupancy();
+      }
       boolean first = true;
       WaypointGate.Observation obs = null;
       l.beginWait("waypoint", walkBudgetMs, "stream replan=" + replan);

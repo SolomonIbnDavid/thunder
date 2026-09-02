@@ -240,6 +240,8 @@ public class TransitionApproachSelectorTest {
       Assertions.assertEquals(TransitionKind.LADDER, TransitionApproachSelector.caveTransitionKind("gfx/terobjs/ladder"));
       Assertions.assertEquals(TransitionKind.CELLAR_DOOR, TransitionApproachSelector.caveTransitionKind("gfx/terobjs/arch/cellardoor"));
       Assertions.assertEquals(TransitionKind.CELLAR_STAIRS, TransitionApproachSelector.caveTransitionKind("gfx/terobjs/arch/cellarstairs"));
+      Assertions.assertEquals(TransitionKind.CELLAR_STAIRS, TransitionApproachSelector.caveTransitionKind("gfx/terobjs/arch/downstairs"));
+      Assertions.assertEquals(TransitionKind.CELLAR_STAIRS, TransitionApproachSelector.caveTransitionKind("gfx/terobjs/arch/upstairs"));
       Assertions.assertTrue(TransitionApproachSelector.isCaveTransitionResid("gfx/terobjs/minehole"));
       Assertions.assertTrue(TransitionApproachSelector.isCaveTransitionResid("gfx/terobjs/arch/cellarstairs"));
       Assertions.assertNull(TransitionApproachSelector.caveTransitionKind("gfx/terobjs/arch/cellardoorstep"));
@@ -638,6 +640,7 @@ public class TransitionApproachSelectorTest {
       Assertions.assertTrue(TransitionApproachSelector.isDoorGateResid("gfx/terobjs/arch/brickbiggate"));
       Assertions.assertTrue(TransitionApproachSelector.isDoorGateResid("gfx/terobjs/arch/greathall-door"));
       Assertions.assertTrue(TransitionApproachSelector.isGateResid("gfx/terobjs/arch/palisadegate"));
+      Assertions.assertTrue(TransitionApproachSelector.isGateResid("gfx/terobjs/arch/polebiggate"));
       Assertions.assertTrue(TransitionApproachSelector.isGateResid("gfx/terobjs/arch/brickbiggate"));
       Assertions.assertFalse(TransitionApproachSelector.isGateResid("gfx/terobjs/arch/greathall-door"), "doors are never gates");
       Assertions.assertNull(TransitionApproachSelector.doorGateKind("gfx/terobjs/arch/cellardoor"), "the cellar door belongs to the CAVE_TRANSITION profile");

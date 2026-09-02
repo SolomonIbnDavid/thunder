@@ -42,6 +42,12 @@ public final class PathfinderDebug implements Feature {
    private static final Color HAZARD = new Color(255, 40, 40, 200);
    private static final Color ACTIVE_WP = new Color(255, 255, 80, 230);
    private static final Color CONFIRMED = new Color(180, 255, 80, 230);
+   private static final Color STAIRS_POLY = new Color(255, 230, 40, 220);
+   private static final Color DESK_OBST = new Color(40, 220, 255, 230);
+   private static final Color DESK_PLACE = new Color(255, 70, 220, 200);
+   private static final Color DESK_FALLBACK = new Color(255, 140, 40, 220);
+   private static final Color CAND_OK = new Color(80, 255, 120, 220);
+   private static final Color CAND_NO = new Color(255, 70, 70, 180);
    private static final int GRID_R = 26;
 
    public String name() {
@@ -64,6 +70,7 @@ public final class PathfinderDebug implements Feature {
       paintActiveWaypoint(g, mv);
       paintConfirmedPos(g, mv);
       paintBody(g, mv);
+      paintGeometryDump(g, mv);
       if (!CatalogDebug.overlayActive()) {
          CatalogDebug.paintCupboardIds(g, mv);
       }
@@ -218,6 +225,117 @@ public final class PathfinderDebug implements Feature {
       }
    }
 
+   private static void paintGeometryDump(GOut g, MapView mv) {
+      JSONObject dump = PathfinderLog.lastGeometryDump();
+      if (mv == null || dump == null) {
+         return;
+      }
+      paintJsonPolys(g, mv, dump.optJSONArray("player_body"), BODY, 2, scenePlayer(dump));
+      JSONArray desks = dump.optJSONArray("study_desks");
+      if (desks != null) {
+         for (int i = 0; i < desks.length(); i++) {
+            JSONObject d = desks.optJSONObject(i);
+            if (d == null) {
+               continue;
+            }
+            paintJsonPolys(g, mv, d.optJSONArray("placement"), DESK_PLACE, 1, null);
+            paintJsonPolys(g, mv, d.optJSONArray("fallback") == null ? null : wrapPoly(d.opt("fallback")), DESK_FALLBACK, 3, null);
+            paintJsonPolys(g, mv, d.optJSONArray("obst"), DESK_OBST, 2, null);
+         }
+      }
+      JSONArray stairs = dump.optJSONArray("stairs");
+      if (stairs != null) {
+         for (int i = 0; i < stairs.length(); i++) {
+            JSONObject s = stairs.optJSONObject(i);
+            if (s == null) {
+               continue;
+            }
+            JSONArray mvpoly = s.optJSONArray("movement");
+            if (mvpoly == null || mvpoly.length() == 0) {
+               mvpoly = s.optJSONArray("obst");
+            }
+            paintJsonPolys(g, mv, mvpoly, STAIRS_POLY, 2, null);
+         }
+      }
+      JSONArray cands = dump.optJSONArray("candidates");
+      if (cands != null) {
+         int n = Math.min(cands.length(), 80);
+         for (int i = 0; i < n; i++) {
+            JSONObject c = cands.optJSONObject(i);
+            if (c == null) {
+               continue;
+            }
+            Coord2d w = jsonPt(c.opt("world"));
+            boolean ok = c.isNull("reject");
+            marker(g, mv, w, ok ? CAND_OK : CAND_NO, ok ? 6 : 4, null);
+         }
+      }
+      marker(g, mv, jsonPt(dump.opt("selected")), CAND_OK, 9, "pose");
+   }
+
+   private static Coord2d scenePlayer(JSONObject dump) {
+      return jsonPt(dump.opt("player"));
+   }
+
+   private static JSONArray wrapPoly(Object v) {
+      if (v instanceof JSONArray) {
+         JSONArray a = (JSONArray) v;
+         if (a.length() > 0 && a.optJSONArray(0) != null && a.optJSONArray(0).length() >= 2 && !(a.optJSONArray(0).optJSONArray(0) != null)) {
+            JSONArray wrap = new JSONArray();
+            wrap.put(a);
+            return wrap;
+         }
+         return a;
+      }
+      return null;
+   }
+
+   private static void paintJsonPolys(GOut g, MapView mv, JSONArray polys, Color color, int width, Coord2d origin) {
+      if (polys == null) {
+         return;
+      }
+      g.chcolor(color);
+      for (int p = 0; p < polys.length(); p++) {
+         JSONArray poly = polys.optJSONArray(p);
+         if (poly == null) {
+            continue;
+         }
+         Coord prev = null;
+         Coord first = null;
+         for (int i = 0; i <= poly.length(); i++) {
+            JSONArray pt = poly.optJSONArray(i % poly.length());
+            Coord2d world = jsonPt(pt);
+            if (world != null && origin != null) {
+               world = origin.add(world);
+            }
+            Coord s = screen(mv, world);
+            if (s == null) {
+               prev = null;
+            } else {
+               if (first == null) {
+                  first = s;
+               }
+               if (prev != null) {
+                  g.line(prev, s, (double) width);
+               }
+               prev = s;
+            }
+         }
+      }
+      g.chcolor();
+   }
+
+   private static Coord2d jsonPt(Object v) {
+      if (!(v instanceof JSONArray)) {
+         return null;
+      }
+      JSONArray a = (JSONArray) v;
+      if (a.length() < 2) {
+         return null;
+      }
+      return Coord2d.of(a.optDouble(0), a.optDouble(1));
+   }
+
    private static void paintHud(GOut g, MapView mv) {
       JSONObject last = PathfinderLog.last();
       int y = 12;
@@ -272,6 +390,18 @@ public final class PathfinderDebug implements Feature {
             0.0,
             0.0
          );
+         y += 14;
+         JSONObject geom = PathfinderLog.lastGeometryDump();
+         if (geom != null) {
+            JSONArray desks = geom.optJSONArray("study_desks");
+            String reason = desks != null && desks.length() > 0 ? desks.getJSONObject(0).optString("collision_reason", "") : "";
+            g.atext(
+               "geom cyan=desk obst  magenta=placement  orange=12x32 fallback  yellow=stairs  red/green=candidates  " + reason,
+               new Coord(12, y),
+               0.0,
+               0.0
+            );
+         }
          g.chcolor();
       }
    }
@@ -367,6 +497,11 @@ public final class PathfinderDebug implements Feature {
          JSONObject last = PathfinderLog.last();
          if (last != null) {
             body.append(last.toString(2)).append('\n');
+         }
+
+         JSONObject graph = PathfinderLog.lastGraph();
+         if (graph != null) {
+            body.append(graph.toString(2)).append('\n');
          }
 
          PrintWriter w = new PrintWriter(Files.newBufferedWriter(file));
@@ -518,6 +653,19 @@ public final class PathfinderDebug implements Feature {
 
          for (int i = from; i < recent.size(); i++) {
             JSONObject o = recent.get(i);
+            if (o.has("kind") && !o.has("waypoint_count")) {
+               // SurfaceController exec entries: these carry the replan/stream
+               // reasons (corner-clip, blocked segment, recovery) needed in a
+               // stuck dump.
+               out.printf(
+                  "  exec %s  reason=%s  outcome=%s%s%n",
+                  o.optString("kind"),
+                  o.optString("reason"),
+                  o.optString("outcome", "-"),
+                  o.optBoolean("blacklist") ? "  blacklist" : ""
+               );
+               continue;
+            }
             out.printf(
                "  %s%s  %s  clip=%s  wp=%d  nodes=%d  r=%.1f dil=%d%s%n",
                o.optBoolean("probe") ? "probe " : "",

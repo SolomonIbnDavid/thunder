@@ -28,6 +28,8 @@ public class InteractionAdapterTest {
       Assertions.assertEquals(5.0, spec.half.x, 1.0E-9);
       Assertions.assertEquals(5.0, spec.half.y, 1.0E-9);
       Assertions.assertEquals(InteractionVerifier.WINDOW_OPENED, spec.expectedResult);
+      Assertions.assertEquals(CollisionGeom.MOVEMENT, spec.geometrySource);
+      Assertions.assertEquals(1, spec.polygons.size());
    }
 
    @Test
@@ -38,6 +40,7 @@ public class InteractionAdapterTest {
       InteractionSpec spec = InteractionAdapter.fromGob(g, InteractionSpec.SIDE_E, 2.0, 11.0, 1, null, InteractionVerifier.TARGET_GONE);
       Assertions.assertEquals(5.5, spec.half.x, 1.0E-9);
       Assertions.assertEquals(InteractionSpec.SIDE_E, spec.allowedSides);
+      Assertions.assertEquals(CollisionGeom.UNAVAILABLE, spec.geometrySource);
    }
 
    @Test

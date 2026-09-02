@@ -60,6 +60,63 @@ public class PathfinderPlanStatusTest {
    }
 
    @Test
+   void planGridLeavesRoomToWalkAroundVillageClutter() {
+      Coord2d start = Coord2d.of(0.0, 0.0);
+      Coord2d dest = Coord2d.of(120.0, 0.0);
+      Grid grid = PrototypePathfinder.planGrid(start, List.of(dest));
+      Assertions.assertTrue(
+         grid.h * 2.75 >= 180.0,
+         "start-dest sausage was too skinny to detour a crowded yard (h=" + grid.h + ")"
+      );
+   }
+
+   @Test
+   void blobOnTheStraightLineIsWalkedAround() {
+      Coord2d start = Coord2d.of(0.0, 0.0);
+      Coord2d dest = Coord2d.of(120.0, 0.0);
+      Plan plan = planOn(start, dest, true, (grid, solid, dilated) -> {
+         Coord left = PrototypePathfinder.worldCell(grid.origin, Coord2d.of(50.0, -40.0));
+         Coord right = PrototypePathfinder.worldCell(grid.origin, Coord2d.of(70.0, 40.0));
+         int x0 = Math.max(0, Math.min(left.x, right.x));
+         int x1 = Math.min(grid.w - 1, Math.max(left.x, right.x));
+         int y0 = Math.max(0, Math.min(left.y, right.y));
+         int y1 = Math.min(grid.h - 1, Math.max(left.y, right.y));
+         for (int y = y0; y <= y1; y++) {
+            for (int x = x0; x <= x1; x++) {
+               solid[y * grid.w + x] = true;
+               dilated[y * grid.w + x] = true;
+               grid.block(x, y);
+            }
+         }
+      });
+      Assertions.assertEquals(Status.REACHED, plan.status, "A* must go around a yard blob, not PARTIAL");
+      Coord2d end = (Coord2d)plan.waypoints.get(plan.waypoints.size() - 1);
+      Assertions.assertEquals(0.0, end.dist(dest), 1.5, "detour still finishes at the stand");
+   }
+
+   @Test
+   void jammedWalkIsAReplanNotARouteAbort() {
+      Assertions.assertTrue(MoveToAutoOpenGroundScenario.retryAfterWalk(WaypointWalker.Result.STUCK));
+      Assertions.assertTrue(MoveToAutoOpenGroundScenario.retryAfterWalk(WaypointWalker.Result.SHORT_STOP));
+      Assertions.assertTrue(MoveToAutoOpenGroundScenario.retryAfterWalk(WaypointWalker.Result.TIMEOUT));
+      Assertions.assertFalse(MoveToAutoOpenGroundScenario.retryAfterWalk(WaypointWalker.Result.ARRIVED));
+      Assertions.assertFalse(MoveToAutoOpenGroundScenario.retryAfterWalk(WaypointWalker.Result.REJECTED));
+   }
+
+   @Test
+   void snappedStandBesideADeskCountsAsArrival() {
+      Plan snapped = Plan.fabricated(List.of(Coord2d.of(0.0, 0.0), Coord2d.of(10.0, 0.0)), true, true, 0, 0, Status.SNAPPED);
+      Assertions.assertTrue(
+         MoveToAutoOpenGroundScenario.closeEnough(snapped, Coord2d.of(10.0, 0.5), Coord2d.of(20.0, 0.0)),
+         "Walk reverse around a desk must not stall after reaching the occupancy snap"
+      );
+      Assertions.assertFalse(
+         MoveToAutoOpenGroundScenario.closeEnough(snapped, Coord2d.of(10.0, 0.5), Coord2d.of(80.0, 0.0)),
+         "a snap on the far side of the room is not the stand"
+      );
+   }
+
+   @Test
    void blockedInRangeGoalSnapsInsteadOfClaimingArrival() {
       Coord2d start = Coord2d.of(0.0, 0.0);
       Coord2d dest = Coord2d.of(0.0, 100.0);

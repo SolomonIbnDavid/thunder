@@ -95,6 +95,23 @@ public class PathfinderFixtureTest {
    }
 
    @Test
+   void chairsAndChestsAreNeverBodyInflated() {
+      Coord2d origin = PrototypePathfinder.alignedOrigin(-22.0, -11.0);
+      int w = 20;
+      int h = 12;
+      Coord2d at = Coord2d.of(0.0, 0.0);
+      boolean[] solid = new boolean[w * h];
+      PrototypePathfinder.rasterObstacle(
+         solid, origin, w, h, at, false, "gfx/terobjs/chair", List.<Coord2d[]>of(box10(at.x, at.y)), 1.0, Collections.emptyList()
+      );
+      boolean[] dilated = Arrays.copyOf(solid, solid.length);
+      PrototypePathfinder.rasterObstacle(
+         dilated, origin, w, h, at, true, "gfx/terobjs/chest", List.<Coord2d[]>of(box10(at.x, at.y)), 1.0, diamondBody()
+      );
+      Assertions.assertArrayEquals(solid, dilated, "household furniture is never Minkowski-inflated");
+   }
+
+   @Test
    void idlePlayerStanding032TilesFromACupboardIsNotSolid() {
       Coord2d origin = PrototypePathfinder.alignedOrigin(-22.0, -22.0);
       int w = 24;
@@ -170,7 +187,7 @@ public class PathfinderFixtureTest {
          empty, origin, w, h, Coord2d.of(5.5, 5.5), false, "gfx/terobjs/chest", Collections.emptyList(), 6.6, Collections.emptyList()
       );
       Coord e = cellAt(origin, Coord2d.of(5.5, 5.5));
-      Assertions.assertTrue(empty[e.y * w + e.x], "no-layers geometry is a conservative disk, not free");
+      Assertions.assertFalse(empty[e.y * w + e.x], "empty furniture layers are unavailable, not a silent disk");
    }
 
    @Test
@@ -218,6 +235,41 @@ public class PathfinderFixtureTest {
       );
       Coord inside2 = cellAt(origin, Coord2d.of(4.0, 0.0));
       Assertions.assertTrue(negOnly[inside2.y * w + inside2.x], "without an Obstacle layer the Neg box is the movement solid");
+   }
+
+   @Test
+   void narrowValidAisleStaysOpenUnlessClearanceIsAppliedTwice() {
+      Coord2d origin = PrototypePathfinder.alignedOrigin(-22.0, -11.0);
+      int w = 24;
+      int h = 12;
+      boolean[] solid = new boolean[w * h];
+      rasterFurniture(solid, origin, w, h, Coord2d.of(0.0, 0.0));
+      rasterFurniture(solid, origin, w, h, Coord2d.of(11.0, 0.0));
+      Coord aisle = cellAt(origin, Coord2d.of(5.5, 9.0));
+      Assertions.assertFalse(solid[aisle.y * w + aisle.x], "narrow valid cupboard aisle stays walkable");
+      boolean[] dilated = Arrays.copyOf(solid, solid.length);
+      PrototypePathfinder.rasterObstacle(
+         dilated, origin, w, h, Coord2d.of(0.0, 0.0), true, CUPBOARD, List.<Coord2d[]>of(box10(0.0, 0.0)), 1.0, diamondBody()
+      );
+      PrototypePathfinder.rasterObstacle(
+         dilated, origin, w, h, Coord2d.of(11.0, 0.0), true, CUPBOARD, List.<Coord2d[]>of(box10(11.0, 0.0)), 1.0, diamondBody()
+      );
+      Assertions.assertArrayEquals(solid, dilated, "player Minkowski must not run again on furniture");
+      boolean[] twice = Arrays.copyOf(solid, solid.length);
+      PrototypePathfinder.dilate(twice, w, h, 1);
+      Assertions.assertTrue(twice[aisle.y * w + aisle.x], "applying occupancy dilation on top of exact furniture seals the aisle");
+   }
+
+   @Test
+   void genuinelyTooNarrowAisleIsBlocked() {
+      Coord2d origin = PrototypePathfinder.alignedOrigin(-22.0, -11.0);
+      int w = 20;
+      int h = 12;
+      boolean[] solid = new boolean[w * h];
+      rasterFurniture(solid, origin, w, h, Coord2d.of(0.0, 0.0));
+      rasterFurniture(solid, origin, w, h, Coord2d.of(10.5, 0.0));
+      Coord pinch = cellAt(origin, Coord2d.of(5.25, 0.0));
+      Assertions.assertTrue(solid[pinch.y * w + pinch.x], "a 0.5u gap is not a legal passage");
    }
 
    private static final class ArrayGrid implements Grid {

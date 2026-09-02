@@ -2,6 +2,7 @@ package haven.pathfinding;
 
 import haven.Coord;
 import haven.Coord2d;
+import haven.nav.InteractionSpec;
 import haven.nav.NavDecision;
 import haven.nav.NavObservation;
 import haven.nav.NavOutcome;
@@ -296,5 +297,99 @@ public class SurfaceStreamTest {
       SurfaceController.Tick atHorizon = c.step(obs(500L, horizon.x, horizon.y, false), occ);
       Assertions.assertNotEquals(NavOutcome.REACHED, atHorizon.decision.outcome);
       Assertions.assertEquals(SurfaceStream.Reason.HORIZON_ADVANCE, atHorizon.reason);
+   }
+
+   @Test
+   void interactionLastHopIsOnlyFromNearby() {
+      OccupancyGrid occ = withSolid(24, 8, new Coord[]{Coord.of(20, 4)});
+      Coord2d pose = occ.world(20, 4);
+      Coord2d start = occ.world(2, 4);
+      Coord2d near = occ.world(18, 4);
+      List<Coord2d> route = Arrays.asList(start, pose);
+      InteractionSpec spec = new InteractionSpec("t", pose, Coord2d.of(1.375, 1.375), InteractionSpec.ALL_SIDES, 0.5, 35.0, 0, null, "state_changed");
+      Assertions.assertTrue(start.dist(pose) > SurfaceStream.LAST_HOP);
+      SurfaceStream.Farthest far = SurfaceStream.farthestValid(start, route, occ, null, null, spec);
+      Assertions.assertTrue(far.selectedIndex < 1, "must not last-hop from across the room");
+      Assertions.assertTrue(near.dist(pose) <= SurfaceStream.LAST_HOP);
+      SurfaceStream.Farthest hop = SurfaceStream.farthestValid(near, route, occ, null, null, spec);
+      Assertions.assertEquals(1, hop.selectedIndex);
+      SurfaceStream.Farthest noSpec = SurfaceStream.farthestValid(near, route, occ);
+      Assertions.assertTrue(noSpec.selectedIndex < 1, "without an interaction dest, occupancy still blocks the last cell");
+   }
+
+   @Test
+   void lastHopDoesNotCrossOtherFurniture() {
+      OccupancyGrid occ = withSolid(24, 8, new Coord[]{Coord.of(20, 4)});
+      Coord2d pose = occ.world(20, 4);
+      Coord2d near = occ.world(18, 4);
+      double mid = (near.x + pose.x) * 0.5;
+      Coord2d[] cabinet = new Coord2d[]{
+         Coord2d.of(mid - 0.6, pose.y - 8.0),
+         Coord2d.of(mid + 0.6, pose.y - 8.0),
+         Coord2d.of(mid + 0.6, pose.y + 8.0),
+         Coord2d.of(mid - 0.6, pose.y + 8.0)
+      };
+      List<Coord2d[]> solids = Collections.singletonList(cabinet);
+      List<Coord2d[]> body = Collections.singletonList(new Coord2d[]{
+         Coord2d.of(-1.0, -1.0), Coord2d.of(1.0, -1.0), Coord2d.of(1.0, 1.0), Coord2d.of(-1.0, 1.0)
+      });
+      InteractionSpec spec = new InteractionSpec("t", pose, Coord2d.of(1.375, 1.375), InteractionSpec.ALL_SIDES, 0.5, 35.0, 0, null, "");
+      List<Coord2d> route = Arrays.asList(near, pose);
+      Assertions.assertTrue(near.dist(pose) <= SurfaceStream.LAST_HOP);
+      Assertions.assertFalse(LocalPlanner.sweptClear(near, pose, body, solids, spec.polygons));
+      SurfaceStream.Farthest blocked = SurfaceStream.farthestValid(near, route, occ, solids, body, spec);
+      Assertions.assertTrue(blocked.selectedIndex < 1, "must not click through the adjacent cabinet");
+      SurfaceStream.Farthest distanceOnly = SurfaceStream.farthestValid(near, route, occ, null, null, spec);
+      Assertions.assertEquals(1, distanceOnly.selectedIndex);
+   }
+
+   @Test
+   void playerBodyDoesNotOverrideOccupancyCorridor() {
+      OccupancyGrid occ = open(24, 8);
+      List<Coord2d> route = Arrays.asList(occ.world(1, 3), occ.world(20, 3));
+      Coord2d[] fat = new Coord2d[]{
+         Coord2d.of(0.0, -20.0), Coord2d.of(80.0, -20.0), Coord2d.of(80.0, 40.0), Coord2d.of(0.0, 40.0)
+      };
+      List<Coord2d[]> solids = Collections.singletonList(fat);
+      List<Coord2d[]> body = Collections.singletonList(new Coord2d[]{
+         Coord2d.of(-4.0, 0.0), Coord2d.of(0.0, -4.0), Coord2d.of(4.0, 0.0), Coord2d.of(0.0, 4.0)
+      });
+      Assertions.assertFalse(LocalPlanner.sweptClear(route.get(0), route.get(1), body, solids, null));
+      SurfaceStream.Farthest pick = SurfaceStream.farthestValid(route.get(0), route, occ, solids, body, null);
+      Assertions.assertEquals(1, pick.selectedIndex);
+   }
+
+   @Test
+   void cornerClipRejectedByBodyCheckWhenExactGeometryAvailable() {
+      OccupancyGrid occ = solidOnly(20, 12, new Coord[]{Coord.of(7, 5)});
+      List<Coord2d[]> body = Collections.singletonList(new Coord2d[]{
+         Coord2d.of(-4.5, 0.0), Coord2d.of(0.0, -4.5),
+         Coord2d.of(4.5, 0.0), Coord2d.of(0.0, 4.5)
+      });
+      double cx = 7 * 2.75;
+      double cy = 5 * 2.75;
+      List<Coord2d[]> solids = Collections.singletonList(new Coord2d[]{
+         Coord2d.of(cx, cy), Coord2d.of(cx + 2.75, cy),
+         Coord2d.of(cx + 2.75, cy + 2.75), Coord2d.of(cx, cy + 2.75)
+      });
+      LocalPlanner.PolyBounds bounds = LocalPlanner.PolyBounds.of(solids);
+      Coord2d from = occ.world(4, 2);
+      Coord2d lastWp = occ.world(12, 6);
+      List<Coord2d> route = Arrays.asList(from, lastWp);
+      SurfaceStream.Farthest pick = SurfaceStream.farthestValid(from, route, occ, solids, body, null, bounds);
+      Assertions.assertTrue(pick.selectedIndex < 0 || pick.selectedIndex < route.size() - 1,
+         "body clip around a SOLID-only corner must reject or shorten the route");
+      SurfaceStream.Farthest noBody = SurfaceStream.farthestValid(from, route, occ, null, null, null);
+      Assertions.assertEquals(1, noBody.selectedIndex, "without body check, occupancy-only corridor passes to the last waypoint");
+   }
+
+   private static OccupancyGrid solidOnly(int w, int h, Coord[] solids) {
+      boolean[] solid = new boolean[w * h];
+      boolean[] dilated = new boolean[w * h];
+      for (Coord c : solids) {
+         solid[c.y * w + c.x] = true;
+      }
+      return OccupancyGrid.capture(Coord2d.of(0.0, 0.0), w, h, 2.75, solid, dilated, dilated,
+         Coord.of(0, 0), Coord.of(w - 1, 0), Coord.of(w - 1, 0), Collections.emptyList());
    }
 }

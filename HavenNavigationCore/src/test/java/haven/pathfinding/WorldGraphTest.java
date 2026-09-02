@@ -187,6 +187,16 @@ public class WorldGraphTest {
       Assertions.assertNull(none.cell);
    }
 
+   @Test
+   void exploreWithoutHintPicksNearestKnownSafeFrontier() {
+      Tiles src = new Tiles(12, 8);
+      src.fill(6, 0, 11, 7, CoarseTileSource.Tile.UNKNOWN);
+      ExploreFrontier.Result r = ExploreFrontier.select(src, Coord.of(1, 4), null, 64);
+      Assertions.assertTrue(r.picked());
+      Assertions.assertEquals(Coord.of(5, 0), r.cell);
+      Assertions.assertNotEquals(CoarseTileSource.Tile.UNKNOWN, src.tile(r.cell.x, r.cell.y));
+   }
+
    private static final class Tiles implements CoarseTileSource {
       final int w;
       final int h;

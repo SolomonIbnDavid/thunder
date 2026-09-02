@@ -21,6 +21,7 @@ public final class DebugBoot {
 	touch("thunder.TileQualityDebug");
 	touch("haven.GobWarningDebug");
 	touch("haven.pathfinding.PathfinderDebug");
+	touch("haven.pathfinding.CriticalRouteOverlay");
 	touch("haven.pathfinding.NavReplayRunner");
     }
 

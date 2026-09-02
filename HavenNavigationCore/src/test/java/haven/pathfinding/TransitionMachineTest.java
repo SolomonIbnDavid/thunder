@@ -155,6 +155,20 @@ public class TransitionMachineTest {
       Assertions.assertEquals(TransitionMachine.Phase.FAILED, m.state().phase);
    }
 
+   @Test
+   void houseDoorRequiresDistinctLanding() {
+      TransitionMachine house = new TransitionMachine(GOAL, SRC, "door", GraphEdge.Kind.DOOR_GATE, null, TransitionMachine.Auth.TOPOLOGY);
+      happyPrep(house);
+      Assertions.assertEquals(TransitionMachine.LANDING_UNKNOWN, house.capture(SRC, MobilityProfile.land(), false).reason);
+      TransitionMachine crossed = new TransitionMachine(GOAL, SRC, "door", GraphEdge.Kind.DOOR_GATE, null, TransitionMachine.Auth.TOPOLOGY);
+      Assertions.assertEquals(TransitionMachine.Phase.SUCCEEDED, happyPath(crossed, DST, MobilityProfile.land()).phase);
+      TransitionMachine stairs = new TransitionMachine(GOAL, SRC, "stairs", GraphEdge.Kind.CELLAR_STAIRS, null);
+      happyPrep(stairs);
+      Assertions.assertEquals(
+         TransitionMachine.Phase.SUCCEEDED, stairs.capture(SRC, MobilityProfile.land(), false, true).phase, "cellar stairs may keep a stale graph node if the stairs gob is gone and the player jumped"
+      );
+   }
+
    private static void happyPrep(TransitionMachine m) {
       m.selectApproach(true);
       m.arrived();

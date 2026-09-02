@@ -10,6 +10,24 @@ import org.junit.jupiter.api.Test;
 
 public class GridAStarTest {
    @Test
+   void fillCostsMatchAStarToAGoal() {
+      GridAStarTest.TestGrid grid = new GridAStarTest.TestGrid(10, 10);
+      Coord start = Coord.of(1, 1);
+      Coord goal = Coord.of(8, 8);
+      Result path = GridAStar.find(grid, start, goal, 1000);
+      GridAStar.Fill fill = GridAStar.fill(grid, start, 1000);
+      Assertions.assertTrue(path.complete);
+      double expected = 0.0;
+      for (int i = 1; i < path.cells.size(); i++) {
+         Coord a = path.cells.get(i - 1);
+         Coord b = path.cells.get(i);
+         boolean diag = Math.abs(a.x - b.x) == 1 && Math.abs(a.y - b.y) == 1;
+         expected += diag ? Math.sqrt(2.0) : 1.0;
+      }
+      Assertions.assertEquals(expected, fill.distance[goal.y * 10 + goal.x], 1.0E-9);
+   }
+
+   @Test
    void findsDiagonalPathAcrossOpenGrid() {
       GridAStarTest.TestGrid grid = new GridAStarTest.TestGrid(10, 10);
       Result result = GridAStar.find(grid, Coord.of(1, 1), Coord.of(8, 8), 1000);

@@ -239,6 +239,7 @@ public class CFG<T> {
     public static final CFG<Boolean> DEBUG_WARN = new CFG<>("debug.warn", false);
     public static final CFG<Boolean> DEBUG_PLOB_SNAP = new CFG<>("debug.plob_snap", false);
     public static final CFG<Boolean> DEBUG_PATHFIND = new CFG<>("debug.pathfind", false);
+    public static final CFG<Boolean> PF_ROUTE_OVERLAY = new CFG<>("debug.pf_route_overlay", true);
     public static final CFG<Boolean> DEBUG_CATALOG = new CFG<>("debug.catalog", false);
     public static final CFG<Boolean> DEBUG_PF_PROBE = new CFG<>("debug.pf_probe", false);
 

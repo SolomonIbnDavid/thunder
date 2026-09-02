@@ -105,25 +105,24 @@ public final class TransitionMachine {
    private State state;
 
    public TransitionMachine(NavGoal originalGoal, GraphNode source, String fixtureId, GraphEdge.Kind kind, GraphEdge candidate) {
-      Auth auth = authFor(kind, false);
-      if (candidate != null && candidate.stale()) {
-         this.state = fail(originalGoal, source, null, candidate, kind, fixtureId, auth, STALE_GRAPH_EDGE, 0, null);
-      } else {
-         this.state = new State(
-            Phase.SELECT_APPROACH, originalGoal, source, null, candidate, kind, fixtureId, auth, "", null, 0, null
-         );
-      }
+      this(originalGoal, source, fixtureId, kind, candidate, authFor(kind, false));
    }
 
    public TransitionMachine(
       NavGoal originalGoal, GraphNode source, String fixtureId, GraphEdge.Kind kind, GraphEdge candidate, boolean vehicleExit
    ) {
-      Auth auth = authFor(kind, vehicleExit);
+      this(originalGoal, source, fixtureId, kind, candidate, authFor(kind, vehicleExit));
+   }
+
+   public TransitionMachine(
+      NavGoal originalGoal, GraphNode source, String fixtureId, GraphEdge.Kind kind, GraphEdge candidate, Auth auth
+   ) {
+      Auth resolved = auth == null ? authFor(kind, false) : auth;
       if (candidate != null && candidate.stale()) {
-         this.state = fail(originalGoal, source, null, candidate, kind, fixtureId, auth, STALE_GRAPH_EDGE, 0, null);
+         this.state = fail(originalGoal, source, null, candidate, kind, fixtureId, resolved, STALE_GRAPH_EDGE, 0, null);
       } else {
          this.state = new State(
-            Phase.SELECT_APPROACH, originalGoal, source, null, candidate, kind, fixtureId, auth, "", null, 0, null
+            Phase.SELECT_APPROACH, originalGoal, source, null, candidate, kind, fixtureId, resolved, "", null, 0, null
          );
       }
    }
@@ -216,6 +215,10 @@ public final class TransitionMachine {
    }
 
    public State capture(GraphNode landing, MobilityProfile after, boolean ambiguous) {
+      return capture(landing, after, ambiguous, false);
+   }
+
+   public State capture(GraphNode landing, MobilityProfile after, boolean ambiguous, boolean relocated) {
       if (this.state.terminal()) {
          return this.state;
       }
@@ -228,7 +231,7 @@ public final class TransitionMachine {
       if (landing == null) {
          return failNow(LANDING_UNKNOWN);
       }
-      if (this.state.auth == Auth.TOPOLOGY && landing.equals(this.state.source)) {
+      if (this.state.auth == Auth.TOPOLOGY && landing.equals(this.state.source) && !relocated) {
          return failNow(LANDING_UNKNOWN);
       }
       if (this.state.auth == Auth.VEHICLE_ENTER && (after == null || !after.vehicle())) {

@@ -7,6 +7,7 @@ import haven.nav.NavDecision;
 import haven.nav.NavObservation;
 import haven.nav.NavOutcome;
 import haven.nav.NavPlanStatus;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -96,7 +97,7 @@ public class InteractionGoalsTest {
       Assertions.assertEquals(InteractionSpec.SIDE_E, r.selected.side);
       int disallowed = 0;
       for (int i = 0; i < r.considered.size(); i++) {
-         if ("disallowed_side".equals(r.considered.get(i).reject)) {
+         if ("wrong_side".equals(r.considered.get(i).reject) || "disallowed_side".equals(r.considered.get(i).reject)) {
             disallowed++;
          }
       }
@@ -195,11 +196,33 @@ public class InteractionGoalsTest {
       Assertions.assertEquals(InteractionSpec.SIDE_W, r.selected.side);
       int facing = 0;
       for (int i = 0; i < r.considered.size(); i++) {
-         if ("facing".equals(r.considered.get(i).reject)) {
+         if ("wrong_side".equals(r.considered.get(i).reject) || "facing".equals(r.considered.get(i).reject)) {
             facing++;
          }
       }
       Assertions.assertTrue(facing > 0);
+   }
+
+   @Test
+   void clickThroughDeskPrefersTheNearSide() {
+      int w = 24;
+      int h = 12;
+      List<Coord> blocks = new ArrayList<Coord>();
+      blocks.add(Coord.of(18, 6));
+      for (int y = 1; y < h; y++) {
+         blocks.add(Coord.of(12, y));
+         blocks.add(Coord.of(13, y));
+      }
+      OccupancyGrid occ = solids(w, h, blocks.toArray(new Coord[0]), false);
+      Coord2d gob = occ.world(18, 6);
+      Coord2d from = occ.world(4, 6);
+      InteractionSpec s = spec(gob, InteractionSpec.ALL_SIDES, 0.5, 35.0, 0, null);
+      Assertions.assertFalse(InteractionGoals.losClear(from, s, occ), "open-room click through the slab");
+      Assertions.assertTrue(InteractionGoals.losClear(occ.world(15, 6), s, occ), "stand beside the gob has LOS");
+      InteractionGoals.Result r = InteractionGoals.select(from, s, occ);
+      Assertions.assertTrue(r.ok(), r.reason);
+      Assertions.assertTrue(r.selected.cell.x > 13, "must stand on the gob side of the desk, not click through it");
+      Assertions.assertTrue(InteractionGoals.losClear(r.selected.world, s, occ));
    }
 
    @Test
@@ -220,6 +243,11 @@ public class InteractionGoalsTest {
       Assertions.assertEquals(InteractionGoals.NO_POSE, r.reason);
       Assertions.assertEquals(NavPlanStatus.FAILED, r.plan.status);
       Assertions.assertNull(r.selected);
+      int total = 0;
+      for (Integer count : r.rejectCounts.values()) {
+         total += count.intValue();
+      }
+      Assertions.assertTrue(total > 0, "typed failure must tally reject reasons, not only NO_POSE");
    }
 
    @Test

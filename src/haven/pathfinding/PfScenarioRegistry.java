@@ -40,6 +40,10 @@ final class PfScenarioRegistry {
       for (TransitionScenario.Kind k : TransitionScenario.Kind.values()) {
          register(new TransitionScenario(k));
       }
+      for (CriticalRouteScenario.Kind k : CriticalRouteScenario.Kind.values()) {
+         register(new CriticalRouteScenario(k));
+      }
+      register(new RecordedRouteScenario());
    }
 
    private PfScenarioRegistry() {

@@ -37,6 +37,9 @@ public final class PathfinderLog {
    private static volatile List<Coord2d> lastHazards = Collections.emptyList();
    private static volatile JSONObject lastInteraction;
    private static volatile JSONObject lastGraph;
+   private static volatile JSONObject lastGeometry;
+   private static volatile List<Coord2d[]> lastSolids = Collections.emptyList();
+   private static volatile List<Coord2d[]> lastPlayerBody = Collections.emptyList();
    private static final ThreadLocal<String> target = new ThreadLocal<>();
    private static final ThreadLocal<Integer> probeDepth = ThreadLocal.withInitial(() -> 0);
 
@@ -52,6 +55,25 @@ public final class PathfinderLog {
             }
          }
       });
+   }
+
+   public static void resetRun() {
+      synchronized (recent) {
+         recent.clear();
+         last = null;
+         lastPath = Collections.emptyList();
+         lastAStar = Collections.emptyList();
+         lastPolys = Collections.emptyList();
+         lastDest = null;
+         lastOcc = null;
+         lastReason = "";
+         lastReplanReason = "";
+         lastActiveWaypoint = null;
+         lastConfirmedPos = null;
+         lastHazards = Collections.emptyList();
+         lastInteraction = null;
+         lastGraph = null;
+      }
    }
 
    public static void setTarget(String label) {
@@ -181,6 +203,17 @@ public final class PathfinderLog {
       lastOcc = occ;
    }
 
+   /**
+    * Drops the cached occupancy snapshot and the exact solid/body geometry so
+    * the next leg is forced to rebuild local geometry instead of planning
+    * against the previous floor after an authoritative surface change.
+    */
+   public static void invalidateOccupancy() {
+      lastOcc = null;
+      lastSolids = Collections.emptyList();
+      lastPlayerBody = Collections.emptyList();
+   }
+
    public static String lastReason() {
       return lastReason;
    }
@@ -239,8 +272,59 @@ public final class PathfinderLog {
       lastGraph = graph;
    }
 
+   /** Compact transition diagnostic entry; same slot as the graph evidence, tagged with a stage. */
+   public static void recordTransition(String stage, JSONObject o) {
+      if (o != null) {
+         o.put("stage", stage == null ? "" : stage);
+         recordGraph(o);
+      }
+   }
+
    public static JSONObject lastGraph() {
       return lastGraph;
+   }
+
+   public static void recordExactGeometry(List<Coord2d[]> solids, List<Coord2d[]> playerBody) {
+      lastSolids = solids == null ? Collections.<Coord2d[]>emptyList() : solids;
+      lastPlayerBody = playerBody == null ? Collections.<Coord2d[]>emptyList() : playerBody;
+   }
+
+   public static List<Coord2d[]> lastSolids() {
+      return lastSolids;
+   }
+
+   public static List<Coord2d[]> lastPlayerBody() {
+      return lastPlayerBody;
+   }
+
+   public static void recordGeometryDump(JSONObject dump) {
+      lastGeometry = dump;
+      if (dump != null) {
+         appendGeometry(dump);
+      }
+   }
+
+   public static JSONObject lastGeometryDump() {
+      return lastGeometry;
+   }
+
+   public static Path geometryDumpFile() {
+      return Utils.path(System.getProperty("user.dir", ".")).resolve("dev-snapshots").resolve("pf").resolve("geometry-dump.jsonl");
+   }
+
+   private static void appendGeometry(JSONObject o) {
+      try {
+         Path file = geometryDumpFile();
+         Files.createDirectories(file.getParent());
+         Writer w = Files.newBufferedWriter(file, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+         try {
+            w.write(o.toString());
+            w.write(10);
+         } finally {
+            w.close();
+         }
+      } catch (IOException ignored) {
+      }
    }
 
    private static Coord2d point2d(Object v) {

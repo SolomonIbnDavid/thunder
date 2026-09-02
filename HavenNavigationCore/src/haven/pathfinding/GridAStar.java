@@ -109,6 +109,61 @@ public final class GridAStar {
       }
    }
 
+   /**
+    * Dijkstra from {@code start} to every reachable cell. Same neighbor
+    * rules as {@link #find}; used to rank many stands without one A* each.
+    */
+   public static GridAStar.Fill fill(GridAStar.Grid grid, Coord start, int maxExpanded) {
+      int w = grid.width();
+      int h = grid.height();
+      int n = w * h;
+      double[] distance = new double[n];
+      Arrays.fill(distance, Double.POSITIVE_INFINITY);
+      int[] parent = new int[n];
+      Arrays.fill(parent, -1);
+      if (w <= 0 || h <= 0 || !inside(start, w, h) || maxExpanded <= 0) {
+         return new GridAStar.Fill(distance, parent, 0);
+      }
+      boolean[] closed = new boolean[n];
+      PriorityQueue<GridAStar.Open> open = new PriorityQueue<GridAStar.Open>();
+      int sid = id(start.x, start.y, w);
+      distance[sid] = 0.0;
+      open.add(new GridAStar.Open(sid, 0.0));
+      int expanded = 0;
+      while (!open.isEmpty() && expanded < maxExpanded) {
+         GridAStar.Open item = open.poll();
+         int cur = item.id;
+         if (closed[cur]) {
+            continue;
+         }
+         closed[cur] = true;
+         expanded++;
+         int x = cur % w;
+         int y = cur / w;
+         for (int d = 0; d < DX.length; d++) {
+            int nx = x + DX[d];
+            int ny = y + DY[d];
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h || grid.blocked(nx, ny)) {
+               continue;
+            }
+            if (DX[d] != 0 && DY[d] != 0
+               && (grid.blocked(x + DX[d], y) || grid.blocked(x, y + DY[d])
+                  || besideObstacle(grid, x, y) || besideObstacle(grid, nx, ny))) {
+               continue;
+            }
+            int next = id(nx, ny, w);
+            double step = DX[d] != 0 && DY[d] != 0 ? SQRT2 : 1.0;
+            double nd = distance[cur] + step * Math.max(0.01, grid.cost(nx, ny));
+            if (nd < distance[next]) {
+               distance[next] = nd;
+               parent[next] = cur;
+               open.add(new GridAStar.Open(next, nd));
+            }
+         }
+      }
+      return new GridAStar.Fill(distance, parent, expanded);
+   }
+
    public static boolean besideObstacle(GridAStar.Grid grid, int x, int y) {
       if (grid == null) {
          return false;
@@ -202,6 +257,18 @@ public final class GridAStar {
       private Result(List<Coord> cells, boolean complete, int expanded) {
          this.cells = cells;
          this.complete = complete;
+         this.expanded = expanded;
+      }
+   }
+
+   public static final class Fill {
+      public final double[] distance;
+      public final int[] parent;
+      public final int expanded;
+
+      private Fill(double[] distance, int[] parent, int expanded) {
+         this.distance = distance;
+         this.parent = parent;
          this.expanded = expanded;
       }
    }

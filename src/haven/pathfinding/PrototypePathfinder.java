@@ -167,6 +167,10 @@ public final class PrototypePathfinder {
 
 
    public static PrototypePathfinder.Scene observe(GameUI gui) {
+      return observe(gui, true);
+   }
+
+   public static PrototypePathfinder.Scene observe(GameUI gui, boolean includeGobs) {
       PrototypePathfinder.Scene scene = new PrototypePathfinder.Scene();
       Gob player = gui != null && gui.map != null ? gui.map.player() : null;
       if (player != null && player.rc != null) {
@@ -203,10 +207,13 @@ public final class PrototypePathfinder {
          }
 
          scene.occupancy = PathfinderLog.Occupancy.capture(scene.origin, w, h, 2.75, solid, dilated, dilated, sc, null, null, Collections.emptyList());
-         scene.gobs = nearbyGeometry(gui, player, 220.0);
+         scene.gobs = includeGobs ? nearbyGeometry(gui, player, 220.0) : Collections.emptyList();
+         scene.solids = occ.solids;
+         scene.playerBody = PrototypePathfinder.playerBodyOrigin(player);
          PathfinderLog.recordOccupancy(scene.occupancy);
          PathfinderLog.recordHazards(occ.hazards);
          PathfinderLog.recordConfirmedPos(scene.player);
+         PathfinderLog.recordExactGeometry(scene.solids, scene.playerBody);
          return scene;
       } else {
          return scene;
@@ -232,31 +239,8 @@ public final class PrototypePathfinder {
          synchronized (gui.ui.sess.glob.oc) {
             for (Gob gob : gui.ui.sess.glob.oc) {
                if (gob != null && gob != player && !gob.virtual && gob.id >= 0L && gob.rc != null && !(gob.rc.dist(player.rc) > reach)) {
-                  PrototypePathfinder.GobGeom g = new PrototypePathfinder.GobGeom();
-                  g.id = gob.id;
-                  g.rc = gob.rc;
-                  g.a = gob.a;
-                  g.gobDist = gob.rc.dist(player.rc);
-
-                  try {
-                     g.name = displayName(gob);
-                     g.resid = gob.resid() == null ? "" : gob.resid();
-                     g.passable = Hitbox.passable(gob);
-                     g.cupboard = CupboardCatalog.isCupboardResid(g.resid);
-                     g.boulder = TransitionApproachSelector.isBoulderResid(g.resid);
-                     g.caveTransition = TransitionApproachSelector.isCaveTransitionResid(g.resid);
-                     g.doorGate = TransitionApproachSelector.isDoorGateResid(g.resid);
-                     g.gateState = gob.sdt();
-                     g.visitorGate = g.doorGate && gob.isVisitorGate();
-                     g.movement = Hitbox.movementPolygons(gob);
-                     g.hitbox = Hitbox.worldPolygons(gob, true);
-                     g.polyDist = minPolyDist(player.rc, g.movement);
-                     g.hitboxDist = minPolyDist(player.rc, g.hitbox);
-                  } catch (Loading var11) {
-                     g.name = "?";
-                  }
-
-                  if (g.cupboard || g.boulder || g.caveTransition || g.doorGate || g.polyDist <= 16.0 || g.gobDist <= MCache.tilesz.x * 2.0) {
+                  PrototypePathfinder.GobGeom g = gobGeom(player, gob);
+                  if (includeInScene(g)) {
                      out.add(g);
                   }
                }
@@ -268,6 +252,87 @@ public final class PrototypePathfinder {
       } else {
          return out;
       }
+   }
+
+   public static PrototypePathfinder.GobGeom gobGeom(GameUI gui, long id) {
+      if (gui == null || gui.map == null || gui.ui == null || gui.map.glob == null || id < 0L) {
+         return null;
+      }
+      synchronized (gui.ui) {
+         Gob gob = gui.map.glob.oc.getgob(id);
+         if (gob == null || gob.rc == null) {
+            return null;
+         }
+         return gobGeom(gui.map.player(), gob);
+      }
+   }
+
+   public static PrototypePathfinder.GobGeom gobGeom(Gob player, Gob gob) {
+      PrototypePathfinder.GobGeom g = new PrototypePathfinder.GobGeom();
+      if (gob == null) {
+         return g;
+      }
+      g.id = gob.id;
+      g.rc = gob.rc;
+      g.a = gob.a;
+      if (player != null && player.rc != null && gob.rc != null) {
+         g.gobDist = gob.rc.dist(player.rc);
+      }
+      try {
+         g.resid = gob.resid() == null ? "" : gob.resid();
+      } catch (Loading ignored) {
+         g.resid = "";
+      }
+      g.cupboard = CupboardCatalog.isCupboardResid(g.resid);
+      g.boulder = TransitionApproachSelector.isBoulderResid(g.resid);
+      g.caveTransition = TransitionApproachSelector.isCaveTransitionResid(g.resid);
+      g.doorGate = TransitionApproachSelector.isDoorGateResid(g.resid);
+      try {
+         g.name = displayName(gob);
+         g.passable = Hitbox.passable(gob);
+         g.gateState = gob.sdt();
+         g.visitorGate = g.doorGate && gob.isVisitorGate();
+         g.movement = Hitbox.movementPolygons(gob);
+         g.obst = Hitbox.obstaclePolygons(gob);
+         g.placement = Hitbox.placementPolygons(gob);
+         g.hitbox = Hitbox.worldPolygons(gob, true);
+         g.fallback = knownFurnitureFootprint(g.resid, g.rc, g.a);
+         CollisionGeom chosen = furnitureFootprint(g.resid)
+            ? furnitureGeometry(g.resid, g.rc, g.a, g.obst, g.movement)
+            : CollisionGeom.target(g.obst, g.movement);
+         g.collisionSource = chosen.source;
+         g.collision = chosen.polygons;
+         g.collisionReason = furnitureFootprint(g.resid)
+            ? CollisionGeom.furnitureChoiceReason(g.obst, g.fallback)
+            : chosen.source;
+         if (player != null && player.rc != null) {
+            g.polyDist = minPolyDist(player.rc, g.movement);
+            g.hitboxDist = minPolyDist(player.rc, g.hitbox);
+         }
+      } catch (Loading ignored) {
+         if (g.name == null || g.name.isEmpty()) {
+            g.name = "?";
+         }
+      }
+      return g;
+   }
+
+   /**
+    * Keep ladders/doors/boats even when hitboxes are still loading or the player is
+    * a courtyard away. The old 22u clutter cutoff dropped a recorded ladder from
+    * stand 2 and Walk died with {@code NO_FIXTURE}.
+    */
+   public static boolean includeInScene(PrototypePathfinder.GobGeom g) {
+      if (g == null) {
+         return false;
+      }
+      if (g.cupboard || g.boulder || g.caveTransition || g.doorGate) {
+         return true;
+      }
+      if (TransitionAdapter.kind(g.resid) != null) {
+         return true;
+      }
+      return g.polyDist <= 16.0 || g.gobDist <= MCache.tilesz.x * 2.0;
    }
 
    public static double minPolyDist(Coord2d p, List<Coord2d[]> polygons) {
@@ -465,9 +530,11 @@ public final class PrototypePathfinder {
                goToNearest(gui, rest);
             }
          }
+      } else if (args.length == 1 || (args.length >= 2 && "route".equals(args[1]))) {
+         gui.toggleCriticalRoutes();
       } else if (args.length != 3 && args.length != 4) {
          throw new Exception(
-            "Usage: pf [rel] <x> <y>  |  pf gob [id|name]  |  pf catalog [log|cancel]  |  pf probe [room|click|step|last]  |  pf debug  |  pf log  |  pf stuck"
+            "Usage: pf  |  pf route  |  pf [rel] <x> <y>  |  pf gob [id|name]  |  pf catalog [log|cancel]  |  pf probe [room|click|step|last]  |  pf debug  |  pf log  |  pf stuck"
          );
       } else {
          int off = args.length == 4 ? 2 : 1;
@@ -576,18 +643,16 @@ public final class PrototypePathfinder {
                try {
                   if (!Hitbox.passable(gob)) {
                      String resid = gob.resid();
-                     if (!inflate || !furnitureFootprint(resid)) {
+                     if (!inflate || !skipBodyInflate(resid)) {
                         List<Coord2d[]> polygons = collisionPolygons(gob);
-                        double disk = solidFootprint(resid) ? MCache.tilesz.x * 3.0 : MCache.tilesz.x * 0.6;
+                        double disk = obstacleDisk(resid);
                         if (rasterObstacle(grid, gob.rc, inflate, resid, polygons, disk, body)) {
                            count++;
                         }
 
-                        if (!inflate && debugPolys != null && debugPolys.size() < 48 && polygons != null && !polygons.isEmpty()) {
-                           if (!solidFootprint(resid) && !isHollowRing(polygons)) {
+                        if (!inflate && polygons != null && !polygons.isEmpty()) {
+                           if (debugPolys != null) {
                               debugPolys.addAll(polygons);
-                           } else {
-                              debugPolys.add(aabbPolygon(polygons, OVERLAP));
                            }
                         }
                      }
@@ -654,7 +719,7 @@ public final class PrototypePathfinder {
    private static boolean rasterObstacle(
       PrototypePathfinder.Grid grid, Coord2d center, boolean inflate, String resid, List<Coord2d[]> polygons, double diskFallback, List<Coord2d[]> body
    ) {
-      if (inflate && furnitureFootprint(resid)) {
+      if (inflate && skipBodyInflate(resid)) {
          return false;
       } else if (polygons != null && !polygons.isEmpty()) {
          if (inflate) {
@@ -665,8 +730,6 @@ public final class PrototypePathfinder {
             } else {
                rasterAabb(grid, polygons, body);
             }
-
-            return true;
          } else {
             if (!solidFootprint(resid) && !isHollowRing(polygons)) {
                for (Coord2d[] polygon : polygons) {
@@ -675,10 +738,16 @@ public final class PrototypePathfinder {
             } else {
                rasterAabb(grid, polygons, OVERLAP);
             }
-
-            return true;
          }
-      } else if (polygons != null && polygons.isEmpty() && furnitureFootprint(resid)) {
+         if (skimpyVegetation(resid, center, polygons)) {
+            double disk = diskFallback;
+            if (inflate) {
+               disk = diskFallback + boundingRadius(Coord2d.of(0.0, 0.0), body);
+            }
+            rasterDisk(grid, center, disk);
+         }
+         return true;
+      } else if (polygons != null && polygons.isEmpty()) {
          return false;
       } else {
          double disk = diskFallback;
@@ -704,19 +773,34 @@ public final class PrototypePathfinder {
    private static List<Coord2d[]> collisionPolygons(Gob gob) {
       String resid = gob.resid();
       if (furnitureFootprint(resid)) {
-         return Hitbox.obstaclePolygons(gob);
-      } else {
-         List<Coord2d[]> polygons = Hitbox.movementPolygons(gob);
-         if (solidFootprint(resid)) {
-            Coord2d[] known = knownBuildingFootprint(resid, gob.rc, gob.a);
-            if (known != null) {
-               polygons = new ArrayList<>(polygons);
-               polygons.add(known);
-            }
-         }
-
-         return polygons;
+         return furnitureCollision(resid, gob.rc, gob.a, Hitbox.obstaclePolygons(gob), Hitbox.movementPolygons(gob));
       }
+      CollisionGeom geom = CollisionGeom.target(Hitbox.obstaclePolygons(gob), Hitbox.movementPolygons(gob));
+      List<Coord2d[]> polygons = new ArrayList<Coord2d[]>(geom.polygons);
+      if (solidFootprint(resid)) {
+         Coord2d[] known = knownBuildingFootprint(resid, gob.rc, gob.a);
+         if (known != null) {
+            polygons.add(known);
+         }
+      }
+      return polygons;
+   }
+
+   /**
+    * Packed cupboards stay obstacle-only (empty obst = no occupancy). Other
+    * household furniture uses live obst if it is a real movement solid, else a
+    * rotated known fallback — never a union AABB of both.
+    */
+   static List<Coord2d[]> furnitureCollision(String resid, Coord2d rc, double a, List<Coord2d[]> obst, List<Coord2d[]> movement) {
+      return furnitureGeometry(resid, rc, a, obst, movement).polygons;
+   }
+
+   static CollisionGeom furnitureGeometry(String resid, Coord2d rc, double a, List<Coord2d[]> obst, List<Coord2d[]> movement) {
+      if (CupboardCatalog.isCupboardResid(resid)) {
+         List<Coord2d[]> used = obst == null ? Collections.<Coord2d[]>emptyList() : obst;
+         return new CollisionGeom(used, CollisionGeom.OBST);
+      }
+      return CollisionGeom.furniture(obst, knownFurnitureFootprint(resid, rc, a));
    }
 
    public static String baseResid(String resid) {
@@ -735,7 +819,55 @@ public final class PrototypePathfinder {
 
    public static boolean furnitureFootprint(String resid) {
       String name = baseResid(resid);
-      return name != null && FURNITURE_HALF.containsKey(name);
+      if (name == null || !name.startsWith("gfx/terobjs/")) {
+         return false;
+      }
+      if (name.startsWith("gfx/terobjs/arch/")
+         || name.startsWith("gfx/terobjs/vehicle/")
+         || name.startsWith("gfx/terobjs/trees/")
+         || name.startsWith("gfx/terobjs/bushes/")
+         || name.startsWith("gfx/terobjs/herbs/")
+         || name.startsWith("gfx/terobjs/plants/")
+         || name.startsWith("gfx/terobjs/bumlings/")
+         || name.startsWith("gfx/terobjs/items/")
+         || name.startsWith("gfx/terobjs/map/")
+         || name.contains("stockpile")) {
+         return false;
+      }
+      if (TransitionAdapter.kind(resid) != null || TransitionApproachSelector.isBoulderResid(resid)) {
+         return false;
+      }
+      return true;
+   }
+
+   static boolean skipBodyInflate(String resid) {
+      if (furnitureFootprint(resid)) {
+         return true;
+      }
+      String name = baseResid(resid);
+      return name != null && name.contains("hwall");
+   }
+
+   public static boolean vegetationResid(String resid) {
+      String name = baseResid(resid);
+      if (name == null) {
+         return false;
+      }
+      return name.contains("/trees/") || name.contains("/bushes/") || name.contains("/bumlings/");
+   }
+
+   public static double obstacleDisk(String resid) {
+      if (solidFootprint(resid)) {
+         return MCache.tilesz.x * 3.0;
+      }
+      if (vegetationResid(resid)) {
+         return MCache.tilesz.x;
+      }
+      return MCache.tilesz.x * 0.6;
+   }
+
+   static boolean skimpyVegetation(String resid, Coord2d center, List<Coord2d[]> polygons) {
+      return vegetationResid(resid) && boundingRadius(center, polygons) < MCache.tilesz.x * 0.5;
    }
 
    public static boolean wallClearance(String resid) {
@@ -749,6 +881,8 @@ public final class PrototypePathfinder {
       } else if (name.contains("brickwall") || name.contains("brickbig")) {
          return true;
       } else if (name.contains("drystone")) {
+         return true;
+      } else if (name.contains("hwall")) {
          return true;
       } else {
          return !name.contains("poleseg") && !name.contains("polecp") && !name.contains("polegate") && !name.contains("polebig")
@@ -1125,6 +1259,8 @@ public final class PrototypePathfinder {
       BUILDING_HALF.put("gfx/terobjs/arch/greenhouse", Coord2d.of(24.0, 18.0));
       BUILDING_HALF.put("gfx/terobjs/arch/stonehut", Coord2d.of(22.0, 16.0));
       FURNITURE_HALF.put("gfx/terobjs/cupboard", Coord2d.of(5.0, 5.0));
+      FURNITURE_HALF.put("gfx/terobjs/studydesk", Coord2d.of(6.0, 16.0));
+      FURNITURE_HALF.put("gfx/terobjs/studydesk-big", Coord2d.of(6.0, 16.0));
    }
 
    static final class ClipResult {
@@ -1149,7 +1285,13 @@ public final class PrototypePathfinder {
       public boolean passable;
       public int gateState = -1;
       public List<Coord2d[]> movement = Collections.emptyList();
+      public List<Coord2d[]> obst = Collections.emptyList();
+      public List<Coord2d[]> placement = Collections.emptyList();
       public List<Coord2d[]> hitbox = Collections.emptyList();
+      public List<Coord2d[]> collision = Collections.emptyList();
+      public Coord2d[] fallback;
+      public String collisionSource = "";
+      public String collisionReason = "";
    }
 
    static final class Grid extends NavGrid {
@@ -1193,9 +1335,10 @@ public final class PrototypePathfinder {
       final boolean[] dilated;
       final int obstacles;
       final List<Coord2d> hazards;
+      final List<Coord2d[]> solids;
 
       private OccupancyBuild(
-         PrototypePathfinder.Grid grid, boolean[] terrain, String[] terrainNames, boolean[] solid, boolean[] dilated, int obstacles, List<Coord2d> hazards
+         PrototypePathfinder.Grid grid, boolean[] terrain, String[] terrainNames, boolean[] solid, boolean[] dilated, int obstacles, List<Coord2d> hazards, List<Coord2d[]> solids
       ) {
          this.grid = grid;
          this.terrain = terrain;
@@ -1204,18 +1347,20 @@ public final class PrototypePathfinder {
          this.dilated = dilated;
          this.obstacles = obstacles;
          this.hazards = hazards == null ? Collections.emptyList() : hazards;
+         this.solids = solids == null ? Collections.<Coord2d[]>emptyList() : solids;
       }
 
       static PrototypePathfinder.OccupancyBuild build(GameUI gui, PrototypePathfinder.Grid grid, Gob player, List<Coord2d[]> debugPolys) {
          String[] terrainNames = new String[grid.blocked.length];
          boolean[] terrain = PrototypePathfinder.rasterTerrain(gui, grid, terrainNames);
-         int obstacles = PrototypePathfinder.rasterGobs(gui, grid, player, debugPolys, null);
+         List<Coord2d[]> solids = debugPolys != null ? debugPolys : new ArrayList<Coord2d[]>();
+         int obstacles = PrototypePathfinder.rasterGobs(gui, grid, player, solids, null);
          boolean[] solid = Arrays.copyOf(grid.blocked, grid.blocked.length);
          List<Coord2d[]> body = PrototypePathfinder.playerBodyOrigin(player);
          PrototypePathfinder.rasterGobs(gui, grid, player, null, body);
          PrototypePathfinder.inflateMasked(grid, terrain, body);
          boolean[] dilated = Arrays.copyOf(grid.blocked, grid.blocked.length);
-         return new PrototypePathfinder.OccupancyBuild(grid, terrain, terrainNames, solid, dilated, obstacles, movingHazards(gui, player));
+         return new PrototypePathfinder.OccupancyBuild(grid, terrain, terrainNames, solid, dilated, obstacles, movingHazards(gui, player), solids);
       }
    }
 
@@ -1317,6 +1462,8 @@ public final class PrototypePathfinder {
       public int obstacles;
       public PathfinderLog.Occupancy occupancy;
       public List<PrototypePathfinder.GobGeom> gobs = new ArrayList<>();
+      public List<Coord2d[]> solids = Collections.emptyList();
+      public List<Coord2d[]> playerBody = Collections.emptyList();
 
       @Override
       public Coord2d origin() {

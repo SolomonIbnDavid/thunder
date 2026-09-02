@@ -18,6 +18,8 @@ public final class SurfaceStream {
    public static final int MAX_RECOVERY = 2;
    public static final double CLICK_DEDUP = 1.0;
    public static final double DEVIATION = 16.5;
+   /** Max occupancy-blocked last click onto an interaction pose. Not the 35u interact radius. */
+   public static final double LAST_HOP = LocalPlanner.CELL * 3.0;
 
    public enum Reason {
       STOPPED_EARLY,
@@ -91,6 +93,29 @@ public final class SurfaceStream {
    }
 
    public static Farthest farthestValid(Coord2d from, List<Coord2d> smoothed, OccupancyGrid occ) {
+      return farthestValid(from, smoothed, occ, null, null, null);
+   }
+
+   public static Farthest farthestValid(
+      Coord2d from,
+      List<Coord2d> smoothed,
+      OccupancyGrid occ,
+      List<Coord2d[]> solids,
+      List<Coord2d[]> playerBody,
+      haven.nav.InteractionSpec ignoreTarget
+   ) {
+      return farthestValid(from, smoothed, occ, solids, playerBody, ignoreTarget, null);
+   }
+
+   public static Farthest farthestValid(
+      Coord2d from,
+      List<Coord2d> smoothed,
+      OccupancyGrid occ,
+      List<Coord2d[]> solids,
+      List<Coord2d[]> playerBody,
+      haven.nav.InteractionSpec ignoreTarget,
+      LocalPlanner.PolyBounds solidBounds
+   ) {
       if (smoothed == null || smoothed.isEmpty()) {
          return new Farthest(-1, null, -1, null, false, "empty_route");
       }
@@ -99,8 +124,8 @@ public final class SurfaceStream {
       if (occ == null) {
          return new Farthest(last, considered, last, considered, true, null);
       }
-      NavGrid grid = gridOf(occ);
-      boolean[] blocked = blockedOf(occ);
+      NavGrid grid = occ == null ? null : gridOf(occ);
+      boolean[] blocked = occ == null ? null : blockedOf(occ);
       int selected = -1;
       String why = null;
       for (int i = last; i >= 0; i--) {
@@ -111,7 +136,22 @@ public final class SurfaceStream {
          if (from != null && from.dist(wp) <= 1.0E-6 && i != last) {
             continue;
          }
-         if (corridorClear(from, wp, grid, blocked)) {
+         boolean clear = corridorClear(from, wp, grid, blocked);
+         boolean lastHopFallback = false;
+         if (!clear && i == last && lastHopClear(from, wp, ignoreTarget, solids, playerBody, solidBounds)) {
+            clear = true;
+            lastHopFallback = true;
+         }
+         if (clear && !lastHopFallback
+            && solids != null && !solids.isEmpty()
+            && playerBody != null && !playerBody.isEmpty()
+            && hasSolidNearSegment(from, wp, occ, LocalPlanner.bodyExtent(playerBody))) {
+            List<Coord2d[]> ignore = (ignoreTarget != null) ? ignoreTarget.polygons : null;
+            if (!LocalPlanner.sweptClear(from, wp, playerBody, solids, ignore, solidBounds)) {
+               clear = false;
+            }
+         }
+         if (clear) {
             selected = i;
             if (i != last) {
                why = "corridor_blocked_beyond";
@@ -123,6 +163,40 @@ public final class SurfaceStream {
          return new Farthest(-1, null, last, considered, false, "no_legal_corridor");
       }
       return new Farthest(selected, smoothed.get(selected), last, considered, true, why);
+   }
+
+   static boolean lastHopClear(Coord2d from, Coord2d pose, haven.nav.InteractionSpec spec) {
+      return lastHopClear(from, pose, spec, null, null);
+   }
+
+   static boolean lastHopClear(
+      Coord2d from,
+      Coord2d pose,
+      haven.nav.InteractionSpec spec,
+      List<Coord2d[]> solids,
+      List<Coord2d[]> playerBody
+   ) {
+      return lastHopClear(from, pose, spec, solids, playerBody, null);
+   }
+
+   static boolean lastHopClear(
+      Coord2d from,
+      Coord2d pose,
+      haven.nav.InteractionSpec spec,
+      List<Coord2d[]> solids,
+      List<Coord2d[]> playerBody,
+      LocalPlanner.PolyBounds solidBounds
+   ) {
+      if (spec == null || from == null || pose == null) {
+         return false;
+      }
+      if (from.dist(pose) > LAST_HOP) {
+         return false;
+      }
+      if (solids != null && !solids.isEmpty()) {
+         return LocalPlanner.sweptClear(from, pose, playerBody, solids, spec.polygons, solidBounds);
+      }
+      return true;
    }
 
    public static boolean corridorClear(Coord2d a, Coord2d b, OccupancyGrid occ) {
@@ -140,6 +214,30 @@ public final class SurfaceStream {
          return true;
       }
       return LocalPlanner.clear(a, b, grid, blocked);
+   }
+
+   static boolean hasSolidNearSegment(Coord2d a, Coord2d b, OccupancyGrid occ, double pad) {
+      if (occ == null || occ.occ == null || a == null || b == null) {
+         return false;
+      }
+      Coord ca = occ.cellOf(a);
+      Coord cb = occ.cellOf(b);
+      if (ca == null || cb == null) {
+         return false;
+      }
+      int cellPad = Math.max(1, (int)Math.ceil(pad / occ.cell));
+      int minx = Math.max(0, Math.min(ca.x, cb.x) - cellPad);
+      int maxx = Math.min(occ.w - 1, Math.max(ca.x, cb.x) + cellPad);
+      int miny = Math.max(0, Math.min(ca.y, cb.y) - cellPad);
+      int maxy = Math.min(occ.h - 1, Math.max(ca.y, cb.y) + cellPad);
+      for (int y = miny; y <= maxy; y++) {
+         for (int x = minx; x <= maxx; x++) {
+            if (occ.at(x, y) == OccupancyGrid.SOLID) {
+               return true;
+            }
+         }
+      }
+      return false;
    }
 
    public static boolean corridorChanged(OccupancyGrid prev, OccupancyGrid next, Coord2d a, Coord2d b) {

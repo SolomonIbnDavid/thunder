@@ -16,6 +16,7 @@ public class CustomCursors {
 	public Resource get() {return INSPECT.get();}
     };
     private static Consumer<Gob> pickCallback;
+    private static Consumer<Coord2d> markGroundCallback;
     private static boolean pickConsumeEmpty;
     private static boolean pickShowTooltip;
 
@@ -24,6 +25,11 @@ public class CustomCursors {
 	UI ui = map.ui;
 
 	if(isPicking(map)) {
+	    if(markGroundCallback != null) {
+		markGroundCallback.accept(mc);
+		stopPicking(map);
+		return true;
+	    }
 	    if(inf == null) {
 		if(pickConsumeEmpty) { stopPicking(map); return true; }
 		return false;
@@ -251,11 +257,23 @@ public class CustomCursors {
 	}
     }
 
+    public static void startMarkingGround(MapView map, Consumer<Coord2d> callback) {
+	stopCustomModes(map);
+	if(map.cursor == null) {
+	    markGroundCallback = callback;
+	    pickCallback = null;
+	    pickConsumeEmpty = false;
+	    pickShowTooltip = false;
+	    map.cursor = PICK;
+	}
+    }
+
     private static void stopPicking(MapView map) {
 	if(map.cursor == PICK) {
 	    map.cursor = null;
 	    map.ttip(null);
 	    pickCallback = null;
+	    markGroundCallback = null;
 	}
     }
 

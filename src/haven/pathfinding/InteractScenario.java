@@ -87,10 +87,11 @@ final class InteractScenario implements PfTestRunner.Scenario {
          return failClosed(checks, "NO_FIXTURE", "no automatic fixture for " + this.kind.name);
       }
       InteractionSpec spec = InteractionAdapter.fromGob(
-         gob, InteractionSpec.ALL_SIDES, this.kind.minDist, this.kind.maxDist, this.kind.clearance, null, this.kind.expected
+         gob, InteractionSpec.ALL_SIDES, this.kind.minDist, this.kind.maxDist, this.kind.clearance, null, this.kind.expected, scene.player
       );
       OccupancyGrid occ = scene.occupancy;
-      InteractionGoals.Result pose = InteractionGoals.select(scene.player, spec, occ);
+      InteractionGoals.Geometry geom = new InteractionGoals.Geometry(scene.solids, scene.playerBody);
+      InteractionGoals.Result pose = InteractionGoals.select(scene.player, spec, occ, geom);
       PathfinderLog.recordOccupancy(occ);
       PathfinderLog.recordInteraction(evidence(pose, spec, false, "", "", "", ""));
       if (!pose.ok() || pose.selected == null) {
@@ -123,10 +124,11 @@ final class InteractScenario implements PfTestRunner.Scenario {
                break;
             }
             spec = InteractionAdapter.fromGob(
-               gob, InteractionSpec.ALL_SIDES, this.kind.minDist, this.kind.maxDist, this.kind.clearance, null, this.kind.expected
+               gob, InteractionSpec.ALL_SIDES, this.kind.minDist, this.kind.maxDist, this.kind.clearance, null, this.kind.expected, spec.origin
             );
             occ = scene.occupancy;
-            pose = InteractionGoals.select(scene.player, spec, occ);
+            geom = new InteractionGoals.Geometry(scene.solids, scene.playerBody);
+            pose = InteractionGoals.select(scene.player, spec, occ, geom);
             PathfinderLog.recordInteraction(evidence(pose, spec, arrived, "", observed, retry, outcome));
             if (!pose.ok()) {
                outcome = "NO_POSE";
@@ -152,7 +154,6 @@ final class InteractScenario implements PfTestRunner.Scenario {
             spec
          );
          arrived = walk == WaypointWalker.Result.READY_TO_INTERACT;
-         checks.add(PfTestRunner.check("arrival", arrived, arrived ? "server-confirmed pose" : "walk " + walk));
          if (!arrived) {
             outcome = "NO_ARRIVAL";
             continue;
@@ -172,10 +173,8 @@ final class InteractScenario implements PfTestRunner.Scenario {
             outcome = "TARGET_GONE";
             break;
          }
-         InteractionSpec fresh = InteractionAdapter.fromGob(
-            live, spec.allowedSides, spec.minDist, spec.maxDist, spec.requiredClearance, spec.facing, spec.expectedResult
-         );
-         if (!InteractionVerifier.poseStillValid(pos, pose.selected.world, 2.475, spec, fresh.origin, fresh.half, true)) {
+         Coord2d liveOrigin = BuildingDoor.liveOrigin(live, spec);
+         if (!InteractionVerifier.poseStillValid(pos, pose.selected.world, 2.475, spec, liveOrigin, spec.half, true)) {
             retry = "footprint_changed";
             continue;
          }
@@ -191,7 +190,7 @@ final class InteractScenario implements PfTestRunner.Scenario {
             break;
          }
          interacted = true;
-         target.rclick(0);
+         BuildingDoor.interact(gui, target, spec);
          long t0 = System.currentTimeMillis();
          while (!InteractionVerifier.timedOut(System.currentTimeMillis() - t0, InteractionVerifier.WAIT_MS)) {
             bot.checkCancelled();
@@ -210,6 +209,7 @@ final class InteractScenario implements PfTestRunner.Scenario {
          retry = "timeout";
          outcome = "INTERACTION_TIMEOUT";
       }
+      checks.add(PfTestRunner.check("arrival", arrived, arrived ? "server-confirmed pose" : outcome));
       checks.add(PfTestRunner.check("no_click_before_arrival", !interacted || arrived, arrived ? "clicked after arrival" : "no click"));
       checks.add(PfTestRunner.check("interaction_confirmed", confirmed, confirmed ? observed : outcome));
       JSONObject facts = new JSONObject()
@@ -426,6 +426,24 @@ final class InteractScenario implements PfTestRunner.Scenario {
          }
       }
       o.put("candidates", cands);
+      o.put("geometry_source", spec == null ? "" : spec.geometrySource);
+      JSONObject tally = new JSONObject();
+      java.util.Map<String, Integer> counts = r == null ? InteractionGoals.tally(null) : r.rejectCounts;
+      String[] keys = new String[] {
+         "body_collision",
+         "target_overlap",
+         "other_obstacle_overlap",
+         "no_los",
+         "insufficient_clearance",
+         "unreachable",
+         "outside_range",
+         "wrong_side",
+         "geometry_unavailable"
+      };
+      for (int i = 0; i < keys.length; i++) {
+         tally.put(keys[i], counts.containsKey(keys[i]) ? counts.get(keys[i]).intValue() : 0);
+      }
+      o.put("reject_counts", tally);
       o.put("arrival", arrived);
       o.put("decision", decision);
       o.put("observed_result", observed);

@@ -174,6 +174,21 @@ public class NavReplayTest {
    }
 
    @Test
+   void resetRunDropsStaleReplayEvidence() {
+      Occupancy occ = Occupancy.capture(
+         Coord2d.of(0.0, 0.0), 2, 2, 2.75, new boolean[4], new boolean[4], new boolean[4], Coord.of(0, 0), Coord.of(1, 1), Coord.of(1, 1), List.of()
+      );
+      PathfinderLog.recordOccupancy(occ);
+      PathfinderLog.recordGraph(new JSONObject().put("source", "stale"));
+      PathfinderLog.recordDest(Coord2d.of(9.0, 9.0));
+      PathfinderLog.resetRun();
+      JSONObject doc = NavReplayIO.document(new PfTestRunner.Run("observe"), new JSONObject().put("status", "completed").put("verdict", "FAIL"));
+      Assertions.assertFalse(doc.has("graph"));
+      Assertions.assertEquals(0, doc.getJSONArray("decisions").length());
+      Assertions.assertEquals(0, doc.getJSONArray("raw_route").length());
+   }
+
+   @Test
    void parseRejectsWrongVersion() {
       JSONObject bad = new JSONObject().put("format", "NavReplay").put("version", 2);
       Assertions.assertThrows(IllegalArgumentException.class, () -> NavReplay.parseObject(bad));

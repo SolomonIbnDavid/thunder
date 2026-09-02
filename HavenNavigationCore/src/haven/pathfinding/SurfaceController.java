@@ -9,6 +9,7 @@ import haven.nav.NavOutcome;
 import haven.nav.NavPlan;
 import haven.nav.NavPlanStatus;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -54,6 +55,9 @@ public final class SurfaceController {
    private final InteractionSpec interactionSpec;
    private Coord2d destGoal;
    private boolean interactIssued;
+   private List<Coord2d[]> exactSolids = Collections.emptyList();
+   private List<Coord2d[]> playerBody = Collections.emptyList();
+   private LocalPlanner.PolyBounds exactBounds = LocalPlanner.PolyBounds.of(Collections.<Coord2d[]>emptyList());
 
    public SurfaceController(
       Coord2d originalGoal,
@@ -139,6 +143,28 @@ public final class SurfaceController {
       return new SurfaceController(g, smoothed, status, eps, moveProgress, startTimeoutMs, walkTimeoutMs, jiggleWindowMs, true, true, spec);
    }
 
+   public void setExactGeometry(List<Coord2d[]> solids, List<Coord2d[]> playerBody) {
+      this.exactSolids = solids == null ? Collections.<Coord2d[]>emptyList() : solids;
+      this.playerBody = playerBody == null ? Collections.<Coord2d[]>emptyList() : playerBody;
+      this.exactBounds = LocalPlanner.PolyBounds.of(this.exactSolids);
+   }
+
+   private boolean exactCorridor() {
+      return this.exactSolids != null && !this.exactSolids.isEmpty();
+   }
+
+   private SurfaceStream.Farthest farthest(Coord2d pos) {
+      return SurfaceStream.farthestValid(pos, this.smoothed, this.occupancy, this.exactSolids, this.playerBody, this.interactionSpec, this.exactBounds);
+   }
+
+   private boolean corridorOpen(Coord2d a, Coord2d b) {
+      if (b != null && dest() != null && b.dist(dest()) <= 1.0E-3
+         && SurfaceStream.lastHopClear(a, b, this.interactionSpec, this.exactSolids, this.playerBody, this.exactBounds)) {
+         return true;
+      }
+      return SurfaceStream.corridorClear(a, b, this.occupancy);
+   }
+
    private Coord2d dest() {
       return this.destGoal != null ? this.destGoal : this.originalGoal;
    }
@@ -216,7 +242,7 @@ public final class SurfaceController {
             this.lastPos = pos;
             return recover(pos, SurfaceStream.Reason.OBSTACLE_CHANGED, "obstacle_changed");
          }
-         if (!SurfaceStream.corridorClear(pos, this.lastSent, this.occupancy)) {
+         if (!corridorOpen(pos, this.lastSent)) {
             this.lastPos = pos;
             return recover(pos, SurfaceStream.Reason.CORRIDOR_INVALID, "corridor_invalid");
          }
@@ -250,7 +276,7 @@ public final class SurfaceController {
          this.lastPos = pos;
          return terminate(NavOutcome.UNAVAILABLE, SurfaceStream.Reason.START_TIMEOUT, "start_timeout");
       }
-      SurfaceStream.Farthest pick = SurfaceStream.farthestValid(pos, this.smoothed, this.occupancy);
+      SurfaceStream.Farthest pick = farthest(pos);
       this.lastPick = pick;
       if (pick.selected == null) {
          this.lastPos = pos;
@@ -324,7 +350,11 @@ public final class SurfaceController {
       this.recoveryCount++;
       long t0ns = System.nanoTime();
       if (this.interactionSpec != null) {
-         InteractionGoals.Result next = InteractionGoals.select(pos, this.interactionSpec, this.occupancy);
+         InteractionGoals.Geometry geom = exactCorridor() ? new InteractionGoals.Geometry(this.exactSolids, this.playerBody) : null;
+         InteractionGoals.Result next = InteractionGoals.replanExisting(pos, dest(), this.interactionSpec, this.occupancy, geom);
+         if (!next.ok()) {
+            next = InteractionGoals.select(pos, this.interactionSpec, this.occupancy, geom);
+         }
          this.planMs = (System.nanoTime() - t0ns) / 1000000L;
          if (next.ok() && next.selected != null && next.plan != null && next.plan.smoothedRoute != null && next.plan.smoothedRoute.size() >= 2) {
             this.destGoal = next.selected.world;
@@ -333,7 +363,7 @@ public final class SurfaceController {
             Coord2d prevSent = this.lastSent;
             this.lastSent = null;
             this.awaitingEscape = false;
-            SurfaceStream.Farthest pick = SurfaceStream.farthestValid(pos, this.smoothed, this.occupancy);
+            SurfaceStream.Farthest pick = farthest(pos);
             this.lastPick = pick;
             if (pick.selected != null && !SurfaceStream.abaOscillation(this.sentBeforeLast, prevSent, pick.selected, this.eps)) {
                return sendRecovery(pick.selected, pick, null, prevSent);
@@ -349,7 +379,7 @@ public final class SurfaceController {
          Coord2d prevSent = this.lastSent;
          this.lastSent = null;
          this.awaitingEscape = false;
-         SurfaceStream.Farthest pick = SurfaceStream.farthestValid(pos, this.smoothed, this.occupancy);
+         SurfaceStream.Farthest pick = farthest(pos);
          this.lastPick = pick;
          if (pick.selected != null && !SurfaceStream.abaOscillation(this.sentBeforeLast, prevSent, pick.selected, this.eps)) {
             return sendRecovery(pick.selected, pick, null, prevSent);

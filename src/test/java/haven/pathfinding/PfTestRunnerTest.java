@@ -96,7 +96,16 @@ public class PfTestRunnerTest {
       "vehicle_travel",
       "vehicle_exit",
       "hearth_travel",
-      "explore_frontier"
+      "explore_frontier",
+      "campaign_surface_out_and_back",
+      "campaign_surface_and_door",
+      "campaign_door_gate_roundtrip",
+      "campaign_cellar_roundtrip",
+      "campaign_minehole_roundtrip",
+      "campaign_cave_roundtrip",
+      "campaign_boat_roundtrip",
+      "campaign_vehicle_roundtrip",
+      "campaign_recorded"
    );
 
    @Test

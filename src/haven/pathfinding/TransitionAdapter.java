@@ -1,5 +1,6 @@
 package haven.pathfinding;
 
+import haven.Coord2d;
 import haven.nav.GraphEdge;
 import haven.nav.GraphNode;
 import haven.nav.MobilityProfile;
@@ -62,8 +63,60 @@ public final class TransitionAdapter {
       return n != null && n.contains("cave") && !n.contains("cellar");
    }
 
+   public static boolean isHouseDoorResid(String resid) {
+      return BuildingDoor.isHouseHull(resid)
+         || TransitionApproachSelector.doorGateKind(resid) == TransitionApproachSelector.DoorGateKind.DOOR;
+   }
+
+   /** Palisade / pole / stone / brick gates that open in place. Not house instance doors. */
+   public static boolean isPassThroughGate(String resid) {
+      return TransitionApproachSelector.isGateResid(resid);
+   }
+
+   /** World point just past the gate along the approach → threshold line. */
+   public static Coord2d gateThroughPoint(Coord2d from, Coord2d gate, double pastU) {
+      if (gate == null) {
+         return null;
+      }
+      double past = pastU > 0.0 ? pastU : 12.0;
+      if (from == null) {
+         return gate.add(past, 0.0);
+      }
+      double dx = gate.x - from.x;
+      double dy = gate.y - from.y;
+      double len = Math.hypot(dx, dy);
+      if (len < 1.0) {
+         return gate.add(past, 0.0);
+      }
+      return Coord2d.of(gate.x + dx / len * past, gate.y + dy / len * past);
+   }
+
+   /** True when {@code at} is strictly beyond the gate center along from → gate. */
+   public static boolean pastGate(Coord2d from, Coord2d gate, Coord2d at) {
+      if (from == null || gate == null || at == null) {
+         return false;
+      }
+      double tx = gate.x - from.x;
+      double ty = gate.y - from.y;
+      double travel2 = tx * tx + ty * ty;
+      if (travel2 < 1.0) {
+         return at.dist(gate) >= 6.0;
+      }
+      double mx = at.x - from.x;
+      double my = at.y - from.y;
+      return mx * tx + my * ty > travel2;
+   }
+
+   /** House instance doors change map segment; palisade/wall gates only change sdt. */
+   public static TransitionMachine.Auth authFor(GraphEdge.Kind kind, boolean vehicleExit, String resid) {
+      if (kind == GraphEdge.Kind.DOOR_GATE && isHouseDoorResid(resid)) {
+         return TransitionMachine.Auth.TOPOLOGY;
+      }
+      return TransitionMachine.authFor(kind, vehicleExit);
+   }
+
    public static boolean topologyChanged(GraphNode before, GraphNode after) {
-      return before != null && after != null && !before.equals(after);
+      return before != null && after != null && !before.sameWalkRegion(after);
    }
 
    public static boolean boarded(long vehicleBefore, long vehicleAfter) {

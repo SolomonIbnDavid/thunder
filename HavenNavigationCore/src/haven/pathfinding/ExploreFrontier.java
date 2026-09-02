@@ -57,7 +57,7 @@ public final class ExploreFrontier {
             break;
          }
          if (isFrontier(src, c)) {
-            int score = destHint == null ? 0 : chebyshev(c, destHint);
+            int score = destHint == null ? chebyshev(c, start) : chebyshev(c, destHint);
             if (bestFrontier == null || score < bestScore || score == bestScore && (c.x < bestFrontier.x || c.x == bestFrontier.x && c.y < bestFrontier.y)) {
                bestFrontier = c;
                bestScore = score;

@@ -40,6 +40,8 @@ public final class TransitionApproachSelector {
             case "gfx/terobjs/arch/cellardoor":
                return TransitionApproachSelector.TransitionKind.CELLAR_DOOR;
             case "gfx/terobjs/arch/cellarstairs":
+            case "gfx/terobjs/arch/downstairs":
+            case "gfx/terobjs/arch/upstairs":
                return TransitionApproachSelector.TransitionKind.CELLAR_STAIRS;
             default:
                return null;

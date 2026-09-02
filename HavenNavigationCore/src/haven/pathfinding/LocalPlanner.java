@@ -20,7 +20,8 @@ public final class LocalPlanner {
    public static final double DEFAULT_AGENT_RADIUS = 4.5;
    public static final int MAX_SIDE = 192;
    public static final int MAX_EXPANDED = 36864;
-   private static final double MARGIN = 33.0;
+   /** Padding around start→dest so A* can walk around a village yard, not only along the straight line. */
+   private static final double MARGIN = 110.0;
    public static final double OVERLAP = 2.75 * Math.sqrt(2.0) / 2.0;
    public static final double MAX_REACH = 462.0;
 
@@ -125,7 +126,7 @@ public final class LocalPlanner {
                   }
                }
 
-               List<Coord2d> waypoints = smooth(raw, grid, dilated);
+               List<Coord2d> waypoints = smooth(raw, grid, grid.blocked);
                boolean complete = result.complete;
                NavPlanStatus status;
                if (waypoints.size() < 2) {
@@ -206,12 +207,51 @@ public final class LocalPlanner {
          byte v = occ.occ[i];
          if (v == OccupancyGrid.SOLID) {
             solid[i] = true;
+            grid.blocked[i] = true;
          } else if (v == OccupancyGrid.DILATED || v == OccupancyGrid.CARVED) {
             dilated[i] = true;
             grid.blocked[i] = true;
          }
       }
       return planCore(start, destinations, targets, clip.clipped, snap, radius, grid, solid, dilated, obstacles, tr);
+   }
+
+   /**
+    * Occupancy g-score from {@code start} to every cell, using the same
+    * blocked mask, clearance costs, and start-pocket carve as
+    * {@link #planFromOccupancy} with radius 0.
+    */
+   public static double[] occupancyCosts(Coord2d start, OccupancyGrid occ) {
+      if (start == null || occ == null || occ.w <= 0 || occ.h <= 0 || occ.occ == null) {
+         return new double[0];
+      }
+      int w = occ.w;
+      int h = occ.h;
+      NavGrid grid = new NavGrid(occ.origin, w, occ.h);
+      boolean[] solid = new boolean[w * h];
+      int n = Math.min(occ.occ.length, solid.length);
+      for (int i = 0; i < n; i++) {
+         byte v = occ.occ[i];
+         if (v == OccupancyGrid.SOLID) {
+            solid[i] = true;
+            grid.blocked[i] = true;
+         } else if (v == OccupancyGrid.DILATED || v == OccupancyGrid.CARVED) {
+            grid.blocked[i] = true;
+         }
+      }
+      Coord sc = occ.cellOf(start);
+      if (sc == null || sc.x < 0 || sc.y < 0 || sc.x >= w || sc.y >= h) {
+         double[] miss = new double[w * h];
+         Arrays.fill(miss, Double.POSITIVE_INFINITY);
+         return miss;
+      }
+      int dil = dilationCells(0.0);
+      applyClearanceCost(grid.cost, solid, w, h);
+      openFootprint(grid.blocked, w, h, sc.x, sc.y, dil, solid);
+      if (grid.blocked[sc.y * w + sc.x]) {
+         openStartPocket(grid.blocked, w, h, sc.x, sc.y, dil + 1);
+      }
+      return GridAStar.fill(grid, sc, MAX_EXPANDED).distance;
    }
 
    public static LocalPlanner.ClipResult clipToHorizon(Coord2d start, List<Coord2d> destinations) {
@@ -248,8 +288,9 @@ public final class LocalPlanner {
          }
       }
 
-      double spanX = Math.min(528.0, maxx - minx + 66.0);
-      double spanY = Math.min(528.0, maxy - miny + 66.0);
+      double pad = 2.0 * MARGIN;
+      double spanX = Math.min(528.0, maxx - minx + pad);
+      double spanY = Math.min(528.0, maxy - miny + pad);
       double cx = (minx + maxx) * 0.5;
       double cy = (miny + maxy) * 0.5;
       int w = Math.max(8, Math.min(192, (int)Math.ceil(spanX / 2.75)));
@@ -724,6 +765,256 @@ public final class LocalPlanner {
          }
       }
    }
+   public static boolean polygonEquals(Coord2d[] a, Coord2d[] b) {
+      if (a == b) {
+         return true;
+      }
+      if (a == null || b == null || a.length != b.length) {
+         return false;
+      }
+      for (int i = 0; i < a.length; i++) {
+         Coord2d p = a[i];
+         Coord2d q = b[i];
+         if (p == q) {
+            continue;
+         }
+         if (p == null || q == null) {
+            return false;
+         }
+         if (p.x != q.x || p.y != q.y) {
+            return false;
+         }
+      }
+      return true;
+   }
+
+   public static boolean listed(Coord2d[] poly, List<Coord2d[]> list) {
+      if (poly == null || list == null) {
+         return false;
+      }
+      for (int i = 0; i < list.size(); i++) {
+         if (polygonEquals(poly, list.get(i))) {
+            return true;
+         }
+      }
+      return false;
+   }
+
+   public static final class PolyBounds {
+      public final List<Coord2d[]> polys;
+      public final double[] minx;
+      public final double[] miny;
+      public final double[] maxx;
+      public final double[] maxy;
+
+      PolyBounds(List<Coord2d[]> polys, double[] minx, double[] miny, double[] maxx, double[] maxy) {
+         this.polys = polys;
+         this.minx = minx;
+         this.miny = miny;
+         this.maxx = maxx;
+         this.maxy = maxy;
+      }
+
+      public static PolyBounds of(List<Coord2d[]> solids) {
+         List<Coord2d[]> list = solids == null ? Collections.<Coord2d[]>emptyList() : solids;
+         int n = list.size();
+         double[] minx = new double[n];
+         double[] miny = new double[n];
+         double[] maxx = new double[n];
+         double[] maxy = new double[n];
+         for (int i = 0; i < n; i++) {
+            Coord2d[] poly = list.get(i);
+            double x0 = Double.POSITIVE_INFINITY;
+            double y0 = Double.POSITIVE_INFINITY;
+            double x1 = Double.NEGATIVE_INFINITY;
+            double y1 = Double.NEGATIVE_INFINITY;
+            if (poly != null) {
+               for (int k = 0; k < poly.length; k++) {
+                  if (poly[k] == null) {
+                     continue;
+                  }
+                  x0 = Math.min(x0, poly[k].x);
+                  y0 = Math.min(y0, poly[k].y);
+                  x1 = Math.max(x1, poly[k].x);
+                  y1 = Math.max(y1, poly[k].y);
+               }
+            }
+            minx[i] = x0;
+            miny[i] = y0;
+            maxx[i] = x1;
+            maxy[i] = y1;
+         }
+         return new PolyBounds(list, minx, miny, maxx, maxy);
+      }
+
+      boolean nearPoint(int i, Coord2d at, double pad) {
+         if (at == null || i < 0 || i >= this.minx.length) {
+            return false;
+         }
+         return at.x + pad >= this.minx[i] && at.x - pad <= this.maxx[i]
+            && at.y + pad >= this.miny[i] && at.y - pad <= this.maxy[i];
+      }
+
+      boolean nearSegment(int i, Coord2d a, Coord2d b, double pad) {
+         if (a == null || b == null || i < 0 || i >= this.minx.length) {
+            return false;
+         }
+         double x0 = Math.min(a.x, b.x) - pad;
+         double y0 = Math.min(a.y, b.y) - pad;
+         double x1 = Math.max(a.x, b.x) + pad;
+         double y1 = Math.max(a.y, b.y) + pad;
+         return x1 >= this.minx[i] && x0 <= this.maxx[i] && y1 >= this.miny[i] && y0 <= this.maxy[i];
+      }
+   }
+
+   public static boolean bodyHitsAny(Coord2d at, List<Coord2d[]> body, List<Coord2d[]> solids, List<Coord2d[]> ignore) {
+      return bodyHitsAny(at, body, solids, ignore, null);
+   }
+
+   public static boolean bodyHitsAny(
+      Coord2d at, List<Coord2d[]> body, List<Coord2d[]> solids, List<Coord2d[]> ignore, PolyBounds bounds
+   ) {
+      if (at == null || solids == null) {
+         return false;
+      }
+      boolean hasBody = body != null && !body.isEmpty();
+      double pad = hasBody ? bodyExtent(body) : 0.05;
+      for (int i = 0; i < solids.size(); i++) {
+         Coord2d[] poly = solids.get(i);
+         if (poly == null || poly.length < 2) {
+            continue;
+         }
+         if (bounds != null) {
+            if (!bounds.nearPoint(i, at, pad)) {
+               continue;
+            }
+         } else if (!pointNearPoly(at, poly, pad)) {
+            continue;
+         }
+         if (listed(poly, ignore)) {
+            continue;
+         }
+         if (hasBody) {
+            if (bodyHits(at, body, poly)) {
+               return true;
+            }
+         } else if (pointInside(at, poly) || edgeDistance(at, poly) <= 0.05) {
+            return true;
+         }
+      }
+      return false;
+   }
+
+   /**
+    * Centerline plus sampled footprints. {@code ignore} is identity/vertex equal
+    * (the selected target), never a geometric overlap test.
+    */
+   public static boolean sweptClear(Coord2d a, Coord2d b, List<Coord2d[]> body, List<Coord2d[]> solids, List<Coord2d[]> ignore) {
+      return sweptClear(a, b, body, solids, ignore, null);
+   }
+
+   public static boolean sweptClear(
+      Coord2d a, Coord2d b, List<Coord2d[]> body, List<Coord2d[]> solids, List<Coord2d[]> ignore, PolyBounds bounds
+   ) {
+      if (a == null || b == null) {
+         return false;
+      }
+      if (solids == null || solids.isEmpty()) {
+         return true;
+      }
+      double pad = bodyExtent(body);
+      if (bodyHitsAny(a, body, solids, ignore, bounds) || bodyHitsAny(b, body, solids, ignore, bounds)) {
+         return false;
+      }
+      for (int s = 1; s < 8; s++) {
+         double t = s / 8.0;
+         Coord2d p = Coord2d.of(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+         if (bodyHitsAny(p, body, solids, ignore, bounds)) {
+            return false;
+         }
+      }
+      for (int i = 0; i < solids.size(); i++) {
+         Coord2d[] poly = solids.get(i);
+         if (poly == null || poly.length < 2 || listed(poly, ignore)) {
+            continue;
+         }
+         if (bounds != null) {
+            if (!bounds.nearSegment(i, a, b, pad)) {
+               continue;
+            }
+         } else if (!segmentNearPoly(a, b, poly, pad)) {
+            continue;
+         }
+         if (segmentHitsPolygon(a, b, poly, 0.0)) {
+            return false;
+         }
+      }
+      return true;
+   }
+
+   static double bodyExtent(List<Coord2d[]> body) {
+      double e = 0.5;
+      if (body == null) {
+         return e;
+      }
+      for (int i = 0; i < body.size(); i++) {
+         Coord2d[] poly = body.get(i);
+         if (poly == null) {
+            continue;
+         }
+         for (int k = 0; k < poly.length; k++) {
+            if (poly[k] != null) {
+               e = Math.max(e, Math.max(Math.abs(poly[k].x), Math.abs(poly[k].y)));
+            }
+         }
+      }
+      return e;
+   }
+
+   static boolean pointNearPoly(Coord2d at, Coord2d[] poly, double pad) {
+      if (at == null || poly == null || poly.length < 2) {
+         return false;
+      }
+      double minx = Double.POSITIVE_INFINITY;
+      double miny = Double.POSITIVE_INFINITY;
+      double maxx = Double.NEGATIVE_INFINITY;
+      double maxy = Double.NEGATIVE_INFINITY;
+      for (int i = 0; i < poly.length; i++) {
+         if (poly[i] == null) {
+            continue;
+         }
+         minx = Math.min(minx, poly[i].x);
+         miny = Math.min(miny, poly[i].y);
+         maxx = Math.max(maxx, poly[i].x);
+         maxy = Math.max(maxy, poly[i].y);
+      }
+      return at.x + pad >= minx && at.x - pad <= maxx && at.y + pad >= miny && at.y - pad <= maxy;
+   }
+
+   static boolean segmentNearPoly(Coord2d a, Coord2d b, Coord2d[] poly, double pad) {
+      if (a == null || b == null || poly == null || poly.length < 2) {
+         return false;
+      }
+      double minx = Math.min(a.x, b.x) - pad;
+      double miny = Math.min(a.y, b.y) - pad;
+      double maxx = Math.max(a.x, b.x) + pad;
+      double maxy = Math.max(a.y, b.y) + pad;
+      double px0 = Double.POSITIVE_INFINITY;
+      double py0 = Double.POSITIVE_INFINITY;
+      double px1 = Double.NEGATIVE_INFINITY;
+      double py1 = Double.NEGATIVE_INFINITY;
+      for (int i = 0; i < poly.length; i++) {
+         if (poly[i] == null) {
+            continue;
+         }
+         px0 = Math.min(px0, poly[i].x);
+         py0 = Math.min(py0, poly[i].y);
+         px1 = Math.max(px1, poly[i].x);
+         py1 = Math.max(py1, poly[i].y);
+      }
+      return maxx >= px0 && minx <= px1 && maxy >= py0 && miny <= py1;
+   }
+
    public static boolean bodyHits(Coord2d at, List<Coord2d[]> body, Coord2d[] obstacle) {
       if (at != null && body != null && obstacle != null && obstacle.length >= 2) {
          for (Coord2d[] b : body) {

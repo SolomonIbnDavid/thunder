@@ -1,6 +1,9 @@
 package haven.nav;
 
 import haven.Coord2d;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Renderer-independent interaction goal: target footprint plus approach
@@ -22,6 +25,8 @@ public final class InteractionSpec {
    public final int requiredClearance;
    public final Double facing;
    public final String expectedResult;
+   public final List<Coord2d[]> polygons;
+   public final String geometrySource;
 
    public InteractionSpec(
       String targetId,
@@ -33,6 +38,22 @@ public final class InteractionSpec {
       int requiredClearance,
       Double facing,
       String expectedResult
+   ) {
+      this(targetId, origin, half, allowedSides, minDist, maxDist, requiredClearance, facing, expectedResult, null, "");
+   }
+
+   public InteractionSpec(
+      String targetId,
+      Coord2d origin,
+      Coord2d half,
+      int allowedSides,
+      double minDist,
+      double maxDist,
+      int requiredClearance,
+      Double facing,
+      String expectedResult,
+      List<Coord2d[]> polygons,
+      String geometrySource
    ) {
       if (origin == null) {
          throw new IllegalArgumentException("origin");
@@ -49,6 +70,29 @@ public final class InteractionSpec {
       this.requiredClearance = Math.max(0, requiredClearance);
       this.facing = facing;
       this.expectedResult = expectedResult == null ? "" : expectedResult;
+      this.polygons = copyPolys(polygons);
+      this.geometrySource = geometrySource == null ? "" : geometrySource;
+   }
+
+   public List<Coord2d[]> footprintPolygons() {
+      if (!this.polygons.isEmpty()) {
+         return this.polygons;
+      }
+      List<Coord2d[]> box = new ArrayList<Coord2d[]>();
+      box.add(new Coord2d[]{
+         Coord2d.of(minX(), minY()),
+         Coord2d.of(maxX(), minY()),
+         Coord2d.of(maxX(), maxY()),
+         Coord2d.of(minX(), maxY())
+      });
+      return box;
+   }
+
+   private static List<Coord2d[]> copyPolys(List<Coord2d[]> polygons) {
+      if (polygons == null || polygons.isEmpty()) {
+         return Collections.emptyList();
+      }
+      return Collections.unmodifiableList(new ArrayList<Coord2d[]>(polygons));
    }
 
    public double minX() {

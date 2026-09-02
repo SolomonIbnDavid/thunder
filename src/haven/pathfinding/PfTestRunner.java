@@ -137,6 +137,7 @@ public final class PfTestRunner {
       result.put("started_ms", run.startedMs);
 
       try {
+         PathfinderLog.resetRun();
          PfTestRunner.Scenario sc = PfScenarioRegistry.get(run.scenario);
          JSONObject body = sc.execute(run, ui);
          long now = System.currentTimeMillis();

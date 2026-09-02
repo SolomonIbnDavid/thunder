@@ -1,5 +1,6 @@
 package haven.pathfinding;
 
+import haven.Coord;
 import haven.Coord2d;
 import haven.nav.InteractionSpec;
 
@@ -35,6 +36,34 @@ public final class InteractionVerifier {
       Coord2d targetHalf,
       boolean targetPresent
    ) {
+      return poseStillValid(pos, pose, eps, spec, targetOrigin, targetHalf, targetPresent, null);
+   }
+
+   public static boolean poseStillValid(
+      Coord2d pos,
+      Coord2d pose,
+      double eps,
+      InteractionSpec spec,
+      Coord2d targetOrigin,
+      Coord2d targetHalf,
+      boolean targetPresent,
+      OccupancyGrid occ
+   ) {
+      return poseStillValid(pos, pose, eps, spec, targetOrigin, targetHalf, targetPresent, occ, null, null);
+   }
+
+   public static boolean poseStillValid(
+      Coord2d pos,
+      Coord2d pose,
+      double eps,
+      InteractionSpec spec,
+      Coord2d targetOrigin,
+      Coord2d targetHalf,
+      boolean targetPresent,
+      OccupancyGrid occ,
+      java.util.List<Coord2d[]> solids,
+      java.util.List<Coord2d[]> playerBody
+   ) {
       if (!targetPresent || pos == null || pose == null || spec == null) {
          return false;
       }
@@ -44,11 +73,30 @@ public final class InteractionVerifier {
       if (targetOrigin != null && spec.origin != null && targetOrigin.dist(spec.origin) > 2.75) {
          return false;
       }
-      if (targetHalf != null && spec.half != null && (Math.abs(targetHalf.x - spec.half.x) > 1.0 || Math.abs(targetHalf.y - spec.half.y) > 1.0)) {
-         return false;
+      if (occ == null) {
+         return true;
       }
       double dist = InteractionGoals.distanceToFootprint(pos, spec);
-      return dist + 1.0E-6 >= spec.minDist && dist - 1.0E-6 <= spec.maxDist;
+      if (dist + 1.0E-6 < spec.minDist || dist - 1.0E-6 > spec.maxDist) {
+         return false;
+      }
+      InteractionGoals.Geometry geom = solids == null || solids.isEmpty()
+         ? null
+         : new InteractionGoals.Geometry(solids, playerBody);
+      if (geom != null && geom.enabled()) {
+         return InteractionGoals.poseFits(pose, spec, occ, geom);
+      }
+      Coord cell = occ.cellOf(pos);
+      if (cell == null) {
+         return false;
+      }
+      if (occ.at(cell.x, cell.y) == OccupancyGrid.SOLID) {
+         return false;
+      }
+      if (InteractionGoals.overlapsFootprint(pos, spec)) {
+         return false;
+      }
+      return InteractionGoals.losClear(pos, spec, occ, null);
    }
 
    public static boolean confirmed(

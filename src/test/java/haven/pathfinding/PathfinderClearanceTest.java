@@ -3,6 +3,7 @@ package haven.pathfinding;
 import haven.Coord;
 import haven.Coord2d;
 import haven.Hitbox;
+import haven.MCache;
 import haven.pathfinding.GridAStar.Grid;
 import haven.pathfinding.GridAStar.Result;
 import java.util.Arrays;
@@ -339,12 +340,119 @@ public class PathfinderClearanceTest {
       Assertions.assertFalse(PrototypePathfinder.solidFootprint("gfx/terobjs/vehicle/cart"));
       Assertions.assertTrue(PrototypePathfinder.furnitureFootprint("gfx/terobjs/cupboard"));
       Assertions.assertTrue(PrototypePathfinder.furnitureFootprint("gfx/terobjs/cupboard[0]"));
-      Assertions.assertFalse(PrototypePathfinder.furnitureFootprint("gfx/terobjs/chest"));
+      Assertions.assertTrue(PrototypePathfinder.furnitureFootprint("gfx/terobjs/studydesk-big"));
+      Assertions.assertTrue(PrototypePathfinder.furnitureFootprint("gfx/terobjs/studydesk"));
+      Assertions.assertTrue(PrototypePathfinder.furnitureFootprint("gfx/terobjs/chair"));
+      Assertions.assertTrue(PrototypePathfinder.furnitureFootprint("gfx/terobjs/table"));
+      Assertions.assertTrue(PrototypePathfinder.furnitureFootprint("gfx/terobjs/chest"));
+      Assertions.assertTrue(PrototypePathfinder.furnitureFootprint("gfx/terobjs/crate"));
+      Assertions.assertTrue(PrototypePathfinder.furnitureFootprint("gfx/terobjs/bed"));
+      Assertions.assertTrue(PrototypePathfinder.furnitureFootprint("gfx/terobjs/barrel"));
+      Assertions.assertTrue(PrototypePathfinder.skipBodyInflate("gfx/terobjs/chair"));
+      Assertions.assertTrue(PrototypePathfinder.skipBodyInflate("gfx/terobjs/arch/hwall"));
+      Assertions.assertFalse(PrototypePathfinder.furnitureFootprint("gfx/terobjs/arch/palisadeseg"));
+      Assertions.assertFalse(PrototypePathfinder.furnitureFootprint("gfx/terobjs/vehicle/cart"));
+      Assertions.assertFalse(PrototypePathfinder.furnitureFootprint("gfx/terobjs/trees/maple"));
+      Assertions.assertFalse(PrototypePathfinder.furnitureFootprint("gfx/terobjs/stockpile-ore"));
+      Assertions.assertFalse(PrototypePathfinder.furnitureFootprint("gfx/terobjs/ladder"));
+      Assertions.assertTrue(PrototypePathfinder.vegetationResid("gfx/terobjs/bushes/thornbush"));
+      Assertions.assertTrue(PrototypePathfinder.vegetationResid("gfx/terobjs/trees/maple"));
+      Assertions.assertTrue(PrototypePathfinder.vegetationResid("gfx/terobjs/bumlings/stone"));
+      Assertions.assertFalse(PrototypePathfinder.vegetationResid("gfx/terobjs/cupboard"));
+      Assertions.assertEquals(MCache.tilesz.x, PrototypePathfinder.obstacleDisk("gfx/terobjs/bushes/thornbush"), 1.0E-9);
+      Assertions.assertEquals(MCache.tilesz.x * 0.6, PrototypePathfinder.obstacleDisk("gfx/terobjs/chest"), 1.0E-9);
       Assertions.assertTrue(PrototypePathfinder.wallClearance("gfx/terobjs/arch/palisadeseg"));
       Assertions.assertTrue(PrototypePathfinder.wallClearance("gfx/terobjs/arch/palisadecp"));
       Assertions.assertTrue(PrototypePathfinder.wallClearance("gfx/terobjs/arch/palisadegate"));
       Assertions.assertTrue(PrototypePathfinder.wallClearance("gfx/terobjs/arch/brickwallseg"));
+      Assertions.assertTrue(PrototypePathfinder.wallClearance("gfx/terobjs/arch/hwall"));
       Assertions.assertFalse(PrototypePathfinder.wallClearance("gfx/terobjs/vehicle/cart"));
+   }
+
+   @Test
+   void skimpyBushHitboxStillOccupiesATile() {
+      Coord2d origin = PrototypePathfinder.alignedOrigin(-22.0, -22.0);
+      int w = 24;
+      int h = 24;
+      boolean[] blocked = new boolean[w * h];
+      Coord2d[] tiny = new Coord2d[]{
+         Coord2d.of(-1.0, -1.0), Coord2d.of(1.0, -1.0), Coord2d.of(1.0, 1.0), Coord2d.of(-1.0, 1.0)
+      };
+      PrototypePathfinder.rasterObstacle(
+         blocked,
+         origin,
+         w,
+         h,
+         Coord2d.of(0.0, 0.0),
+         false,
+         "gfx/terobjs/bushes/thornbush",
+         Collections.singletonList(tiny),
+         PrototypePathfinder.obstacleDisk("gfx/terobjs/bushes/thornbush"),
+         Collections.emptyList()
+      );
+      Coord rim = PrototypePathfinder.worldCell(origin, Coord2d.of(8.0, 0.0));
+      Assertions.assertTrue(rim.x >= 0 && rim.x < w && rim.y >= 0 && rim.y < h);
+      Assertions.assertTrue(blocked[rim.y * w + rim.x], "a 2u bush hitbox must still block a tile-radius disk");
+   }
+
+   @Test
+   void sceneKeepsADistantLadderWithoutLoadedHitboxes() {
+      PrototypePathfinder.GobGeom ladder = new PrototypePathfinder.GobGeom();
+      ladder.resid = "gfx/terobjs/ladder";
+      ladder.gobDist = 180.0;
+      Assertions.assertTrue(PrototypePathfinder.includeInScene(ladder), "Walk from stand 2 must still see the recorded ladder");
+      PrototypePathfinder.GobGeom chest = new PrototypePathfinder.GobGeom();
+      chest.resid = "gfx/terobjs/chest";
+      chest.gobDist = 180.0;
+      Assertions.assertFalse(PrototypePathfinder.includeInScene(chest), "ordinary clutter stays on the 22u cutoff");
+   }
+
+   @Test
+   void studyDeskKnownFootprintCoversTheTopEvenWhenObstIsTiny() {
+      Coord2d rc = Coord2d.of(0.0, 0.0);
+      Coord2d[] known = PrototypePathfinder.knownFurnitureFootprint("gfx/terobjs/studydesk", rc, 0.0);
+      Assertions.assertNotNull(known);
+      Coord2d[] tiny = new Coord2d[]{
+         Coord2d.of(-1.0, -1.0), Coord2d.of(1.0, -1.0), Coord2d.of(1.0, 1.0), Coord2d.of(-1.0, 1.0)
+      };
+      List<Coord2d[]> polys = PrototypePathfinder.furnitureCollision(
+         "gfx/terobjs/studydesk", rc, 0.0, List.<Coord2d[]>of(tiny), Collections.<Coord2d[]>emptyList()
+      );
+      Assertions.assertEquals(1, polys.size(), "tiny obst is ignored; known fallback is used alone");
+      CollisionGeom geom = PrototypePathfinder.furnitureGeometry(
+         "gfx/terobjs/studydesk", rc, 0.0, List.<Coord2d[]>of(tiny), Collections.<Coord2d[]>emptyList()
+      );
+      Assertions.assertEquals(CollisionGeom.FALLBACK, geom.source);
+      Coord2d origin = PrototypePathfinder.alignedOrigin(-40.0, -40.0);
+      int w = 32;
+      int h = 32;
+      boolean[] solid = new boolean[w * h];
+      PrototypePathfinder.rasterObstacle(solid, origin, w, h, rc, false, "gfx/terobjs/studydesk", polys, 1.0, Collections.emptyList());
+      Coord far = PrototypePathfinder.worldCell(origin, Coord2d.of(0.0, 12.0));
+      Assertions.assertTrue(solid[far.y * w + far.x], "known 6x16 desk AABB must occupy the long axis, not only the tiny obst");
+      List<Coord2d[]> cupboardEmpty = PrototypePathfinder.furnitureCollision(
+         "gfx/terobjs/cupboard", rc, 0.0, Collections.<Coord2d[]>emptyList(), List.<Coord2d[]>of(tiny)
+      );
+      Assertions.assertTrue(cupboardEmpty.isEmpty(), "Neg-only cupboards still contribute no occupancy");
+      Coord2d[] movement = new Coord2d[]{
+         Coord2d.of(-8.0, -16.0), Coord2d.of(8.0, -16.0), Coord2d.of(8.0, 16.0), Coord2d.of(-8.0, 16.0)
+      };
+      List<Coord2d[]> table = PrototypePathfinder.furnitureCollision(
+         "gfx/terobjs/table", rc, 0.0, List.<Coord2d[]>of(tiny), List.<Coord2d[]>of(movement)
+      );
+      boolean[] tableSolid = new boolean[w * h];
+      PrototypePathfinder.rasterObstacle(
+         tableSolid, origin, w, h, rc, false, "gfx/terobjs/table", table, 1.0, Collections.emptyList()
+      );
+      CollisionGeom tableGeom = PrototypePathfinder.furnitureGeometry(
+         "gfx/terobjs/table", rc, 0.0, List.<Coord2d[]>of(tiny), List.<Coord2d[]>of(movement)
+      );
+      Assertions.assertEquals(CollisionGeom.UNAVAILABLE, tableGeom.source, "placement/movement is not a furniture solid");
+      Assertions.assertTrue(table.isEmpty());
+      Assertions.assertFalse(
+         tableSolid[far.y * w + far.x],
+         "a table with tiny obst must not occupy its placement AABB"
+      );
    }
 
    @Test
@@ -424,6 +532,51 @@ public class PathfinderClearanceTest {
       Assertions.assertTrue(PrototypePathfinder.isHollowRing(List.of(north, south, west, east)));
       Coord2d[] box = new Coord2d[]{Coord2d.of(0.0, 0.0), Coord2d.of(10.0, 0.0), Coord2d.of(10.0, 10.0), Coord2d.of(0.0, 10.0)};
       Assertions.assertFalse(PrototypePathfinder.isHollowRing(List.<Coord2d[]>of(box)));
+   }
+
+   @Test
+   void rotatedDeskFallbackKeepsOrientationNotWorldAabb() {
+      Coord2d rc = Coord2d.of(0.0, 0.0);
+      double a = Math.PI / 4.0;
+      Coord2d[] tiny = new Coord2d[]{
+         Coord2d.of(-1.0, -1.0), Coord2d.of(1.0, -1.0), Coord2d.of(1.0, 1.0), Coord2d.of(-1.0, 1.0)
+      };
+      Coord2d[] known = PrototypePathfinder.knownFurnitureFootprint("gfx/terobjs/studydesk", rc, a);
+      Assertions.assertNotNull(known);
+      CollisionGeom geom = PrototypePathfinder.furnitureGeometry(
+         "gfx/terobjs/studydesk", rc, a, Collections.<Coord2d[]>singletonList(tiny), Collections.<Coord2d[]>emptyList()
+      );
+      Assertions.assertEquals(CollisionGeom.FALLBACK, geom.source);
+      Assertions.assertEquals(known[0].x, geom.polygons.get(0)[0].x, 1.0E-9);
+      Assertions.assertEquals(known[0].y, geom.polygons.get(0)[0].y, 1.0E-9);
+      Coord2d[] aabb = LocalPlanner.aabbPolygon(geom.polygons);
+      Coord2d origin = PrototypePathfinder.alignedOrigin(-40.0, -40.0);
+      int w = 32;
+      int h = 32;
+      boolean[] exact = new boolean[w * h];
+      PrototypePathfinder.rasterObstacle(
+         exact, origin, w, h, rc, false, "gfx/terobjs/studydesk", geom.polygons, 1.0, Collections.emptyList()
+      );
+      boolean[] boxed = new boolean[w * h];
+      PrototypePathfinder.rasterObstacle(
+         boxed, origin, w, h, rc, false, "gfx/terobjs/studydesk", Collections.<Coord2d[]>singletonList(aabb), 1.0, Collections.emptyList()
+      );
+      Coord corner = PrototypePathfinder.worldCell(origin, Coord2d.of(aabb[1].x - 0.5, aabb[1].y - 0.5));
+      Assertions.assertTrue(boxed[corner.y * w + corner.x], "world AABB occupies its corner");
+      Assertions.assertFalse(exact[corner.y * w + corner.x], "rotated desk must not collapse to that AABB");
+   }
+
+   @Test
+   void authoritativeObstIsUsedInsteadOfFallback() {
+      Coord2d rc = Coord2d.of(0.0, 0.0);
+      Coord2d[] obst = new Coord2d[]{
+         Coord2d.of(-6.0, -6.0), Coord2d.of(6.0, -6.0), Coord2d.of(6.0, 6.0), Coord2d.of(-6.0, 6.0)
+      };
+      CollisionGeom geom = PrototypePathfinder.furnitureGeometry(
+         "gfx/terobjs/studydesk", rc, 0.0, Collections.<Coord2d[]>singletonList(obst), Collections.<Coord2d[]>emptyList()
+      );
+      Assertions.assertEquals(CollisionGeom.OBST, geom.source);
+      Assertions.assertSame(obst, geom.polygons.get(0));
    }
 
    private static final class ArrayGrid implements Grid {

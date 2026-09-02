@@ -158,6 +158,10 @@ public class Hitbox extends SlottedNode implements Rendered {
 	return collectPolygons(gob, false, false, true, false);
     }
 
+    public static List<Coord2d[]> placementPolygons(Gob gob) {
+	return collectPolygons(gob, false, true, false, false);
+    }
+
     public static List<Coord2d[]> selectMovementLayers(List<Coord2d[]> neg, List<Coord2d[]> obst) {
 	if(obst != null && !obst.isEmpty())
 	    return obst;

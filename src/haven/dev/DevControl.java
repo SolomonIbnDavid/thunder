@@ -251,6 +251,7 @@ public final class DevControl {
       o.put("ok", true);
       o.put("navigation_core_git", haven.nav.NavigationCore.gitHash());
       o.put("navigation_core_title", haven.nav.NavigationCore.TITLE);
+      o.put("navigation_core_version", haven.nav.NavigationCore.version());
       UI ui = this.ui();
       if (ui == null) {
          o.put("screen", "none");

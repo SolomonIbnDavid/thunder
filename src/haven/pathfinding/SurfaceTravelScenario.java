@@ -7,8 +7,8 @@ import haven.Gob;
 import haven.Moving;
 import haven.UI;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 /**
@@ -69,7 +69,7 @@ final class SurfaceTravelScenario implements PfTestRunner.Scenario {
       );
       if (!inGame || !playerPresent) {
          JSONObject facts = new JSONObject().put("refusal", "NO_GAME").put("selected", false).put("kind", this.kind.name());
-         return new JSONObject().put("verdict", "FAIL").put("checks", new JSONArray(checks)).put("facts", facts).put("note", "not in game");
+         return PfTestHarness.body(checks, "not in game", facts);
       }
       if (this.kind.profile == null || this.kind.profile == NavigationTestSpotSelector.Profile.KNOWN_MAP_LONG_LEG) {
          return failClosed(checks, "NO_FIXTURE", "no automatic fixture for " + this.kind.name);
@@ -85,21 +85,26 @@ final class SurfaceTravelScenario implements PfTestRunner.Scenario {
          return failClosed(checks, "NO_FIXTURE", sel == null ? "no selection" : sel.evidence);
       }
       checks.add(PfTestRunner.check("fixture", true, this.kind.name + " target " + PfTestHarness.pt(sel.targetWorld)));
+      PrototypePathfinder.Plan plan = PrototypePathfinder.planAny(gui, Collections.singletonList(sel.targetWorld), true);
+      if (plan == null || plan.status != PrototypePathfinder.Plan.Status.REACHED) {
+         return failClosed(checks, "NO_FIXTURE", plan == null ? "no local plan" : "plan " + plan.status + " is not a complete local route");
+      }
       Bot bot = Bot.execute(new Bot.BotAction[0]);
-      MoveToAutoOpenGroundScenario.MoveResult mv = MoveToAutoOpenGroundScenario.liveMove(gui, sel.targetWorld, bot);
+      MoveToAutoOpenGroundScenario.MoveResult mv = MoveToAutoOpenGroundScenario.walkPlan(gui, plan, sel.targetWorld, bot, 60000L, 60000L);
       checks.add(MoveToAutoOpenGroundScenario.routeCheck(mv));
       checks.add(MoveToAutoOpenGroundScenario.walkCheck(mv));
+      checks.add(MoveToAutoOpenGroundScenario.finalArrival(gui, ui, mv, sel.targetWorld));
       JSONObject facts = new JSONObject()
          .put("kind", this.kind.name())
          .put("selected", true)
          .put("refusal", JSONObject.NULL)
          .put("arrived", mv != null && mv.walk == WaypointWalker.Result.ARRIVED);
-      return new JSONObject().put("verdict", PfTestRunner.verdictOf(checks)).put("checks", new JSONArray(checks)).put("facts", facts);
+      return PfTestHarness.body(checks, null, facts);
    }
 
    private JSONObject failClosed(List<JSONObject> checks, String refusal, String why) {
       checks.add(PfTestRunner.check("fixture", false, why));
       JSONObject facts = new JSONObject().put("refusal", refusal).put("selected", false).put("kind", this.kind.name());
-      return new JSONObject().put("verdict", "FAIL").put("checks", new JSONArray(checks)).put("facts", facts).put("note", why);
+      return PfTestHarness.body(checks, why, facts);
    }
 }

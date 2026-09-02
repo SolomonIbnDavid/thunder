@@ -105,6 +105,21 @@ public class RecedingHorizonNavigatorTest {
    }
 
    @Test
+   void doesNotReportReachedWhenWalkerStopsOffGoalTile() {
+      RecedingHorizonNavigatorTest.ScriptedLocal local = new RecedingHorizonNavigatorTest.ScriptedLocal()
+         .plan(plan(Status.REACHED, Coord2d.of(0.0, 0.0), Coord2d.of(2.0, 0.0)));
+      RecedingHorizonNavigatorTest.ScriptedWalker walker = new RecedingHorizonNavigatorTest.ScriptedWalker()
+         .walk(success(Coord2d.of(1.0, 0.0)));
+      RecedingHorizonNavigatorTest.ScriptedCoarse coarse = new RecedingHorizonNavigatorTest.ScriptedCoarse().plan(null);
+      Result r = new RecedingHorizonNavigator(local, walker, coarse, TILES)
+         .run(Coord.of(2, 0), List.of(Coord.of(0, 0), Coord.of(2, 0)), Coord2d.of(0.0, 0.0));
+      Assertions.assertNotEquals(Outcome.REACHED_DESTINATION, r.outcome);
+      Assertions.assertEquals(Outcome.COARSE_PLAN_FAILED, r.outcome);
+      Assertions.assertEquals(1, coarse.starts.size());
+      Assertions.assertEquals(Coord.of(1, 0), coarse.starts.get(0));
+   }
+
+   @Test
    void clippedLegsContinueWithoutAdvancingOrCompleting() {
       RecedingHorizonNavigatorTest.ScriptedLocal local = new RecedingHorizonNavigatorTest.ScriptedLocal()
          .plan(plan(Status.CLIPPED, Coord2d.of(0.0, 0.0), Coord2d.of(2.0, 0.0)))

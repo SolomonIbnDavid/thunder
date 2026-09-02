@@ -78,6 +78,8 @@ public class NavContractTest {
       Assertions.assertEquals("HavenNavigationCore", NavigationCore.TITLE);
       Assertions.assertNotNull(NavigationCore.gitHash());
       Assertions.assertFalse(NavigationCore.gitHash().isEmpty());
+      Assertions.assertNotNull(NavigationCore.version());
+      Assertions.assertFalse(NavigationCore.version().isEmpty());
    }
 
    @Test
