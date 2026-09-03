@@ -1,5 +1,6 @@
 $size[14]{$u{update on 02.09.2026:}
 * Inventory and container windows get Stack all / Unstack all buttons next to Sort (Hurricane-style). Stack merges matching items; Unstack unpacks every "stack of" pile. Bindable as "Stack all opened inventories" / "Unstack all opened inventories" in Options -> Shortcuts.
+* Stack all stops when a leftover cannot merge (full or incompatible pile) instead of picking the item up and putting it down.
 `
 $size[14]{$u{update on 30.08.2026:}
 * Ard HUD now uses the real sloth chrome pack (thin dark frames, native-height buttons, iron Inv/Gear/Char/Kin/Opts icons) instead of homemade dark rectangles.
