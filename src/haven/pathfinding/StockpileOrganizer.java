@@ -91,14 +91,21 @@ public final class StockpileOrganizer {
       throw new InterruptedException(reason);
    }
 
-   private static String stockpileResource(String item) {
+   static String stockpileResource(String item) {
       if (item == null || !item.startsWith("gfx/invobjs/")) return null;
       String name = item.substring("gfx/invobjs/".length());
       if (name.length() == 0 || name.indexOf('/') >= 0) return null;
-      // Keep the test deliberately conservative: only types with known v1 piles.
-      if (!(name.equals("board") || name.equals("brick") || name.equals("leaf") || name.equals("metal")
-         || name.equals("soil") || name.equals("straw") || name.equals("pumpkin"))) return null;
-      return "gfx/terobjs/stockpile-" + name;
+      // Planks are "board-<woodtype>" (there is no bare board); metal bars are "bar-<metal>".
+      // Match by prefix so every wood/metal variant works; "board-" and "bar-" avoid
+      // colliding with unrelated names like bark/boardgame.
+      if (name.equals("board") || name.startsWith("board-")) return "gfx/terobjs/stockpile-board";
+      if (name.equals("bar") || name.startsWith("bar-")) return "gfx/terobjs/stockpile-metal";
+      if (name.equals("soil") || name.equals("worm")) return "gfx/terobjs/stockpile-soil";
+      if (name.equals("pumpkin")) return "gfx/terobjs/stockpile-pumpkin";
+      if (name.equals("straw")) return "gfx/terobjs/stockpile-straw";
+      if (name.equals("brick")) return "gfx/terobjs/stockpile-brick";
+      if (name.equals("leaf") || name.equals("leaves")) return "gfx/terobjs/stockpile-leaf";
+      return null;
    }
 
    private static FlowerMenu findFlower(GameUI gui) {
