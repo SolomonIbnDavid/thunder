@@ -33,6 +33,7 @@ public class CriticalRouteWnd extends Hidewnd {
    private final Label status;
    private final LegList legs;
    private final SavedList saved;
+   private final OrganizerAreaSelector area = new OrganizerAreaSelector();
    private List<String> savedIds = new ArrayList<String>();
 
    public CriticalRouteWnd() {
@@ -85,6 +86,17 @@ public class CriticalRouteWnd extends Hidewnd {
             CriticalRouteWnd.this.refreshLegs();
          }
       }, x, y);
+      y += UI.scale(28);
+      this.add(new Button(UI.scale(90), "Create area") {
+         public void click() {
+            CriticalRouteWnd.this.createArea();
+         }
+      }, 0, y);
+      this.add(new Button(UI.scale(110), "Stock pile test") {
+         public void click() {
+            CriticalRouteWnd.this.stockpileTest();
+         }
+      }, UI.scale(96), y);
       y += UI.scale(28);
       this.status = (Label)this.add(new Label("Here / Ground / Approach / Object."), 0, y);
       y += UI.scale(18);
@@ -202,6 +214,39 @@ public class CriticalRouteWnd extends Hidewnd {
          this.msg("Added " + draft.legs.get(draft.legs.size() - 1).label(), MsgType.INFO);
       }, true, true);
       this.msg("Click an object to approach (no action) — right-click cancels", MsgType.INFO);
+   }
+
+   private void createArea() {
+      GameUI gui = this.gui();
+      if (gui == null || gui.map == null) {
+         return;
+      }
+      CustomCursors.startMarkingArea(gui.map, mc -> {
+         OrganizerAreaSelector.Selection sel = this.area.click(mc);
+         if (sel != null) {
+            this.msg("Area " + sel, MsgType.INFO);
+         } else {
+            this.msg("First corner set — click the opposite corner (right-click cancels)", MsgType.INFO);
+         }
+      }, () -> {
+         this.area.cancel();
+         this.msg("Area selection cancelled", MsgType.INFO);
+      });
+      this.msg("Click two ground corners to define the area (right-click cancels)", MsgType.INFO);
+   }
+
+   private void stockpileTest() {
+      GameUI gui = this.gui();
+      if (gui == null) {
+         return;
+      }
+      OrganizerAreaSelector.Selection sel = this.area.selection();
+      if (sel == null) {
+         this.msg("Create an area first", MsgType.ERROR);
+         return;
+      }
+      this.msg("Stockpile test: planning…", MsgType.INFO);
+      StockpileOrganizer.start(gui, sel);
    }
 
    private void save() {

@@ -3011,6 +3011,38 @@ public class MapView extends PView implements DTarget, Console.Directory, Widget
 	}
     }
     
+    /** Sends the normal held-item action at a world point, using the same wire shape as iteminteract. */
+    public boolean itemactAt(Coord2d world, int modflags) {
+	if(world == null) return false;
+	Coord3f screen;
+	try {
+	    screen = screenxf(glob.map.getzp(world));
+	} catch(RuntimeException e) {
+	    screen = screenxf(world);
+	}
+	if(screen == null) return false;
+	wdgmsg("itemact", Coord.of(Math.round(screen.x), Math.round(screen.y)), world.floor(posres), modflags);
+	return true;
+    }
+
+    /** Sends place only when the server has supplied a live placement preview. */
+    public boolean placeCurrent(int button, int modflags) {
+	Loader.Future<Plob> p = placing;
+	if(p == null || !p.done()) return false;
+	Plob plob;
+	try { plob = p.get(); } catch(RuntimeException e) { return false; }
+	if(plob == null || plob.lastmc == null || plob.rc == null) return false;
+	wdgmsg("place", plob.rc.floor(posres), (int)Math.round(plob.a * 32768 / Math.PI), button, modflags);
+	return true;
+    }
+
+    public boolean hasPlacementPreview() {
+	Loader.Future<Plob> p = placing;
+	if(p == null || !p.done()) return false;
+	try { return p.get() != null && p.get().lastmc != null; }
+	catch(RuntimeException e) { return false; }
+    }
+
     public void click(Coord2d c, int button) {
 	click(c, button, ui.mc, c.floor(posres), button, ui.modflags());
     }
