@@ -1,26 +1,27 @@
 package haven.pathfinding;
 
 import auto.Bot;
-import haven.Coord;
 import haven.Coord2d;
 import haven.GameUI;
 import haven.GItem;
 import haven.Gob;
-import haven.HackThread;
+import haven.Loading;
 import haven.MCache;
-import haven.FlowerMenu;
+import haven.WItem;
 import haven.layout.LayoutFootprint;
 import haven.layout.LayoutPlanResult;
 import haven.layout.LayoutPlacement;
 import haven.layout.LayoutRequest;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
-/** Opt-in v1 organizer: plans and creates one stockpile, never fills or moves it. */
+/** Opt-in v1 organizer: plans and creates stockpiles in a selected area, never fills or moves them. */
 public final class StockpileOrganizer {
    private static final long STEP_TIMEOUT_MS = 2500L;
    private static final long WALK_TIMEOUT_MS = 20000L;
-   private static final LayoutFootprint STOCKPILE_FOOTPRINT = LayoutFootprint.rect(2, 2, true);
+   private static final int MAX_PILES = 128;
 
    private StockpileOrganizer() {}
 
@@ -41,54 +42,84 @@ public final class StockpileOrganizer {
       if (gui.map.player() == null || gui.map.player().rc == null) fail(bot, "player position unavailable");
       GameUI.DraggedItem held = gui.hand();
       if (held == null || held.item == null) fail(bot, "hold the item to stockpile first");
-      String stockpile = stockpileResource(held.item.resname());
+      String itemRes = held.item.resname();
+      String stockpile = stockpileResource(itemRes);
       if (stockpile == null) fail(bot, "held item is not a supported stockpile item");
+      String kind = stockpile.substring(stockpile.lastIndexOf('-') + 1);
+      LayoutFootprint footprint = stockpileFootprint(stockpile);
+      final double fpCx = footprint.bboxW() * MCache.tilesz.x / 2.0;
+      final double fpCy = footprint.bboxH() * MCache.tilesz.y / 2.0;
 
-      gui.msg("Stockpile: planning one " + stockpile.substring(stockpile.lastIndexOf('-') + 1) + " pile…", GameUI.MsgType.INFO);
+      gui.msg("Stockpile: planning " + kind + " piles (footprint " + footprint.bboxW() + "x" + footprint.bboxH() + " tiles)…", GameUI.MsgType.INFO);
       PrototypePathfinder.Scene scene = PrototypePathfinder.observe(gui, false);
       if (scene == null || scene.occupancy == null) fail(bot, "local occupancy unavailable; nothing placed");
-      LayoutRequest request = LayoutRequest.builder(
-         scene.occupancy, STOCKPILE_FOOTPRINT, gui.map.player().rc, 1
-      ).area(area.min, area.max).pitch(MCache.tilesz.x).build();
+      LayoutRequest request = LayoutRequest.builder(scene.occupancy, footprint, gui.map.player().rc, MAX_PILES)
+         .area(area.min, area.max).pitch(MCache.tilesz.x).build();
       LayoutPlanResult plan = haven.layout.LayoutPlanner.plan(request);
-      if (plan.status != LayoutPlanResult.Status.PLANNED || plan.placements.size() != 1)
-         fail(bot, "area is not plannable (" + (plan.reason == null || plan.reason.isEmpty() ? "no free space" : plan.reason) + "); nothing placed");
+      if (plan.placements == null || plan.placements.isEmpty())
+         fail(bot, "area is not plannable (" + reason(plan) + "); nothing placed");
+      gui.msg("Stockpile: planned " + plan.placements.size() + " " + kind + " piles", GameUI.MsgType.INFO);
 
-      LayoutPlacement placement = plan.placements.get(0);
-      if (placement.standRoute == null || placement.standRoute.isEmpty()) fail(bot, "no reachable interaction lane; nothing placed");
-      gui.msg("Stockpile: walking to planned interaction side…", GameUI.MsgType.INFO);
-      WaypointWalker.Result walked = WaypointWalker.execute(
-         gui, bot, placement.standRoute, 2, WALK_TIMEOUT_MS, listener(gui)
-      );
-      if (walked != WaypointWalker.Result.ARRIVED && walked != WaypointWalker.Result.READY_TO_INTERACT)
-         fail(bot, "could not reach planned interaction side (" + walked + "); nothing placed");
+      int created = 0;
+      for (LayoutPlacement placement : plan.placements) {
+         bot.checkCancelled();
+         if (gui.hand() == null || gui.hand().item == null) {
+            if (!takeItem(gui, bot, itemRes)) fail(bot, "ran out of matching items after " + created + " piles");
+         }
 
-      if (gui.hand() == null || gui.hand().item != held.item) fail(bot, "held item changed before action; nothing placed");
-      Set<Long> before = pileIds(gui, stockpile, placement.world.add(MCache.tilesz));
-      StockpileProtocol protocol = new StockpileProtocol();
-      if (!protocol.accept(StockpileProtocol.Signal.HELD_CONFIRMED)) fail(bot, "protocol rejected held item");
-      Coord2d center = placement.world.add(MCache.tilesz);
-      if (!gui.map.itemactAt(center, gui.ui.modflags())) fail(bot, "itemact could not be sent; nothing placed");
-      if (!protocol.accept(StockpileProtocol.Signal.ITEMACT_ACK)) fail(bot, "itemact protocol acknowledgement failed");
+         // Refresh occupancy so already-created piles count as solid before walking.
+         PrototypePathfinder.observe(gui, false);
+         gui.msg("Stockpile: pile " + (placement.index + 1) + "/" + plan.placements.size() + " walking…", GameUI.MsgType.INFO);
+         List<Coord2d> route = new ArrayList<Coord2d>(2);
+         route.add(gui.map.player().rc);
+         route.add(placement.stand);
+         WaypointWalker.Result walked = WaypointWalker.execute(gui, bot, route, 2, WALK_TIMEOUT_MS, listener(gui));
+         if (walked != WaypointWalker.Result.ARRIVED && walked != WaypointWalker.Result.READY_TO_INTERACT)
+            fail(bot, "could not reach pile " + placement.index + " stand (" + walked + "); created " + created + " piles");
 
-      FlowerMenu menu = waitFlower(gui, bot);
-      if (menu == null) fail(bot, "no flower menu acknowledgement; nothing placed");
-      if (!protocol.accept(StockpileProtocol.Signal.FLOWER_OPEN)) fail(bot, "flower protocol acknowledgement failed");
-      int pile = flowerOption(menu, "Pile");
-      if (pile < 0) fail(bot, "flower menu has no Pile action; nothing placed");
-      menu.choose(menu.opts[pile]);
-      if (!protocol.accept(StockpileProtocol.Signal.FLOWER_SELECTED)) fail(bot, "flower selection protocol failed");
-      if (!waitNoFlower(gui, bot)) fail(bot, "flower selection was not acknowledged; nothing placed");
-      if (!waitPreview(gui, bot)) fail(bot, "no placement preview acknowledgement; nothing placed");
-      if (!protocol.placeSent() || !gui.map.placeCurrent(1, gui.ui.modflags())) fail(bot, "place could not be sent; nothing placed");
-      if (!waitNewPile(gui, bot, stockpile, center, before)) fail(bot, "stockpile placement was not acknowledged; failed closed");
-      if (!protocol.accept(StockpileProtocol.Signal.PLACE_ACK)) fail(bot, "place protocol acknowledgement failed");
-      gui.msg("Stockpile: created one pile (not filled)", GameUI.MsgType.INFO);
+         if (gui.hand() == null || gui.hand().item == null) fail(bot, "held item lost before placing pile " + placement.index);
+         Coord2d center = placement.world.add(fpCx, fpCy);
+         Set<Long> before = pileIds(gui, stockpile, center);
+         if (!gui.map.itemactAt(center, gui.ui.modflags())) fail(bot, "itemact could not be sent for pile " + placement.index);
+         if (!waitPlacer(gui, bot)) fail(bot, "server did not enter the placer for pile " + placement.index + "; created " + created + " piles");
+         if (!gui.map.placeAt(center, 1, gui.ui.modflags())) fail(bot, "place could not be sent for pile " + placement.index);
+         if (!waitNewPile(gui, bot, stockpile, center, before)) fail(bot, "pile " + placement.index + " placement was not acknowledged; created " + created + " piles");
+         created++;
+      }
+      gui.msg("Stockpile: created " + created + " " + kind + " piles (not filled)", GameUI.MsgType.INFO);
    }
 
    private static void fail(Bot bot, String reason) throws InterruptedException {
       bot.cancel("Stockpile: " + reason);
       throw new InterruptedException(reason);
+   }
+
+   private static String reason(LayoutPlanResult plan) {
+      return (plan.reason == null || plan.reason.isEmpty()) ? "no free space" : plan.reason;
+   }
+
+   /** Lifts one matching item from the main inventory into hand; false if none left. */
+   private static boolean takeItem(GameUI gui, Bot bot, String itemRes) throws InterruptedException {
+      if (gui.maininv == null) return false;
+      final WItem[] found = new WItem[1];
+      gui.maininv.forEachItem((gitem, witem) -> {
+         if (found[0] == null && witem != null && itemRes.equals(safeResname(gitem))) found[0] = witem;
+      });
+      if (found[0] == null) return false;
+      found[0].take();
+      long end = System.currentTimeMillis() + STEP_TIMEOUT_MS;
+      while (System.currentTimeMillis() < end) {
+         bot.checkCancelled();
+         GameUI.DraggedItem h = gui.hand();
+         if (h != null && h.item != null) return true;
+         Thread.sleep(50L);
+      }
+      return false;
+   }
+
+   private static String safeResname(GItem g) {
+      if (g == null) return null;
+      try { return g.resname(); } catch (Loading e) { return null; }
    }
 
    static String stockpileResource(String item) {
@@ -108,45 +139,34 @@ public final class StockpileOrganizer {
       return null;
    }
 
-   private static FlowerMenu findFlower(GameUI gui) {
-      if (gui == null || gui.ui == null || gui.ui.root == null) return null;
-      for (haven.Widget w = gui.ui.root.lchild; w != null; w = w.prev)
-         if (w instanceof FlowerMenu) return (FlowerMenu)w;
-      return null;
+   /**
+    * Reserved world footprint for a stockpile resource, derived from its real
+    * collision geometry (see {@link ObjectFootprints}); falls back to the
+    * per-type table in {@link #fallbackHalfExtents(String)} when unreadable.
+    */
+   static LayoutFootprint stockpileFootprint(String stockpileRes) {
+      return ObjectFootprints.footprintFor(stockpileRes, fallbackHalfExtents(stockpileRes));
    }
 
-   private static FlowerMenu waitFlower(GameUI gui, Bot bot) throws InterruptedException {
+   static Coord2d fallbackHalfExtents(String resname) {
+      if (resname == null) return Coord2d.of(11, 11);
+      if (resname.endsWith("-metal")) return Coord2d.of(5.5, 8.25);
+      if (resname.endsWith("-straw") || resname.endsWith("-leaf")) return Coord2d.of(8.25, 8.25);
+      if (resname.endsWith("-brick")) return Coord2d.of(11, 5.5);
+      return Coord2d.of(11, 11); // board / soil / pumpkin / generic
+   }
+
+   private static boolean waitPlacer(GameUI gui, Bot bot) throws InterruptedException {
       long end = System.currentTimeMillis() + STEP_TIMEOUT_MS;
       while (System.currentTimeMillis() < end) {
          bot.checkCancelled();
-         FlowerMenu menu = findFlower(gui);
-         if (menu != null) return menu;
-         Thread.sleep(50L);
-      }
-      return null;
-   }
-
-   private static boolean waitNoFlower(GameUI gui, Bot bot) throws InterruptedException {
-      long end = System.currentTimeMillis() + STEP_TIMEOUT_MS;
-      while (System.currentTimeMillis() < end) {
-         bot.checkCancelled();
-         if (findFlower(gui) == null) return true;
-         Thread.sleep(50L);
-      }
-      return false;
-   }
-
-   private static boolean waitPreview(GameUI gui, Bot bot) throws InterruptedException {
-      long end = System.currentTimeMillis() + STEP_TIMEOUT_MS;
-      while (System.currentTimeMillis() < end) {
-         bot.checkCancelled();
-         if (gui.map.hasPlacementPreview()) return true;
+         if (gui.map.isPlacing()) return true;
          Thread.sleep(50L);
       }
       return false;
    }
 
-   private static boolean waitNewPile(GameUI gui, Bot bot, String res, haven.Coord2d center, Set<Long> before) throws InterruptedException {
+   private static boolean waitNewPile(GameUI gui, Bot bot, String res, Coord2d center, Set<Long> before) throws InterruptedException {
       long end = System.currentTimeMillis() + STEP_TIMEOUT_MS;
       while (System.currentTimeMillis() < end) {
          bot.checkCancelled();
@@ -156,23 +176,16 @@ public final class StockpileOrganizer {
       return false;
    }
 
-   private static Set<Long> pileIds(GameUI gui, String res, haven.Coord2d center) {
+   private static Set<Long> pileIds(GameUI gui, String res, Coord2d center) {
       Set<Long> ids = new HashSet<Long>();
       synchronized (gui.ui.sess.glob.oc) {
          for (Gob gob : gui.ui.sess.glob.oc) {
             if (gob == null || gob.rc == null || gob.id < 0L || gob.rc.dist(center) > MCache.tilesz.x * 2.5) continue;
             try { if (res.equals(gob.resid())) ids.add(Long.valueOf(gob.id)); }
-            catch (haven.Loading ignored) {}
+            catch (Loading ignored) {}
          }
       }
       return ids;
-   }
-
-   private static int flowerOption(FlowerMenu menu, String name) {
-      if (menu.options == null || menu.opts == null) return -1;
-      for (int i = 0; i < menu.options.length && i < menu.opts.length; i++)
-         if (name.equals(menu.options[i]) && menu.opts[i] != null) return i;
-      return -1;
    }
 
    private static WaypointWalker.Listener listener(final GameUI gui) {
