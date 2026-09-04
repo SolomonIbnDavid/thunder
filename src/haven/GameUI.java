@@ -2303,7 +2303,6 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 	    add(new MenuCheckBox("rbtn-chr", kb_chr, "Character Sheet"), 0, 0).state(() -> wndstate(chrwdg)).click(() -> togglewnd(chrwdg));
 	    add(new MenuCheckBox("rbtn-bud", kb_bud, "Kith & Kin"), 0, 0).state(() -> wndstate(zerg)).click(() -> togglewnd(zerg));
 	    add(new MenuCheckBox("rbtn-opt", kb_opt, "Options"), 0, 0).state(() -> wndstate(opts)).click(() -> togglewnd(opts));
-	    add(new MenuCheckBox("rbtn-opt", KeyBinding.get("area-export", KeyMatch.nil), "Area export"), 0, 0).state(() -> wndstate(areaExportWnd)).click(() -> toggleAreaExport());
 	}
 
 	public void draw(GOut g) {
