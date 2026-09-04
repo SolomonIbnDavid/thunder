@@ -10,4 +10,8 @@ Area export
 #uint16 hk
 0
 #uint16 ad length
-0
+2
+#String ad[0]
+@
+#String ad[1]
+areaexport
