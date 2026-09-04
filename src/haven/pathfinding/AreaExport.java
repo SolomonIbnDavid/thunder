@@ -48,12 +48,11 @@ final class AreaExport {
      * Produces a single registry-entry JSON object.
      *
      * @param gridVertices ordered polygon vertices, each {@code {gridId, lx, ly}}
-     * @param name         the durable area id (user-typed)
-     * @param role         the semantic role (e.g. {@code transition}, {@code forage_source})
+     * @param name         the durable area id (used as both id and name)
      * @return a JSON object matching the Area registry's per-area shape
      * @throws NullPointerException if {@code gridVertices} is null/empty or {@code name} is null/blank
      */
-    static JsonObject toJson(List<long[]> gridVertices, String name, String role) {
+    static JsonObject toJson(List<long[]> gridVertices, String name) {
         if (gridVertices == null || gridVertices.isEmpty()) {
             throw new NullPointerException("gridVertices must not be null or empty");
         }
@@ -62,7 +61,6 @@ final class AreaExport {
         }
         JsonObject obj = new JsonObject();
         obj.addProperty("id", name.trim());
-        obj.addProperty("role", (role == null || role.trim().isEmpty()) ? "avoid" : role.trim());
         obj.add("layer", JsonNull.INSTANCE);
 
         JsonArray tags = new JsonArray();

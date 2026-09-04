@@ -8,15 +8,17 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Pure state and geometry for the opt-in organizer's multi-click area tool:
- * four ground clicks (the user walks between corners) define a quadrilateral.
- * Each vertex is captured both as a session world tile and — when a live map
- * is supplied — in durable (grid_id, local_x, local_y) form so the exported
- * area survives map re-exports. The selection also exposes the axis-aligned
+ * Pure state and geometry for the opt-in organizer's area tool:
+ * two clicks (opposite corners) define an axis-aligned rectangle.
+ * Each click captures a session world tile; when a live map is
+ * supplied, the four rectangle corners are resolved in durable
+ * (grid_id, local_x, local_y) form so the exported area survives
+ * map re-exports. The selection also exposes the axis-aligned
  * bounding box (min/max tiles) used by the stockpile planner.
  */
 public final class OrganizerAreaSelector {
-   public static final int VERTEX_COUNT = 4;
+   /** Number of clicks needed to define the rectangle (two opposite corners). */
+   public static final int CLICK_COUNT = 2;
 
    public enum State { EMPTY, IN_PROGRESS, COMPLETE }
 
@@ -82,29 +84,50 @@ public final class OrganizerAreaSelector {
    private Selection click(Coord2d world, MCache map, boolean resolveGrid) {
       if (world == null) throw new IllegalArgumentException("world");
       Coord tile = world.floor(MCache.tilesz);
+
+      if (tiles.isEmpty()) {
+         // First click: just record the tile
+         tiles.add(tile);
+         state = State.IN_PROGRESS;
+         return null;
+      }
+
+      // Second click: build axis-aligned rectangle from tiles[0] and this click
+      Coord t1 = tiles.get(0);
+      int minX = Math.min(t1.x, tile.x);
+      int maxX = Math.max(t1.x, tile.x);
+      int minY = Math.min(t1.y, tile.y);
+      int maxY = Math.max(t1.y, tile.y);
+
+      List<Coord> cornerTiles = new ArrayList<>();
+      cornerTiles.add(Coord.of(minX, minY));
+      cornerTiles.add(Coord.of(maxX, minY));
+      cornerTiles.add(Coord.of(maxX, maxY));
+      cornerTiles.add(Coord.of(minX, maxY));
+
+      List<long[]> cornerGridVerts = new ArrayList<>();
       if (resolveGrid) {
-         Coord gc = tile.div(MCache.cmaps);
-         MCache.Grid g;
-         try {
-            g = (map == null) ? null : map.getgrid(gc);
-         } catch (Loading l) {
-            g = null;
+         for (Coord ct : cornerTiles) {
+            Coord gc = ct.div(MCache.cmaps);
+            MCache.Grid g;
+            try {
+               g = (map == null) ? null : map.getgrid(gc);
+            } catch (Loading l) {
+               g = null;
+            }
+            if (g == null) {
+               return null; // grid not loaded — caller tells user to move closer
+            }
+            int lx = ct.x - gc.x * MCache.cmaps.x;
+            int ly = ct.y - gc.y * MCache.cmaps.y;
+            cornerGridVerts.add(new long[]{g.id, lx, ly});
          }
-         if (g == null) {
-            return null; // grid not loaded: caller tells the user to move closer
-         }
-         int lx = tile.x - gc.x * MCache.cmaps.x;
-         int ly = tile.y - gc.y * MCache.cmaps.y;
-         gridVertices.add(new long[]{g.id, lx, ly});
       }
+
       tiles.add(tile);
-      if (tiles.size() >= VERTEX_COUNT) {
-         selection = new Selection(new ArrayList<>(gridVertices), new ArrayList<>(tiles));
-         state = State.COMPLETE;
-         return selection;
-      }
-      state = State.IN_PROGRESS;
-      return null;
+      selection = new Selection(cornerGridVerts, cornerTiles);
+      state = State.COMPLETE;
+      return selection;
    }
 
    public void cancel() {
