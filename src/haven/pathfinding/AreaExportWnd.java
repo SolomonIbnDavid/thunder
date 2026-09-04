@@ -23,6 +23,7 @@ import me.ender.CustomCursors;
 public class AreaExportWnd extends Hidewnd {
     private static final int WIDTH = UI.scale(300);
     private final TextEntry name;
+    private final TextEntry role;
     private final Label status;
     private final OrganizerAreaSelector area = new OrganizerAreaSelector();
 
@@ -40,6 +41,16 @@ public class AreaExportWnd extends Hidewnd {
         }, this.name.pos("ur").adds(4, 0));
 
         int y = this.name.sz.y + UI.scale(8);
+
+        this.role = new TextEntry(WIDTH - UI.scale(80), "transition");
+        add(this.role, 0, y);
+        add(new Button(UI.scale(70), "Save role") {
+            public void click() {
+                AreaExportWnd.this.msg("Role set: " + AreaExportWnd.this.role.text(), MsgType.INFO);
+            }
+        }, this.role.pos("ur").adds(4, 0));
+
+        y += this.role.sz.y + UI.scale(8);
 
         add(new Button(UI.scale(120), "Create area") {
             public void click() {
@@ -118,13 +129,17 @@ public class AreaExportWnd extends Hidewnd {
             this.msg("Type a name first", MsgType.ERROR);
             return;
         }
+        String role = this.role.text();
+        if (role == null || role.trim().isEmpty()) {
+            this.msg("Type a role first", MsgType.ERROR);
+            return;
+        }
         try {
             java.nio.file.Path outFile = AreaExport.exportPath();
             java.nio.file.Files.createDirectories(outFile.getParent());
-            com.google.gson.JsonObject json = AreaExport.toJson(sel.gridVertices, name, "transition");
-            java.nio.file.Files.write(outFile,
-                (json.toString() + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            this.msg("Exported area \"" + name + "\" (transition) to "
+            com.google.gson.JsonObject json = AreaExport.toJson(sel.gridVertices, name, role.trim());
+            AreaExport.upsertToRegistry(json, outFile);
+            this.msg("Exported area \"" + name + "\" (role: " + role.trim() + ") to "
                 + outFile.toAbsolutePath(), MsgType.INFO);
         } catch (java.io.IOException e) {
             this.msg("Export failed: " + e.getMessage(), MsgType.ERROR);
