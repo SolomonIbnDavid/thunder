@@ -127,16 +127,25 @@ public final class NamedPlaceNavigator {
             Coord2d before = NamedPlaceNavigator.observePos(gui);
 
             try {
-               WaypointWalker.Result r = WaypointWalker.execute(
-                  WaypointWalker.liveEnv(gui),
-                  bot,
-                  plan.waypoints,
-                  0,
-                  walkBudgetMs,
-                  params == null ? WaypointWalker.Params.DEFAULT : params,
-                  listener == null ? NamedPlaceNavigator.NOOP : listener,
-                  NavPlanStatus.valueOf(plan.status.name())
-               );
+               WaypointWalker.Result r;
+               List<GatePassage.Crossing> crossings = GatePassage.observedCrossings(gui, plan.waypoints);
+               if (crossings.isEmpty()) {
+                  r = WaypointWalker.execute(
+                     WaypointWalker.liveEnv(gui),
+                     bot,
+                     plan.waypoints,
+                     0,
+                     walkBudgetMs,
+                     params == null ? WaypointWalker.Params.DEFAULT : params,
+                     listener == null ? NamedPlaceNavigator.NOOP : listener,
+                     NavPlanStatus.valueOf(plan.status.name())
+                  );
+               } else {
+                  // The leg crosses a pass-through gate: open/pass/close around it.
+                  r = GatePassage.resultFor(
+                     GatePassage.walk(gui, bot, plan.waypoints, walkBudgetMs, listener == null ? NamedPlaceNavigator.NOOP : listener)
+                  );
+               }
                return NamedPlaceNavigator.walkerResult(r, NamedPlaceNavigator.observePos(gui), before != null ? before : from);
             } catch (InterruptedException var5) {
                return NamedPlaceNavigator.walkerCancelled(var5, NamedPlaceNavigator.observePos(gui), before != null ? before : from);

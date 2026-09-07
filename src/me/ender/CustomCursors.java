@@ -20,6 +20,8 @@ public class CustomCursors {
     private static Consumer<Coord2d> markAreaCallback;
     private static Runnable markAreaCancel;
     private static Coord2d markAreaStart;
+    private static int markAreaClicks = 0;
+    private static int markAreaMaxClicks = 2;
     private static MCache.RectOverlay markAreaOverlay;
     private static MapView markAreaMap;
     private static boolean pickConsumeEmpty;
@@ -31,11 +33,15 @@ public class CustomCursors {
 
 	if(isPicking(map)) {
 	    if(markAreaCallback != null) {
+		if(markingAreaCtrlPass(map)) {
+		    return false; // Ctrl = pass through to normal click-to-move
+		}
 		boolean first = markAreaStart == null;
 		if(first) markAreaStart = mc;
 		updateAreaOverlay(map, mc);
 		markAreaCallback.accept(mc);
-		if(!first) stopPicking(map, false, true);
+		markAreaClicks++;
+		if(markAreaClicks >= markAreaMaxClicks) stopPicking(map, false, true);
 		return true;
 	    }
 	    if(markGroundCallback != null) {
@@ -283,12 +289,18 @@ public class CustomCursors {
 
     /** Starts a two-click, tile-aligned area picker. The callback receives each click. */
     public static void startMarkingArea(MapView map, Consumer<Coord2d> callback, Runnable cancelled) {
+	startMarkingArea(map, callback, cancelled, 2);
+    }
+
+    public static void startMarkingArea(MapView map, Consumer<Coord2d> callback, Runnable cancelled, int maxClicks) {
 	stopCustomModes(map);
 	clearAreaOverlay();
 	if(map.cursor == null) {
 	    markAreaCallback = callback;
 	    markAreaCancel = cancelled;
 	    markAreaStart = null;
+	    markAreaClicks = 0;
+	    markAreaMaxClicks = Math.max(2, maxClicks);
 	    markAreaMap = map;
 	    pickCallback = null;
 	    markGroundCallback = null;
@@ -300,6 +312,11 @@ public class CustomCursors {
 
     public static boolean isMarkingArea(MapView map) {
 	return map != null && map.cursor == PICK && markAreaCallback != null;
+    }
+
+    /** True when area-marking is active and Ctrl is held — the click should pass through as a normal move. */
+    public static boolean markingAreaCtrlPass(MapView map) {
+	return isMarkingArea(map) && (map.ui.modflags() & UI.MOD_CTRL) != 0;
     }
 
     private static void updateAreaOverlay(MapView map, Coord2d end) {
@@ -330,6 +347,8 @@ public class CustomCursors {
 	    markAreaCallback = null;
 	    markAreaCancel = null;
 	    markAreaStart = null;
+	    markAreaClicks = 0;
+	    markAreaMaxClicks = 2;
 	    if(!preserveArea) clearAreaOverlay();
 	}
     }

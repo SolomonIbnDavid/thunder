@@ -22,6 +22,7 @@ public final class DebugBoot {
 	touch("haven.GobWarningDebug");
 	touch("haven.pathfinding.PathfinderDebug");
 	touch("haven.pathfinding.CriticalRouteOverlay");
+	touch("haven.pathfinding.BoardStockpileOverlay");
 	touch("haven.pathfinding.NavReplayRunner");
     }
 

@@ -5,8 +5,8 @@ package haven.pathfinding;
  * UI dependencies, so illegal acknowledgements are testable without a game.
  */
 public final class StockpileProtocol {
-   public enum State { IDLE, HELD, ITEMACT_SENT, FLOWER_OPEN, FLOWER_SELECTED, PLACE_SENT, ACKNOWLEDGED, FAILED }
-   public enum Signal { HELD_CONFIRMED, ITEMACT_ACK, FLOWER_OPEN, FLOWER_SELECTED, PLACE_ACK, TIMEOUT, CANCELLED }
+   public enum State { IDLE, HELD, ITEMACT_SENT, PLACER_READY, PLACE_SENT, ACKNOWLEDGED, FAILED }
+   public enum Signal { HELD_CONFIRMED, ITEMACT_ACK, PLACER_READY, PLACE_ACK, TIMEOUT, CANCELLED }
 
    private State state = State.IDLE;
    private String failure;
@@ -21,10 +21,8 @@ public final class StockpileProtocol {
             return move(State.IDLE, State.HELD);
          case ITEMACT_ACK:
             return move(State.HELD, State.ITEMACT_SENT);
-         case FLOWER_OPEN:
-            return move(State.ITEMACT_SENT, State.FLOWER_OPEN);
-         case FLOWER_SELECTED:
-            return move(State.FLOWER_OPEN, State.FLOWER_SELECTED);
+         case PLACER_READY:
+            return move(State.ITEMACT_SENT, State.PLACER_READY);
          case PLACE_ACK:
             return move(State.PLACE_SENT, State.ACKNOWLEDGED);
          case TIMEOUT:
@@ -36,9 +34,9 @@ public final class StockpileProtocol {
       }
    }
 
-   /** Marks the outbound place message only after an actual preview exists. */
+   /** Marks the outbound place message only after the server entered the placer. */
    public boolean placeSent() {
-      return move(State.FLOWER_SELECTED, State.PLACE_SENT);
+      return move(State.PLACER_READY, State.PLACE_SENT);
    }
 
    public boolean fail(String reason) {

@@ -130,6 +130,7 @@ public final class WaypointWalker {
          if (env.now() > deadline) {
             l.fail("waypoint budget exhausted (gate " + (obs == null ? "none" : "PROGRESSING") + ")", null, obsBrief(obs));
             l.dumpStuck();
+            PathfinderLog.dumpFailure("walk budget exhausted before waypoint progress");
             return WaypointWalker.Result.TIMEOUT;
          }
          obs = env.observe(false);
@@ -151,6 +152,7 @@ public final class WaypointWalker {
             } else if (tick.reason == SurfaceStream.Reason.NO_PROGRESS) {
                l.fail("wp stream timed out", WaypointGate.Outcome.NO_PROGRESS, obsBrief(obs));
                l.dumpStuck();
+               PathfinderLog.dumpFailure("walk stalled: wp stream NO_PROGRESS timeout");
                return WaypointWalker.Result.TIMEOUT;
             } else {
                break;
@@ -208,6 +210,7 @@ public final class WaypointWalker {
       if (out == NavOutcome.STUCK) {
          l.fail("stuck " + tick.decision.reason, WaypointGate.Outcome.STOPPED_SHORT, obsBrief(obs));
          l.dumpStuck();
+         PathfinderLog.dumpFailure("walk stalled: " + tick.decision.reason);
          return WaypointWalker.Result.STUCK;
       }
       if (tick.reason == SurfaceStream.Reason.HORIZON_ADVANCE) {
@@ -218,11 +221,13 @@ public final class WaypointWalker {
          String gate = tick.reason == SurfaceStream.Reason.WALK_TIMEOUT ? "WALK_TIMEOUT" : tick.reason == SurfaceStream.Reason.NO_PROGRESS ? "NO_PROGRESS" : "TIMEOUT";
          l.fail("wp stream timed out", WaypointGate.Outcome.valueOf(tick.reason == SurfaceStream.Reason.NO_PROGRESS ? "NO_PROGRESS" : "WALK_TIMEOUT"), obsBrief(obs));
          l.dumpStuck();
+         PathfinderLog.dumpFailure("walk timed out: " + gate);
          return WaypointWalker.Result.TIMEOUT;
       }
       if (tick.reason == SurfaceStream.Reason.START_TIMEOUT) {
          l.fail("wp stream abandoned", WaypointGate.Outcome.START_TIMEOUT, obsBrief(obs));
          l.dumpStuck();
+         PathfinderLog.dumpFailure("walk never started: START_TIMEOUT");
          return WaypointWalker.Result.REJECTED;
       }
       l.fail("wp stream " + tick.reason, null, obsBrief(obs));

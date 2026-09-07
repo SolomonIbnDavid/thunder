@@ -15,13 +15,15 @@ import java.util.Map;
  */
 public final class BuildingDoor {
    static final Coord2d DEFAULT_HALF = Coord2d.of(6.0, 6.0);
+   /** Stand-off kept in front of a house doorway when walking to a house leg. */
+   public static final double DOOR_APPROACH_U = 10.0;
    private static final Map<String, Off[]> OFFSETS = new LinkedHashMap<String, Off[]>();
 
    static {
       OFFSETS.put("gfx/terobjs/arch/logcabin", new Off[]{new Off(22.0, 0.0, 16)});
       OFFSETS.put("gfx/terobjs/arch/timberhouse", new Off[]{new Off(33.0, 0.0, 16)});
       OFFSETS.put("gfx/terobjs/arch/stonestead", new Off[]{new Off(44.0, 0.0, 16)});
-      OFFSETS.put("gfx/terobjs/arch/stonemansion", new Off[]{new Off(48.0, 0.0, 16)});
+      OFFSETS.put("gfx/terobjs/arch/stonemansion", new Off[]{new Off(48.0, 3.5, 16)});
       OFFSETS.put(
          "gfx/terobjs/arch/greathall",
          new Off[]{new Off(77.0, -28.0, 18), new Off(77.0, 0.0, 17), new Off(77.0, 28.0, 16)}
@@ -216,16 +218,50 @@ public final class BuildingDoor {
          if (g == null || g.rc == null || g.id == hull.id || !isDoorGob(g.resid)) {
             continue;
          }
-         if (g.rc.dist(hull.rc) > max) {
+         if (!sameBuildingFamily(hull.resid, g.resid) && g.rc.dist(hull.rc) > max) {
             continue;
          }
          double d = g.rc.dist(near);
-         if (d < bestD) {
+         if (d < bestD && g.rc.dist(hull.rc) <= max) {
             bestD = d;
             best = g;
          }
       }
       return best;
+   }
+
+   /**
+    * Resolves the door gob for a house hull, falling back from the local scene
+    * window (~220u) to the full object cache when the door is not yet observed.
+    * A door gob carries the exact doorway position and hitbox; the hull centre
+    * and hardcoded offsets are never as accurate. Returns the door gob when
+    * found, otherwise the original gob.
+    */
+   public static PrototypePathfinder.GobGeom resolveDoor(GameUI gui, PrototypePathfinder.Scene scene, PrototypePathfinder.GobGeom gob) {
+      if (scene == null || gob == null || !isHouseHull(gob.resid)) {
+         return gob;
+      }
+      PrototypePathfinder.GobGeom door = nearestDoor(scene, gob);
+      if (door != null) {
+         return door;
+      }
+      if (gui == null || gui.map == null || gui.map.glob == null || gui.ui == null) {
+         return gob;
+      }
+      Gob hullLive;
+      synchronized (gui.ui) {
+         hullLive = gui.map.glob.oc.getgob(gob.id);
+      }
+      if (hullLive != null) {
+         Gob doorLive = nearestDoorGob(gui, hullLive);
+         if (doorLive != null) {
+            PrototypePathfinder.GobGeom resolved = PrototypePathfinder.gobGeom(gui, doorLive.id);
+            if (resolved != null && resolved.rc != null && isDoorGob(resolved.resid)) {
+               return resolved;
+            }
+         }
+      }
+      return gob;
    }
 
    public static Coord2d markerWorld(GameUI gui, CriticalRouteBook.Leg leg, Coord2d stored) {
@@ -251,6 +287,72 @@ public final class BuildingDoor {
          return stored;
       }
       return t.origin;
+   }
+
+   /**
+    * Walk-to point for a house leg: the doorway centre pushed outward by
+    * {@link #DOOR_APPROACH_U}. Walking all the way to the doorway centre
+    * leaves the bot inside the doorway's interaction box and the hull's
+    * inflated wall, so the transition's pose selection rejects every stand
+    * as unreachable ("no reachable interaction pose").
+    */
+   public static Coord2d walkWorld(GameUI gui, CriticalRouteBook.Leg leg, Coord2d stored) {
+      if (leg == null || stored == null) {
+         return stored;
+      }
+      Gob hull = CriticalRouteBook.resolveGob(gui, leg.gobId, leg.resid, stored);
+      if (hull == null || hull.rc == null) {
+         // Hull not streamed in yet (bot far): walk toward the recorded doorway
+         // but stop DOOR_APPROACH_U short of it on the approach line, so the
+         // goal stays in free space once the hull appears. Walking to the
+         // doorway centre itself would target a solid cell as soon as the hull
+         // loads, leaving followTo with "no route around obstacles".
+         Coord2d at = gui != null && gui.map != null && gui.map.player() != null ? gui.map.player().rc : null;
+         if (at == null) {
+            return stored;
+         }
+         return beforePoint(at, stored, DOOR_APPROACH_U);
+      }
+      Coord2d doorWorld;
+      Gob door = nearestDoorGob(gui, hull);
+      if (door != null && door.rc != null) {
+         doorWorld = door.rc;
+      } else {
+         Target t = target(CriticalRouteBook.gobResid(hull), hull.rc, hull.a, hull.id, stored);
+         if (t == null || t.origin == null) {
+            return stored;
+         }
+         doorWorld = t.origin;
+      }
+      return standoff(doorWorld, hull.rc, DOOR_APPROACH_U);
+   }
+
+   /** {@code beforeU} units before {@code door} on the approach line from {@code from}. */
+   static Coord2d beforePoint(Coord2d from, Coord2d door, double beforeU) {
+      if (door == null || from == null) {
+         return door;
+      }
+      double dx = from.x - door.x;
+      double dy = from.y - door.y;
+      double len = Math.hypot(dx, dy);
+      if (len < 1.0) {
+         return door;
+      }
+      return Coord2d.of(door.x + dx / len * beforeU, door.y + dy / len * beforeU);
+   }
+
+   /** Pure outward stand-off: {@code doorWorld} pushed {@code standoffU} along the hull-centre-to-door ray. */
+   static Coord2d standoff(Coord2d doorWorld, Coord2d hullRc, double standoffU) {
+      if (doorWorld == null || hullRc == null) {
+         return doorWorld;
+      }
+      double dx = doorWorld.x - hullRc.x;
+      double dy = doorWorld.y - hullRc.y;
+      double len = Math.hypot(dx, dy);
+      if (len < 1.0) {
+         return doorWorld;
+      }
+      return Coord2d.of(doorWorld.x + dx / len * standoffU, doorWorld.y + dy / len * standoffU);
    }
 
    public static void interact(GameUI gui, Gob gob, haven.nav.InteractionSpec spec) {

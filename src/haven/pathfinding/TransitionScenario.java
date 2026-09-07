@@ -125,11 +125,41 @@ final class TransitionScenario implements PfTestRunner.Scenario {
          scene = PrototypePathfinder.observe(gui);
       }
       PrototypePathfinder.GobGeom gob = pick(gui, scene, preferGobId);
-      gob = BuildingDoor.preferDoor(scene, gob);
+      gob = BuildingDoor.resolveDoor(gui, scene, gob);
       if (gob == null) {
          return failClosed(checks, "NO_FIXTURE", "no automatic fixture for " + this.kind.name);
       }
       checks.add(PfTestRunner.check("fixture", true, this.kind.name + " #" + gob.id));
+      // Distant targets: stage beside the target and refresh geometry before
+      // any pose selection. The gob center is never a walking destination.
+      haven.nav.InteractionSpec preSpec = InteractionAdapter.fromGob(
+         gob, haven.nav.InteractionSpec.ALL_SIDES, 1.0, 35.0, 1, null, InteractionVerifier.STATE_CHANGED, scene.player
+      );
+      if (CollisionGeom.UNAVAILABLE.equals(preSpec.geometrySource)
+         || StagingPlanner.required(scene.player, scene.occupancy, preSpec)) {
+         PathfinderLog.recordInteraction(InteractionStaging.phaseRecord(
+            "STAGING_REQUIRED",
+            InteractionTarget.of(gob, "transition:" + this.kind.edge.name(), InteractionVerifier.STATE_CHANGED, scene.terrain),
+            scene.player, null, gob, 0, ""
+         ));
+         InteractionStaging.Result st = InteractionStaging.stage(
+            run, ui, gui,
+            InteractionTarget.of(gob, "transition:" + this.kind.edge.name(), InteractionVerifier.STATE_CHANGED, scene.terrain),
+            (g, near) -> InteractionAdapter.fromGob(
+               g, haven.nav.InteractionSpec.ALL_SIDES, 1.0, 35.0, 1, null, InteractionVerifier.STATE_CHANGED, near
+            ),
+            null
+         );
+         if (!st.staged()) {
+            return failClosed(checks, st.outcome, "staging failed: " + st.detail);
+         }
+         scene = st.scene;
+         gob = st.target;
+         // Re-resolve the door now that the fixture is inside the local
+         // observation window: the exact door gob position beats the hull's
+         // hardcoded doorway offset, especially beside a cluttered wall.
+         gob = BuildingDoor.resolveDoor(gui, scene, gob);
+      }
       TransitionMachine machine = new TransitionMachine(
          original, source, Long.toString(gob.id), this.kind.edge, null, TransitionAdapter.authFor(this.kind.edge, this.kind.vehicleExit, gob.resid)
       );
@@ -154,14 +184,17 @@ final class TransitionScenario implements PfTestRunner.Scenario {
          route.add(scene.player);
          route.add(ap.stand);
       }
+      PathfinderLog.setTarget("transition " + this.kind.name + " #" + gob.id + " FINAL>INTERACT");
       Bot bot = Bot.execute(new Bot.BotAction[0]);
       WaypointWalker.Result walk = WaypointWalker.execute(
          WaypointWalker.liveEnv(gui), bot, route, 0, 60000L, WaypointWalker.Params.DEFAULT, NamedPlaceNavigator.NOOP, ap.status, ap.stand, ap.spec
       );
+      PathfinderLog.clearTarget();
       boolean arrived = walk == WaypointWalker.Result.READY_TO_INTERACT;
       checks.add(PfTestRunner.check("arrival", arrived, arrived ? "server-confirmed pose" : "walk " + walk));
       if (!arrived) {
          machine.timeout();
+         PathfinderLog.dumpFailure("transition NO_ARRIVAL: walk " + walk);
          return failClosed(checks, "NO_ARRIVAL", "did not arrive at approach");
       }
       machine.arrived();
@@ -248,6 +281,9 @@ final class TransitionScenario implements PfTestRunner.Scenario {
       }
       boolean ok = machine.state().phase == TransitionMachine.Phase.SUCCEEDED;
       checks.add(PfTestRunner.check("transition", ok, ok ? "authoritative landing" : machine.state().reason));
+      if (!ok) {
+         PathfinderLog.dumpFailure("transition " + this.kind.name + " failed: " + machine.state().reason);
+      }
       if (ok && passThroughGate && !alreadyOpen) {
          waitProg(run, ui, gui, 800L, 30000L);
       }
@@ -568,7 +604,7 @@ final class TransitionScenario implements PfTestRunner.Scenario {
       boolean sawFloorChange = false;
       boolean sawTeleport = false;
       for (; System.currentTimeMillis() < deadline; Thread.sleep(100L)) {
-         if (run.cancelled) {
+         if (run != null && run.cancelled) {
             return new AuthWait(null, false, false, false);
          }
          GraphNode now;
@@ -753,7 +789,7 @@ final class TransitionScenario implements PfTestRunner.Scenario {
       waitProg(run, ui, gui, 1500L, 30000L);
       long deadline = System.currentTimeMillis() + 4000L;
       for (; System.currentTimeMillis() < deadline; Thread.sleep(100L)) {
-         if (run.cancelled) {
+         if (run != null && run.cancelled) {
             throw new PfTestRunner.Cancelled();
          }
          synchronized (ui) {
@@ -772,10 +808,50 @@ final class TransitionScenario implements PfTestRunner.Scenario {
       return "gate did not close";
    }
 
+   /** Mirror of {@link #closeGate}: right-click the gate and wait for it to read OPEN. */
+   static String openGate(PfTestRunner.Run run, UI ui, GameUI gui, long gobId) throws Exception {
+      waitIdle(run, ui, gui);
+      Gob target;
+      int sdt;
+      Coord2d at;
+      synchronized (ui) {
+         Gob me = gui.map.player();
+         at = me == null ? null : me.rc;
+         target = gui.map.glob.oc.getgob(gobId);
+         sdt = target == null ? -1 : target.sdt();
+      }
+      if (target == null || target.rc == null) {
+         return "gate gone before open";
+      }
+      if (TransitionApproachSelector.transitionState(sdt) == TransitionApproachSelector.TransitionState.OPEN) {
+         return null;
+      }
+      if (at == null || at.dist(target.rc) > 35.0) {
+         return "too far to open gate";
+      }
+      target.rclick(0);
+      waitProg(run, ui, gui, 1500L, 30000L);
+      long deadline = System.currentTimeMillis() + 4000L;
+      for (; System.currentTimeMillis() < deadline; Thread.sleep(100L)) {
+         if (run != null && run.cancelled) {
+            throw new PfTestRunner.Cancelled();
+         }
+         synchronized (ui) {
+            Gob g = gui.map.glob.oc.getgob(gobId);
+            sdt = g == null ? -1 : g.sdt();
+         }
+         if (TransitionApproachSelector.transitionState(sdt) == TransitionApproachSelector.TransitionState.OPEN) {
+            waitIdle(run, ui, gui);
+            return null;
+         }
+      }
+      return "gate did not open";
+   }
+
    static void waitIdle(PfTestRunner.Run run, UI ui, GameUI gui) throws InterruptedException, PfTestRunner.Cancelled {
       long deadline = System.currentTimeMillis() + 8000L;
       while (System.currentTimeMillis() < deadline) {
-         if (run.cancelled) {
+         if (run != null && run.cancelled) {
             throw new PfTestRunner.Cancelled();
          }
          boolean idle;
@@ -797,7 +873,7 @@ final class TransitionScenario implements PfTestRunner.Scenario {
       long appearUntil = System.currentTimeMillis() + appearMs;
       boolean saw = false;
       while (System.currentTimeMillis() < appearUntil) {
-         if (run.cancelled) {
+         if (run != null && run.cancelled) {
             throw new PfTestRunner.Cancelled();
          }
          synchronized (ui) {
@@ -813,7 +889,7 @@ final class TransitionScenario implements PfTestRunner.Scenario {
       }
       long finishUntil = System.currentTimeMillis() + finishMs;
       while (System.currentTimeMillis() < finishUntil) {
-         if (run.cancelled) {
+         if (run != null && run.cancelled) {
             throw new PfTestRunner.Cancelled();
          }
          boolean prog;

@@ -2969,7 +2969,8 @@ public class MapView extends PView implements DTarget, Console.Directory, Widget
 	}
 	
 	protected void hit(Coord pc, Coord2d mc, ClickData inf) {
-	    Object[] args = {pc, mc.floor(posres), clickb, ui.modflags()};
+	    int mods = CustomCursors.markingAreaCtrlPass(MapView.this) ? 0 : ui.modflags();
+	    Object[] args = {pc, mc.floor(posres), clickb, mods};
 	    
 	    if(CustomCursors.processHit(MapView.this, mc, inf)) {return;}
 	    if(inf != null) {
@@ -3041,6 +3042,23 @@ public class MapView extends PView implements DTarget, Console.Directory, Widget
 	if(p == null || !p.done()) return false;
 	try { return p.get() != null && p.get().lastmc != null; }
 	catch(RuntimeException e) { return false; }
+    }
+
+    /** True once the server has entered placement mode (a Plob preview exists),
+     *  regardless of whether the mouse happens to be over the map. */
+    public boolean isPlacing() {
+	Loader.Future<Plob> p = placing;
+	if(p == null || !p.done()) return false;
+	try { return p.get() != null; }
+	catch(RuntimeException e) { return false; }
+    }
+
+    /** Confirms placement at an explicit world tile with angle 0, matching the wire shape
+     *  Nurgling sends after entering the placer; does not depend on the mouse position. */
+    public boolean placeAt(Coord2d world, int button, int modflags) {
+	if(world == null) return false;
+	wdgmsg("place", world.floor(posres), 0, button, modflags);
+	return true;
     }
 
     public void click(Coord2d c, int button) {

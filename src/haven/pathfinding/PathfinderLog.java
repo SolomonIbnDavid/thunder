@@ -308,6 +308,49 @@ public final class PathfinderLog {
       return lastGeometry;
    }
 
+   /** Durable terminal-failure dump target: one JSONL file per failure. */
+   public static Path failureDumpFile() {
+      return Utils.path(System.getProperty("user.dir", ".")).resolve("dev-snapshots").resolve("pf").resolve("stuck")
+         .resolve(System.currentTimeMillis() + ".jsonl");
+   }
+
+   /**
+    * Terminal-failure dump: writes one JSON line capturing whatever diagnostic
+    * state is in memory (exec-tick ring, occupancy, staging/transition records)
+    * so a failed navigation can be inspected later. Degrades gracefully — every
+    * field is omitted/nulled if unavailable — and never throws.
+    */
+   public static void dumpFailure(String reason) {
+      try {
+         JSONObject o = new JSONObject();
+         o.put("t", System.currentTimeMillis());
+         o.put("reason", reason == null ? "" : reason);
+         Coord2d pos = lastConfirmedPos;
+         o.put("player", pos == null ? JSONObject.NULL : new JSONArray().put(round(pos.x)).put(round(pos.y)));
+         JSONArray arr = new JSONArray();
+         for (JSONObject e : recent()) {
+            arr.put(e);
+         }
+         o.put("recent", arr);
+         PathfinderLog.Occupancy occ = PathfinderLog.Occupancy.wrap(lastOcc);
+         if (occ != null) {
+            o.put("occupancy_ascii", occ.ascii(occ.start, 10));
+         }
+         o.put("last_interaction", lastInteraction == null ? JSONObject.NULL : lastInteraction);
+         o.put("last_graph", lastGraph == null ? JSONObject.NULL : lastGraph);
+         Path file = failureDumpFile();
+         Files.createDirectories(file.getParent());
+         Writer w = Files.newBufferedWriter(file, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+         try {
+            w.write(o.toString());
+            w.write(10);
+         } finally {
+            w.close();
+         }
+      } catch (IOException | RuntimeException ignored) {
+      }
+   }
+
    public static Path geometryDumpFile() {
       return Utils.path(System.getProperty("user.dir", ".")).resolve("dev-snapshots").resolve("pf").resolve("geometry-dump.jsonl");
    }

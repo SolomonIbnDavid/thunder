@@ -151,7 +151,27 @@ final class RecordedRouteScenario implements PfTestRunner.Scenario {
          }
          if ("gob".equals(leg.kind) && tk != null) {
             Coord2d dest = CriticalRouteBook.sessionWorld(gui, leg);
-            if (liveGob != null && liveGob.rc != null) {
+            if (BuildingDoor.isHouseHull(leg.resid)) {
+               // Walk to the doorway, never the blocked hull centre: the hull
+               // centre is a solid cell and planAny snaps it to a far corner,
+               // which followTo reports as "stuck: no progress around obstacles".
+               // The doorway sits on the wall, so planAny snaps it to the free
+               // cell immediately in front of the door.
+               dest = BuildingDoor.walkWorld(gui, leg, dest);
+            } else if (TransitionApproachSelector.isCaveTransitionResid(leg.resid)) {
+               // Cave-transition fixtures (minehole/ladder/cellar-stairs) have a
+               // solid centre. Walking to liveGob.rc targets a solid cell and
+               // planAny snaps it to a far free cell, stalling the walker before
+               // the transition runs ("walk stalled: aba_oscillation"). When the
+               // gob is already resolvable, skip this pre-walk entirely: the
+               // transition's own staging walks to a stand-off pose beside the
+               // fixture and never targets its centre. When it is not yet
+               // resolvable, keep the recorded-position hop below to bring the
+               // fixture into observation range.
+               if (liveGob != null) {
+                  dest = null;
+               }
+            } else if (liveGob != null && liveGob.rc != null) {
                dest = liveGob.rc;
             }
             Coord2d at = PfTestHarness.observePos(gui);

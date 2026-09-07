@@ -6,12 +6,14 @@ import haven.Coord2d;
 import haven.FlowerMenu;
 import haven.GameUI;
 import haven.Gob;
+import haven.Loading;
 import haven.Moving;
 import haven.UI;
 import haven.WItem;
 import haven.Window;
 import haven.nav.InteractionSpec;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -21,6 +23,12 @@ import org.json.JSONObject;
 /**
  * Allowlisted interaction-goal scenarios. Missing fixtures fail closed.
  * Arrival at a stand pose is not interaction success.
+ *
+ * <p>Distant targets use a two-stage flow: identity is preserved in an
+ * {@link InteractionTarget}, the player first walks to a staging coordinate
+ * ({@code target.rc} is never a final walking destination), geometry is
+ * refreshed, the target is re-resolved, and only then is the final
+ * interaction pose selected from fresh local geometry.</p>
  */
 final class InteractScenario implements PfTestRunner.Scenario {
    enum Kind {
@@ -46,6 +54,9 @@ final class InteractScenario implements PfTestRunner.Scenario {
          this.clearance = clearance;
       }
    }
+
+   private static final double POSE_EPS = 2.475;
+   private static final long WALK_BUDGET_MS = 60000L;
 
    private final Kind kind;
 
@@ -84,153 +95,279 @@ final class InteractScenario implements PfTestRunner.Scenario {
       }
       PrototypePathfinder.GobGeom gob = pick(scene);
       if (gob == null) {
+         gob = distantFixture(gui, scene);
+      }
+      if (gob == null) {
          return failClosed(checks, "NO_FIXTURE", "no automatic fixture for " + this.kind.name);
       }
-      InteractionSpec spec = InteractionAdapter.fromGob(
-         gob, InteractionSpec.ALL_SIDES, this.kind.minDist, this.kind.maxDist, this.kind.clearance, null, this.kind.expected, scene.player
-      );
-      OccupancyGrid occ = scene.occupancy;
-      InteractionGoals.Geometry geom = new InteractionGoals.Geometry(scene.solids, scene.playerBody);
-      InteractionGoals.Result pose = InteractionGoals.select(scene.player, spec, occ, geom);
-      PathfinderLog.recordOccupancy(occ);
-      PathfinderLog.recordInteraction(evidence(pose, spec, false, "", "", "", ""));
-      if (!pose.ok() || pose.selected == null) {
-         return failClosed(checks, "NO_POSE", "no reachable interaction pose");
-      }
-      if (this.kind == Kind.NARROW && !narrowAccess(pose)) {
-         return failClosed(checks, "NO_FIXTURE", "cupboard is not narrow-access");
-      }
-      checks.add(PfTestRunner.check("fixture", true, this.kind.name + " target #" + gob.id));
-      checks.add(PfTestRunner.check("pose_selected", true, "stand " + PfTestHarness.pt(pose.selected.world)));
-      Bot bot = Bot.execute(new Bot.BotAction[0]);
+      InteractionTarget target = InteractionTarget.of(gob, this.kind.name, this.kind.expected, scene.terrain);
+      List<Coord2d> staging = new ArrayList<Coord2d>();
       String observed = "";
       String retry = "";
       String outcome = "INTERACTION_FAILED";
       boolean arrived = false;
       boolean interacted = false;
       boolean confirmed = false;
-      for (int attempt = 0; InteractionVerifier.retryAllowed(attempt); attempt++) {
-         if (run.cancelled) {
-            throw new PfTestRunner.Cancelled();
+      PathfinderLog.setTarget("interact " + target.label() + " " + this.kind.name);
+      try {
+         InteractionSpec spec = spec(gob, scene.player);
+         if (CollisionGeom.UNAVAILABLE.equals(spec.geometrySource) || StagingPlanner.required(scene.player, scene.occupancy, spec)) {
+            PathfinderLog.recordInteraction(phaseEvidence("STAGING_REQUIRED", target, null, null, scene.player, staging, "", "", "0", ""));
+            if (run.cancelled) {
+               throw new PfTestRunner.Cancelled();
+            }
+            InteractionStaging.Result st = InteractionStaging.stage(
+               run, ui, gui, target, (g, near) -> spec(g, near), null
+            );
+            for (Coord2d p : st.stagingPoints) {
+               staging.add(p);
+            }
+            if (!st.staged()) {
+               return failOutcome(checks, st.outcome, st.detail, st.identity, staging);
+            }
+            scene = st.scene;
+            gob = st.target;
+            target = st.identity;
+            spec = spec(gob, scene.player);
+            if (CollisionGeom.UNAVAILABLE.equals(spec.geometrySource)) {
+               return failOutcome(checks, "LOCAL_GEOMETRY_UNAVAILABLE", "target geometry unavailable after staging", target, staging);
+            }
+            if (this.kind == Kind.NARROW && !narrowFixture(scene, gob)) {
+               return failClosed(checks, "NO_FIXTURE", "cupboard is not narrow-access");
+            }
          }
-         if (attempt > 0) {
-            retry = "revalidate_replan";
+         PathfinderLog.setTarget("interact " + target.label() + " FINAL>INTERACT");
+         checks.add(PfTestRunner.check("fixture", true, this.kind.name + " target #" + gob.id));
+         InteractionGoals.Geometry geom = new InteractionGoals.Geometry(scene.solids, scene.playerBody);
+         InteractionGoals.Result pose = InteractionGoals.select(scene.player, spec, scene.occupancy, geom);
+         PathfinderLog.recordOccupancy(scene.occupancy);
+         PathfinderLog.recordInteraction(phaseEvidence(
+            "INTERACTION_POSE_SELECTED", target, spec, pose, scene.player, staging, "", "", "0", ""
+         ));
+         if (!pose.ok() || pose.selected == null) {
+            return failOutcome(checks, "NO_INTERACTION_POSE",
+               "no reachable interaction pose (" + pose.dominantReject() + ")", target, staging);
+         }
+         if (this.kind == Kind.NARROW && !narrowAccess(pose)) {
+            return failClosed(checks, "NO_FIXTURE", "cupboard is not narrow-access");
+         }
+         checks.add(PfTestRunner.check("pose_selected", true, "stand " + PfTestHarness.pt(pose.selected.world)));
+         Bot bot = Bot.execute(new Bot.BotAction[0]);
+         for (int attempt = 0; InteractionVerifier.retryAllowed(attempt); attempt++) {
+            if (run.cancelled) {
+               throw new PfTestRunner.Cancelled();
+            }
+            if (attempt > 0) {
+               retry = "revalidate_replan";
+               synchronized (ui) {
+                  scene = PrototypePathfinder.observe(gui);
+               }
+               PrototypePathfinder.GobGeom live = target.resolveIn(scene);
+               if (live == null) {
+                  outcome = "TARGET_DISAPPEARED";
+                  break;
+               }
+               if (!target.sameIdentity(live)) {
+                  outcome = "TARGET_CHANGED";
+                  break;
+               }
+               boolean byId = live.id == target.gobId;
+               target = target.refreshed(live, scene.terrain, byId);
+               PathfinderLog.recordInteraction(phaseEvidence(
+                  "GEOMETRY_REFRESHED", target, null, null, scene.player, staging, "", observed, String.valueOf(attempt), ""
+               ));
+               spec = spec(live, spec.origin);
+               InteractionGoals.Geometry fg = new InteractionGoals.Geometry(scene.solids, scene.playerBody);
+               pose = InteractionGoals.select(scene.player, spec, scene.occupancy, fg);
+               PathfinderLog.recordInteraction(phaseEvidence(
+                  "INTERACTION_POSE_SELECTED", target, spec, pose, scene.player, staging, "", observed, String.valueOf(attempt), ""
+               ));
+               if (!pose.ok()) {
+                  outcome = "NO_INTERACTION_POSE";
+                  break;
+               }
+            }
+            List<Coord2d> route = pose.plan.smoothedRoute;
+            if (route.size() < 2) {
+               route = new ArrayList<Coord2d>();
+               route.add(scene.player);
+               route.add(pose.selected.world);
+            }
+            WaypointWalker.Result walk = WaypointWalker.execute(
+               WaypointWalker.liveEnv(gui),
+               bot,
+               route,
+               attempt,
+               WALK_BUDGET_MS,
+               WaypointWalker.Params.DEFAULT,
+               NamedPlaceNavigator.NOOP,
+               pose.plan.status,
+               pose.selected.world,
+               spec
+            );
+            arrived = walk == WaypointWalker.Result.READY_TO_INTERACT;
+            if (!arrived) {
+               outcome = "FINAL_POSE_UNREACHABLE";
+               continue;
+            }
             synchronized (ui) {
                scene = PrototypePathfinder.observe(gui);
             }
-            gob = find(scene, Long.parseLong(spec.targetId));
-            if (gob == null) {
-               outcome = "TARGET_GONE";
+            PrototypePathfinder.GobGeom live = target.resolveIn(scene);
+            Coord2d pos = scene.player;
+            boolean stillIdle = !scene.moving;
+            if (!InteractionVerifier.mayInteract(InteractionVerifier.arrivedConfirmed(stillIdle, pos, pose.selected.world, POSE_EPS))) {
+               retry = "not_idle_at_pose";
+               outcome = "POSE_INVALIDATED";
+               continue;
+            }
+            if (live == null) {
+               outcome = "TARGET_DISAPPEARED";
                break;
             }
-            spec = InteractionAdapter.fromGob(
-               gob, InteractionSpec.ALL_SIDES, this.kind.minDist, this.kind.maxDist, this.kind.clearance, null, this.kind.expected, spec.origin
-            );
-            occ = scene.occupancy;
-            geom = new InteractionGoals.Geometry(scene.solids, scene.playerBody);
-            pose = InteractionGoals.select(scene.player, spec, occ, geom);
-            PathfinderLog.recordInteraction(evidence(pose, spec, arrived, "", observed, retry, outcome));
-            if (!pose.ok()) {
-               outcome = "NO_POSE";
+            Coord2d liveOrigin = BuildingDoor.liveOrigin(live, spec);
+            if (!InteractionVerifier.poseStillValid(pos, pose.selected.world, POSE_EPS, spec, liveOrigin, spec.half, true)) {
+               retry = "footprint_changed";
+               outcome = "POSE_INVALIDATED";
+               continue;
+            }
+            int invBefore = inventoryCount(gui);
+            Set<Integer> windowsBefore = windowIds(gui);
+            int gateBefore = live.gateState;
+            Gob interactTarget;
+            synchronized (ui) {
+               interactTarget = gui.map.glob.oc.getgob(live.id);
+            }
+            if (interactTarget == null) {
+               outcome = "TARGET_DISAPPEARED";
                break;
             }
-         }
-         List<Coord2d> route = pose.plan.smoothedRoute;
-         if (route.size() < 2) {
-            route = new ArrayList<Coord2d>();
-            route.add(scene.player);
-            route.add(pose.selected.world);
-         }
-         WaypointWalker.Result walk = WaypointWalker.execute(
-            WaypointWalker.liveEnv(gui),
-            bot,
-            route,
-            attempt,
-            60000L,
-            WaypointWalker.Params.DEFAULT,
-            NamedPlaceNavigator.NOOP,
-            pose.plan.status,
-            pose.selected.world,
-            spec
-         );
-         arrived = walk == WaypointWalker.Result.READY_TO_INTERACT;
-         if (!arrived) {
-            outcome = "NO_ARRIVAL";
-            continue;
-         }
-         synchronized (ui) {
-            scene = PrototypePathfinder.observe(gui);
-         }
-         PrototypePathfinder.GobGeom live = find(scene, Long.parseLong(spec.targetId));
-         Coord2d pos = scene.player;
-         boolean stillIdle = !scene.moving;
-         if (!InteractionVerifier.mayInteract(InteractionVerifier.arrivedConfirmed(stillIdle, pos, pose.selected.world, 2.475))) {
-            retry = "not_idle_at_pose";
-            outcome = "NO_ARRIVAL";
-            continue;
-         }
-         if (live == null) {
-            outcome = "TARGET_GONE";
-            break;
-         }
-         Coord2d liveOrigin = BuildingDoor.liveOrigin(live, spec);
-         if (!InteractionVerifier.poseStillValid(pos, pose.selected.world, 2.475, spec, liveOrigin, spec.half, true)) {
-            retry = "footprint_changed";
-            continue;
-         }
-         int invBefore = inventoryCount(gui);
-         Set<Integer> windowsBefore = windowIds(gui);
-         int gateBefore = live.gateState;
-         Gob target;
-         synchronized (ui) {
-            target = gui.map.glob.oc.getgob(live.id);
-         }
-         if (target == null) {
-            outcome = "TARGET_GONE";
-            break;
-         }
-         interacted = true;
-         BuildingDoor.interact(gui, target, spec);
-         long t0 = System.currentTimeMillis();
-         while (!InteractionVerifier.timedOut(System.currentTimeMillis() - t0, InteractionVerifier.WAIT_MS)) {
-            bot.checkCancelled();
-            Thread.sleep(50L);
-            if (checkConfirmed(gui, spec.expectedResult, live.id, invBefore, windowsBefore, gateBefore)) {
-               confirmed = true;
-               observed = spec.expectedResult;
+            interacted = true;
+            PathfinderLog.recordInteraction(phaseEvidence(
+               "INTERACTION_SENT", target, spec, pose, scene.player, staging, "INTERACT", observed, String.valueOf(attempt), ""
+            ));
+            BuildingDoor.interact(gui, interactTarget, spec);
+            long t0 = System.currentTimeMillis();
+            while (!InteractionVerifier.timedOut(System.currentTimeMillis() - t0, InteractionVerifier.WAIT_MS)) {
+               bot.checkCancelled();
+               Thread.sleep(50L);
+               if (checkConfirmed(gui, spec.expectedResult, live.id, invBefore, windowsBefore, gateBefore)) {
+                  confirmed = true;
+                  observed = spec.expectedResult;
+                  break;
+               }
+            }
+            outcome = confirmed ? "INTERACTION_CONFIRMED" : "INTERACTION_TIMEOUT";
+            PathfinderLog.recordInteraction(phaseEvidence(
+               confirmed ? "INTERACTION_CONFIRMED" : "INTERACTION_TIMEOUT",
+               target, spec, pose, scene.player, staging, "INTERACT", observed, String.valueOf(attempt), outcome
+            ));
+            if (confirmed) {
                break;
             }
+            retry = "timeout";
          }
-         PathfinderLog.recordInteraction(evidence(pose, spec, true, "INTERACT", observed, retry, confirmed ? "CONFIRMED" : "TIMEOUT"));
-         if (confirmed) {
-            outcome = "CONFIRMED";
-            break;
-         }
-         retry = "timeout";
-         outcome = "INTERACTION_TIMEOUT";
+      } finally {
+         PathfinderLog.clearTarget();
       }
       checks.add(PfTestRunner.check("arrival", arrived, arrived ? "server-confirmed pose" : outcome));
+      if (!confirmed) {
+         PathfinderLog.dumpFailure("interact " + outcome + (retry.isEmpty() ? "" : " retry=" + retry));
+      }
       checks.add(PfTestRunner.check("no_click_before_arrival", !interacted || arrived, arrived ? "clicked after arrival" : "no click"));
       checks.add(PfTestRunner.check("interaction_confirmed", confirmed, confirmed ? observed : outcome));
       JSONObject facts = new JSONObject()
          .put("kind", this.kind.name())
          .put("selected", true)
-         .put("target_id", spec.targetId)
-         .put("pose", PfTestHarness.pt(pose.selected.world))
+         .put("target_id", target.gobId)
+         .put("target_resource", target.resid)
+         .put("staging_points", pts(staging))
          .put("expected", this.kind.expected)
          .put("observed", observed)
          .put("retry", retry)
          .put("arrived", arrived)
          .put("interacted", interacted)
-         .put("status", outcome);
-      PathfinderLog.recordInteraction(evidence(pose, spec, arrived, arrived ? "INTERACT" : "", observed, retry, outcome));
+         .put("status", confirmed ? "CONFIRMED" : outcome);
+      PathfinderLog.recordInteraction(phaseEvidence(
+         confirmed ? "INTERACTION_CONFIRMED" : outcome, target, null, null, null, staging, arrived ? "INTERACT" : "", observed, retry, outcome
+      ));
       return PfTestHarness.body(checks, confirmed ? "interaction confirmed" : outcome, facts);
+   }
+
+   private InteractionSpec spec(PrototypePathfinder.GobGeom g, Coord2d near) {
+      return InteractionAdapter.fromGob(
+         g, InteractionSpec.ALL_SIDES, this.kind.minDist, this.kind.maxDist, this.kind.clearance, null, this.kind.expected, near
+      );
    }
 
    private JSONObject failClosed(List<JSONObject> checks, String refusal, String why) {
       checks.add(PfTestRunner.check("fixture", false, why));
       JSONObject facts = new JSONObject().put("refusal", refusal).put("selected", false).put("kind", this.kind.name());
       return PfTestHarness.body(checks, why, facts);
+   }
+
+   /** Bounded failure outcome; telemetry keeps the full target identity. */
+   private JSONObject failOutcome(List<JSONObject> checks, String refusal, String why, InteractionTarget target, List<Coord2d> staging) {
+      checks.add(PfTestRunner.check("fixture", false, why));
+      PathfinderLog.dumpFailure("interact " + refusal + ": " + why);
+      PathfinderLog.recordInteraction(phaseEvidence(refusal, target, null, null, null, staging, "", "", "", refusal));
+      JSONObject facts = new JSONObject()
+         .put("refusal", refusal)
+         .put("selected", false)
+         .put("kind", this.kind.name())
+         .put("target_id", target == null ? JSONObject.NULL : target.gobId)
+         .put("target_resource", target == null ? JSONObject.NULL : target.resid)
+         .put("staging_points", pts(staging))
+         .put("why", why);
+      return PfTestHarness.body(checks, why, facts);
+   }
+
+   private static JSONArray pts(List<Coord2d> staging) {
+      JSONArray a = new JSONArray();
+      for (Coord2d p : staging) {
+         a.put(PfTestHarness.pt(p));
+      }
+      return a;
+   }
+
+   /**
+    * Broader fixture scan for interaction targets outside the observed scene
+    * list (e.g. a distant container). Same kind rules; nearest match wins.
+    */
+   private PrototypePathfinder.GobGeom distantFixture(GameUI gui, PrototypePathfinder.Scene scene) {
+      if (gui == null || gui.ui == null || gui.ui.sess == null || gui.map == null) {
+         return null;
+      }
+      Gob player = gui.map.player();
+      if (player == null || player.rc == null) {
+         return null;
+      }
+      PrototypePathfinder.GobGeom best = null;
+      synchronized (gui.ui.sess.glob.oc) {
+         for (Gob gob : gui.ui.sess.glob.oc) {
+            if (gob == null || gob == player || gob.virtual || gob.id < 0L || gob.rc == null) {
+               continue;
+            }
+            if (gob.rc.dist(player.rc) > 220.0) {
+               continue;
+            }
+            try {
+               if (gob.resid() == null) {
+                  continue;
+               }
+               PrototypePathfinder.GobGeom g = PrototypePathfinder.gobGeom(player, gob);
+               if (g != null && matches(g, scene) && (best == null || g.gobDist < best.gobDist)) {
+                  best = g;
+               }
+            } catch (Loading ignored) {
+            }
+         }
+      }
+      return best;
+   }
+
+   private boolean narrowFixture(PrototypePathfinder.Scene scene, PrototypePathfinder.GobGeom gob) {
+      return looksNarrow(scene.occupancy, gob);
    }
 
    private PrototypePathfinder.GobGeom pick(PrototypePathfinder.Scene scene) {
@@ -380,6 +517,49 @@ final class InteractScenario implements PfTestRunner.Scenario {
       }
       boolean state = flower || gate != gateBefore;
       return InteractionVerifier.confirmed(expected, present, inv, window, state);
+   }
+
+   /**
+    * Full interaction evidence for a phase. Every record retains the target
+    * gob ID, resource, coordinates, player/staging positions, rejection
+    * counts, retry number, and outcome — target identity is never dropped.
+    */
+   static JSONObject phaseEvidence(
+      String phase,
+      InteractionTarget target,
+      InteractionSpec spec,
+      InteractionGoals.Result r,
+      Coord2d player,
+      List<Coord2d> staging,
+      String decision,
+      String observed,
+      String retry,
+      String outcome
+   ) {
+      JSONObject o = evidence(r, spec, decision != null && decision.equals("INTERACT"), decision, observed, retry, outcome);
+      o.put("phase", phase == null ? "" : phase);
+      if (target != null) {
+         o.put("target_id", target.gobId);
+         o.put("target_resource", target.resid);
+         o.put("target_kind", target.kind);
+         o.put("surface", target.surface);
+         o.put("resolved_by_id", target.resolvedById);
+         if (target.lastRc != null) {
+            o.put("target_coord", new JSONArray().put(target.lastRc.x).put(target.lastRc.y));
+         }
+      }
+      if (player != null) {
+         o.put("player", new JSONArray().put(player.x).put(player.y));
+      }
+      if (staging != null && !staging.isEmpty()) {
+         JSONArray arr = new JSONArray();
+         for (Coord2d p : staging) {
+            arr.put(new JSONArray().put(p.x).put(p.y));
+         }
+         o.put("staging_path", arr);
+         o.put("staging_coord", arr.get(arr.length() - 1));
+      }
+      return o;
    }
 
    static JSONObject evidence(

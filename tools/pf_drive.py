@@ -124,6 +124,46 @@ def cmd_probe(args):
     cmd_cmd(args)
 
 
+def cmd_pf_run(args):
+    q = urllib.parse.urlencode({"scenario": args.scenario})
+    body = call(args.port, "/pf/run?" + q, data=b"", timeout=args.timeout if hasattr(args, "timeout") else 30)
+    json.dump(body, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    if not body.get("ok"):
+        sys.exit(1)
+
+
+def cmd_pf_result(args):
+    body = call(args.port, "/pf/result?run_id=" + urllib.parse.quote(args.run_id))
+    json.dump(body, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    if not body.get("ok", True):
+        sys.exit(1)
+
+
+def cmd_pf_wait(args):
+    started = call(args.port, "/pf/run?" + urllib.parse.urlencode({"scenario": args.scenario}), data=b"", timeout=15)
+    if not started.get("ok"):
+        json.dump(started, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        sys.exit(1)
+    run_id = started["run_id"]
+    deadline = time.time() + args.timeout
+    last = started
+    while time.time() < deadline:
+        last = call(args.port, "/pf/result?run_id=" + urllib.parse.quote(run_id), timeout=10)
+        if last.get("status") != "running":
+            json.dump(last, sys.stdout, indent=2)
+            sys.stdout.write("\n")
+            if last.get("verdict") == "PASS":
+                return
+            sys.exit(1)
+        time.sleep(0.25)
+    json.dump(last, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    sys.exit(1)
+
+
 def cmd_launch(args):
     script = ROOT / "launch-thunder-nvidia.sh"
     if not script.is_file():
@@ -188,6 +228,20 @@ def main():
     s.add_argument("--auto", action="store_true", help="HAVEN_AUTOLOGIN=true")
     s.add_argument("--char", default="", help="HAVEN_AUTOPLAY character name")
     s.set_defaults(func=cmd_launch)
+
+    s = sub.add_parser("pf-run", help="POST /pf/run?scenario= (allowlisted only)")
+    s.add_argument("scenario")
+    s.add_argument("--timeout", type=float, default=30)
+    s.set_defaults(func=cmd_pf_run)
+
+    s = sub.add_parser("pf-result", help="GET /pf/result?run_id=")
+    s.add_argument("run_id")
+    s.set_defaults(func=cmd_pf_result)
+
+    s = sub.add_parser("pf-wait", help="start an allowlisted scenario and wait for completion")
+    s.add_argument("scenario")
+    s.add_argument("--timeout", type=float, default=180)
+    s.set_defaults(func=cmd_pf_wait)
 
     args = p.parse_args()
     args.func(args)

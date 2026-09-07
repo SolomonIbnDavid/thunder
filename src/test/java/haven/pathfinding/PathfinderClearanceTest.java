@@ -456,6 +456,25 @@ public class PathfinderClearanceTest {
    }
 
    @Test
+   void barrelNegOnlyCollisionFallsBackToTheKnownFootprint() {
+      Coord2d rc = Coord2d.of(0.0, 0.0);
+      Coord2d[] known = PrototypePathfinder.knownFurnitureFootprint("gfx/terobjs/barrel", rc, 0.0);
+      Assertions.assertNotNull(known, "barrel must have a known furniture footprint");
+      Coord2d[] movement = new Coord2d[]{
+         Coord2d.of(-4.0, -4.0), Coord2d.of(4.0, -4.0), Coord2d.of(4.0, 4.0), Coord2d.of(-4.0, 4.0)
+      };
+      List<Coord2d[]> polys = PrototypePathfinder.furnitureCollision(
+         "gfx/terobjs/barrel", rc, 0.0, Collections.<Coord2d[]>emptyList(), List.<Coord2d[]>of(movement)
+      );
+      Assertions.assertEquals(1, polys.size(), "empty obst uses the known barrel fallback, not the neg layer");
+      CollisionGeom geom = PrototypePathfinder.furnitureGeometry(
+         "gfx/terobjs/barrel", rc, 0.0, Collections.<Coord2d[]>emptyList(), List.<Coord2d[]>of(movement)
+      );
+      Assertions.assertEquals(CollisionGeom.FALLBACK, geom.source);
+      Assertions.assertFalse(geom.polygons.isEmpty());
+   }
+
+   @Test
    void knownMansionFootprintIsAFilledRectangleAroundTheOrigin() {
       Coord2d rc = Coord2d.of(100.0, 200.0);
       Coord2d[] box = PrototypePathfinder.knownBuildingFootprint("gfx/terobjs/arch/stonemansion", rc, 0.0);
@@ -564,6 +583,29 @@ public class PathfinderClearanceTest {
       Coord corner = PrototypePathfinder.worldCell(origin, Coord2d.of(aabb[1].x - 0.5, aabb[1].y - 0.5));
       Assertions.assertTrue(boxed[corner.y * w + corner.x], "world AABB occupies its corner");
       Assertions.assertFalse(exact[corner.y * w + corner.x], "rotated desk must not collapse to that AABB");
+   }
+
+   @Test
+   void rotatedBuildingFootprintKeepsOrientationNotWorldAabb() {
+      Coord2d rc = Coord2d.of(0.0, 0.0);
+      double a = Math.PI / 4.0;
+      Coord2d[] known = PrototypePathfinder.knownBuildingFootprint("gfx/terobjs/arch/stonemansion", rc, a);
+      Assertions.assertNotNull(known);
+      Coord2d[] aabb = LocalPlanner.aabbPolygon(Collections.singletonList(known));
+      Coord2d origin = PrototypePathfinder.alignedOrigin(-70.0, -70.0);
+      int w = 56;
+      int h = 56;
+      boolean[] exact = new boolean[w * h];
+      PrototypePathfinder.rasterObstacle(
+         exact, origin, w, h, rc, false, "gfx/terobjs/arch/stonemansion", Collections.singletonList(known), 1.0, Collections.emptyList()
+      );
+      boolean[] boxed = new boolean[w * h];
+      PrototypePathfinder.rasterObstacle(
+         boxed, origin, w, h, rc, false, "gfx/terobjs/arch/stonemansion", Collections.singletonList(aabb), 1.0, Collections.emptyList()
+      );
+      Coord corner = PrototypePathfinder.worldCell(origin, Coord2d.of(aabb[2].x - 0.5, aabb[2].y - 0.5));
+      Assertions.assertTrue(boxed[corner.y * w + corner.x], "world AABB occupies its corner");
+      Assertions.assertFalse(exact[corner.y * w + corner.x], "rotated building must not collapse to that AABB");
    }
 
    @Test

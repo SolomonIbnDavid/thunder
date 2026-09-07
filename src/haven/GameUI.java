@@ -100,6 +100,7 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
     public GobSearchWnd gobSearch;
     public PathfinderWnd pathfinderWnd;
     public haven.pathfinding.CriticalRouteWnd criticalRouteWnd;
+    public haven.pathfinding.BoardStockpileWnd boardStockpileWnd;
     public haven.proto.ProtoInspector protoInspector;
     public haven.proto.StateInspector stateInspector;
     public haven.proto.StatsPanel statsPanel;
@@ -722,6 +723,12 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 	    pathfinderWnd = add(new PathfinderWnd(), ClientUtils.getScreenCenter(ui));
 	}
 	pathfinderWnd.toggle();
+    }
+
+    public void toggleBoardStockpile() {
+        if(boardStockpileWnd == null)
+            boardStockpileWnd = add(new haven.pathfinding.BoardStockpileWnd(), ClientUtils.getScreenCenter(ui));
+        boardStockpileWnd.toggle();
     }
 
     public void toggleCriticalRoutes() {

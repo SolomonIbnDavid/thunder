@@ -643,6 +643,20 @@ public final class PrototypePathfinder {
                try {
                   if (!Hitbox.passable(gob)) {
                      String resid = gob.resid();
+                     if (TransitionApproachSelector.isGateResid(resid)) {
+                        // Pass-through gate: leave the planning grid open so
+                        // routes may plan THROUGH it (the bot opens it on the
+                        // way), but keep its polygons in the solids list so
+                        // scene.solids still carries the gate footprint for
+                        // beside-the-gate pose selection.
+                        if (!inflate && debugPolys != null) {
+                           List<Coord2d[]> gatePolys = collisionPolygons(gob);
+                           if (gatePolys != null && !gatePolys.isEmpty()) {
+                              debugPolys.addAll(gatePolys);
+                           }
+                        }
+                        continue;
+                     }
                      if (!inflate || !skipBodyInflate(resid)) {
                         List<Coord2d[]> polygons = collisionPolygons(gob);
                         double disk = obstacleDisk(resid);
@@ -723,7 +737,7 @@ public final class PrototypePathfinder {
          return false;
       } else if (polygons != null && !polygons.isEmpty()) {
          if (inflate) {
-            if (!solidFootprint(resid) && !isHollowRing(polygons)) {
+            if (!isHollowRing(polygons)) {
                for (Coord2d[] polygon : polygons) {
                   rasterPolygon(grid, polygon, body);
                }
@@ -731,7 +745,7 @@ public final class PrototypePathfinder {
                rasterAabb(grid, polygons, body);
             }
          } else {
-            if (!solidFootprint(resid) && !isHollowRing(polygons)) {
+            if (!isHollowRing(polygons)) {
                for (Coord2d[] polygon : polygons) {
                   rasterPolygon(grid, polygon, OVERLAP);
                }
@@ -1261,6 +1275,7 @@ public final class PrototypePathfinder {
       FURNITURE_HALF.put("gfx/terobjs/cupboard", Coord2d.of(5.0, 5.0));
       FURNITURE_HALF.put("gfx/terobjs/studydesk", Coord2d.of(6.0, 16.0));
       FURNITURE_HALF.put("gfx/terobjs/studydesk-big", Coord2d.of(6.0, 16.0));
+      FURNITURE_HALF.put("gfx/terobjs/barrel", Coord2d.of(4.0, 4.0));
    }
 
    static final class ClipResult {

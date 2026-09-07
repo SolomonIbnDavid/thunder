@@ -216,10 +216,17 @@ final class MoveToAutoOpenGroundScenario implements PfTestRunner.Scenario {
          WaypointWalker.Params params = new WaypointWalker.Params(2.475, 0.6875, 800L, waypointTimeoutMs, 3000L);
 
          try {
-            WaypointWalker.Result r = WaypointWalker.execute(
-               WaypointWalker.liveEnv(gui), bot, plan.waypoints, 0, walkBudgetMs, params, NamedPlaceNavigator.NOOP,
-               haven.nav.NavPlanStatus.valueOf(plan.status.name()), fallbackPos
-            );
+            WaypointWalker.Result r;
+            List<GatePassage.Crossing> crossings = GatePassage.observedCrossings(gui, plan.waypoints);
+            if (crossings.isEmpty()) {
+               r = WaypointWalker.execute(
+                  WaypointWalker.liveEnv(gui), bot, plan.waypoints, 0, walkBudgetMs, params, NamedPlaceNavigator.NOOP,
+                  haven.nav.NavPlanStatus.valueOf(plan.status.name()), fallbackPos
+               );
+            } else {
+               // The route crosses a pass-through gate: walk with open/pass/close.
+               r = GatePassage.resultFor(GatePassage.walk(gui, bot, plan.waypoints, walkBudgetMs, NamedPlaceNavigator.NOOP));
+            }
             Coord2d after = PfTestHarness.observePos(gui);
             return new MoveToAutoOpenGroundScenario.MoveResult(
                plan.status,

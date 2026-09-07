@@ -45,7 +45,15 @@ Allowlisted localhost scenarios driven through `DevControl` (`POST /pf/run?scena
 | `vehicle_travel` | mobility | Travel under vehicle footprint |
 | `vehicle_exit` | mobility | Exit confirmation |
 | `hearth_travel` | transition | Observed hearth landing only |
-| `explore_frontier` | explore | Known-safe frontier; bounded |
+| `explore_frontier` | explore | Nearest known-safe frontier walk; `NO_FIXTURE` if none |
+| `campaign_surface_out_and_back` | critical route | Open-ground outbound then return; both directions in one run |
+| `campaign_surface_and_door` | critical route | Open-ground, door/gate interaction, return |
+| `campaign_door_gate_roundtrip` | critical route | Door/gate transition both ways; resume original dest |
+| `campaign_cellar_roundtrip` | critical route | Cellar/stairs underground round trip; resume original dest |
+| `campaign_minehole_roundtrip` | critical route | Minehole round trip; resume original dest |
+| `campaign_cave_roundtrip` | critical route | Cave round trip; resume original dest |
+| `campaign_boat_roundtrip` | critical route | Board/travel/disembark both directions; resume original dest |
+| `campaign_recorded` | critical route | User-saved in-game route (`dev-snapshots/pf/routes/<id>.json`); both directions |
 
 Control port (pf-test client): `http://127.0.0.1:18762/`
 | `move_to_marker` | movement | Named map marker |
@@ -80,6 +88,14 @@ Each completed run writes two artifacts under `dev-snapshots/pf/tests/<scenario>
 
 - `<run_id>.jsonl` — existing pf-test header + result body
 - `<run_id>.navreplay.jsonl` — **NavReplay v1** (world occupancy, goal, raw/smoothed routes, observations, decisions, outcome)
+
+```
+python tools/pf_matrix.py --port 18762 status
+python tools/pf_matrix.py --port 18762 matrix --smoke
+python tools/pf_drive.py --port 18762 pf-wait observe
+```
+
+`NO_FIXTURE` / `NO_GAME` are classified NOT_RUN (never PASS). The 20/10 consecutive live counts require screen=game. The critical-route campaign (`tools/critical-routes.json`, `--group campaign`) requires 5 consecutive bidirectional successes per enabled route. Mark routes in-game with **Critical routes** (`:pf` or `:pf route`, or Ctrl+Shift+R): Here / Ground / Object, Save, Walk fwd/back, then **To campaign**.
 
 Offline replay (no live session):
 

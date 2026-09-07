@@ -97,6 +97,11 @@ public class CriticalRouteWnd extends Hidewnd {
             CriticalRouteWnd.this.stockpileTest();
          }
       }, UI.scale(96), y);
+      this.add(new Button(UI.scale(92), "Export area") {
+         public void click() {
+            CriticalRouteWnd.this.exportArea();
+         }
+      }, UI.scale(212), y);
       y += UI.scale(28);
       this.status = (Label)this.add(new Label("Here / Ground / Approach / Object."), 0, y);
       y += UI.scale(18);
@@ -221,18 +226,49 @@ public class CriticalRouteWnd extends Hidewnd {
       if (gui == null || gui.map == null) {
          return;
       }
+      this.area.cancel();
       CustomCursors.startMarkingArea(gui.map, mc -> {
-         OrganizerAreaSelector.Selection sel = this.area.click(mc);
+         int before = this.area.vertexCount();
+         OrganizerAreaSelector.Selection sel = this.area.click(mc, gui.map.glob.map);
          if (sel != null) {
             this.msg("Area " + sel, MsgType.INFO);
+         } else if (this.area.vertexCount() == before) {
+            this.msg("Grid not loaded — move closer and click again", MsgType.ERROR);
          } else {
-            this.msg("First corner set — click the opposite corner (right-click cancels)", MsgType.INFO);
+            this.msg("Corner " + this.area.vertexCount() + " of " + OrganizerAreaSelector.VERTEX_COUNT + " set — walk to the next corner", MsgType.INFO);
          }
       }, () -> {
          this.area.cancel();
          this.msg("Area selection cancelled", MsgType.INFO);
-      });
-      this.msg("Click two ground corners to define the area (right-click cancels)", MsgType.INFO);
+      }, OrganizerAreaSelector.VERTEX_COUNT);
+      this.msg("Click four ground corners (walk between them) — right-click cancels", MsgType.INFO);
+   }
+
+   private void exportArea() {
+      GameUI gui = this.gui();
+      if (gui == null) {
+         return;
+      }
+      OrganizerAreaSelector.Selection sel = this.area.selection();
+      if (sel == null) {
+         this.msg("Create an area first", MsgType.ERROR);
+         return;
+      }
+      String name = this.name.text();
+      if (name == null || name.trim().isEmpty()) {
+         this.msg("Type a name first", MsgType.ERROR);
+         return;
+      }
+      try {
+         java.nio.file.Path outDir = java.nio.file.Paths.get("/home/greg/.haven");
+         java.nio.file.Files.createDirectories(outDir);
+         java.nio.file.Path outFile = outDir.resolve("navlab-area-export.json");
+         org.json.JSONObject json = AreaExport.toJson(sel.gridVertices, name, "transition");
+         java.nio.file.Files.write(outFile, (json.toString(2) + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+         this.msg("Exported area \"" + name + "\" (transition) to " + outFile.toAbsolutePath(), MsgType.INFO);
+      } catch (java.io.IOException e) {
+         this.msg("Export failed: " + e.getMessage(), MsgType.ERROR);
+      }
    }
 
    private void stockpileTest() {
