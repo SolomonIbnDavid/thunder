@@ -7,6 +7,8 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -78,6 +80,24 @@ final class AreaExport {
             verts.add(vert);
         }
         obj.add("grid_vertices", verts);
+        return obj;
+    }
+
+    /** Produces the role-bearing format used by Critical Routes. */
+    static JSONObject toJson(List<long[]> gridVertices, String name, String role) {
+        if (gridVertices == null || gridVertices.isEmpty())
+            throw new NullPointerException("gridVertices must not be null or empty");
+        if (name == null || name.trim().isEmpty())
+            throw new NullPointerException("name must not be null or blank");
+        JSONObject obj = new JSONObject();
+        obj.put("id", name.trim());
+        obj.put("role", (role == null || role.trim().isEmpty()) ? "avoid" : role.trim());
+        obj.put("layer", JSONObject.NULL);
+        JSONArray verts = new JSONArray();
+        for (long[] gv : gridVertices)
+            verts.put(new JSONArray().put(Long.toString(gv[0])).put((int) gv[1]).put((int) gv[2]));
+        obj.put("grid_vertices", verts);
+        obj.put("exported_at_ms", System.currentTimeMillis());
         return obj;
     }
 

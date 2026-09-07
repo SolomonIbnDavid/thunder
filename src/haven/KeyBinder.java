@@ -93,6 +93,9 @@ public class KeyBinder {
 	add(KeyEvent.VK_S, ALT,   TOGGLE_STUDY);
 	add(KeyEvent.VK_F, ALT,   FILTER);
 	add(KeyEvent.VK_F, CTRL,  SEARCH_GOBS);
+	add(PATHFIND_NEARBY);
+	add(KeyEvent.VK_R, CTRL | SHIFT, CRITICAL_ROUTES);
+	add(CATALOG_CUPBOARDS);
 	add(SORT_INVENTORY);
 	add(STACK_INVENTORIES);
 	add(UNSTACK_INVENTORIES);

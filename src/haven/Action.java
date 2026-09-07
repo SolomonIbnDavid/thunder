@@ -5,6 +5,7 @@ import auto.Equip;
 import auto.InventorySorter;
 import auto.StackAllItems;
 import auto.UnstackAllItems;
+import haven.pathfinding.CupboardBot;
 import me.ender.CustomCursors;
 import me.ender.GobInfoOpts;
 
@@ -28,6 +29,10 @@ public enum Action {
     TOGGLE_STUDY(GameUI::toggleStudy, "Toggle study window"),
     FILTER(GameUI::toggleFilter, "Show item filter"),
     SEARCH_GOBS(GameUI::toggleGobSearch, "Search gobs by resource ID", "Opens a window that highlights gobs in render distance whose resource ID contains the entered substring."),
+    PATHFIND_NEARBY(GameUI::togglePathfinder, "Path to nearby object", "Opens a list of nearby objects. Click one to select it, double-click or Path to walk there."),
+    CRITICAL_ROUTES(GameUI::toggleCriticalRoutes, "Critical routes", "Mark stands and objects in the world, save a named route, walk it both ways, and add it to the campaign."),
+    BOARD_STOCKPILE(GameUI::toggleBoardStockpile, "Board stockpile", "Plan and supervise board stockpile placement in Navigation Lab."),
+    CATALOG_CUPBOARDS(CupboardBot::start, "Catalog nearby cupboards", "Walks packed cupboard rooms, opens each cupboard (corners through a neighbour already open), and lists contents."),
     SORT_INVENTORY(InventorySorter::sortAll, "Sort all opened inventories"),
     STACK_INVENTORIES(StackAllItems::stackOpened, "Stack all opened inventories", "Merges matching items in every open inventory and container, same as the Stack all title-bar button."),
     UNSTACK_INVENTORIES(UnstackAllItems::unstackOpened, "Unstack all opened inventories", "Unpacks every stack-of pile in open inventories and containers."),

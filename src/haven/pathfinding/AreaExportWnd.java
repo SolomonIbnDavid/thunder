@@ -22,7 +22,7 @@ public class AreaExportWnd extends Hidewnd {
     private static final int WIDTH = UI.scale(300);
     private final TextEntry name;
     private final Label status;
-    private final OrganizerAreaSelector area = new OrganizerAreaSelector();
+    private final OrganizerAreaSelector area = new OrganizerAreaSelector(OrganizerAreaSelector.CLICK_COUNT);
 
     public AreaExportWnd() {
         super(Coord.z, "Area Export");

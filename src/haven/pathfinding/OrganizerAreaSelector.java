@@ -19,6 +19,8 @@ import java.util.List;
 public final class OrganizerAreaSelector {
    /** Number of clicks needed to define the rectangle (two opposite corners). */
    public static final int CLICK_COUNT = 2;
+   /** Number of explicit vertices used by Critical Routes. */
+   public static final int VERTEX_COUNT = 4;
 
    public enum State { EMPTY, IN_PROGRESS, COMPLETE }
 
@@ -64,7 +66,18 @@ public final class OrganizerAreaSelector {
    private State state = State.EMPTY;
    private final List<long[]> gridVertices = new ArrayList<>();
    private final List<Coord> tiles = new ArrayList<>();
+   private final int targetClicks;
    private Selection selection;
+
+   public OrganizerAreaSelector() {
+      this(VERTEX_COUNT);
+   }
+
+   public OrganizerAreaSelector(int targetClicks) {
+      if (targetClicks != CLICK_COUNT && targetClicks != VERTEX_COUNT)
+         throw new IllegalArgumentException("targetClicks must be 2 or 4");
+      this.targetClicks = targetClicks;
+   }
 
    public State state() { return state; }
    public int vertexCount() { return tiles.size(); }
@@ -85,29 +98,17 @@ public final class OrganizerAreaSelector {
       if (world == null) throw new IllegalArgumentException("world");
       Coord tile = world.floor(MCache.tilesz);
 
-      if (tiles.isEmpty()) {
-         // First click: just record the tile
-         tiles.add(tile);
-         state = State.IN_PROGRESS;
-         return null;
-      }
-
-      // Second click: build axis-aligned rectangle from tiles[0] and this click
-      Coord t1 = tiles.get(0);
-      int minX = Math.min(t1.x, tile.x);
-      int maxX = Math.max(t1.x, tile.x);
-      int minY = Math.min(t1.y, tile.y);
-      int maxY = Math.max(t1.y, tile.y);
-
-      List<Coord> cornerTiles = new ArrayList<>();
-      cornerTiles.add(Coord.of(minX, minY));
-      cornerTiles.add(Coord.of(maxX, minY));
-      cornerTiles.add(Coord.of(maxX, maxY));
-      cornerTiles.add(Coord.of(minX, maxY));
-
-      List<long[]> cornerGridVerts = new ArrayList<>();
-      if (resolveGrid) {
-         for (Coord ct : cornerTiles) {
+      if (targetClicks == CLICK_COUNT && !tiles.isEmpty()) {
+         Coord first = tiles.get(0);
+         int minX = Math.min(first.x, tile.x), maxX = Math.max(first.x, tile.x);
+         int minY = Math.min(first.y, tile.y), maxY = Math.max(first.y, tile.y);
+         List<Coord> corners = new ArrayList<>();
+         corners.add(Coord.of(minX, minY));
+         corners.add(Coord.of(maxX, minY));
+         corners.add(Coord.of(maxX, maxY));
+         corners.add(Coord.of(minX, maxY));
+         List<long[]> resolved = new ArrayList<>();
+         if (resolveGrid) for (Coord ct : corners) {
             Coord gc = ct.div(MCache.cmaps);
             MCache.Grid g;
             try {
@@ -116,16 +117,30 @@ public final class OrganizerAreaSelector {
                g = null;
             }
             if (g == null) {
-               return null; // grid not loaded — caller tells user to move closer
+               return null;
             }
             int lx = ct.x - gc.x * MCache.cmaps.x;
             int ly = ct.y - gc.y * MCache.cmaps.y;
-            cornerGridVerts.add(new long[]{g.id, lx, ly});
+            resolved.add(new long[]{g.id, lx, ly});
          }
+         tiles.add(tile);
+         selection = new Selection(resolved, corners);
+         state = State.COMPLETE;
+         return selection;
       }
-
       tiles.add(tile);
-      selection = new Selection(cornerGridVerts, cornerTiles);
+      if (resolveGrid) {
+         Coord gc = tile.div(MCache.cmaps);
+         MCache.Grid g;
+         try { g = map == null ? null : map.getgrid(gc); } catch (Loading l) { g = null; }
+         if (g == null) { tiles.remove(tiles.size() - 1); return null; }
+         gridVertices.add(new long[]{g.id, tile.x - gc.x * MCache.cmaps.x, tile.y - gc.y * MCache.cmaps.y});
+      }
+      if (tiles.size() < targetClicks) {
+         state = State.IN_PROGRESS;
+         return null;
+      }
+      selection = new Selection(new ArrayList<>(gridVertices), new ArrayList<>(tiles));
       state = State.COMPLETE;
       return selection;
    }
