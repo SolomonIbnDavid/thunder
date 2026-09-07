@@ -91,6 +91,7 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
     public TileHighlight.TileHighlightCFG tileHighlight;
     public thunder.TileQualityWnd tileQualityWnd;
     public thunder.macro.MacroListWnd macroListWnd;
+    public thunder.cookbook.EatingHelperWnd eatingHelperWnd;
     public thunder.cookbook.CookbookWnd cookbookwnd;
     public thunder.cookbook.CookbookLoginWnd cookbookLoginWnd;
     public thunder.cookbook.CookbookPlanWnd cookbookPlanWnd;
@@ -2548,6 +2549,9 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 		    }
 		}
 	    });
+	cmdmap.put("eat", (cons, args) -> {
+	    thunder.cookbook.EatingHelperWnd.toggle(ui);
+	});
 	cmdmap.put("restest", (cons, args) -> {
 	    thunder.cookbook.IngredientIconTestWnd.toggle(ui);
 	});
@@ -2626,3 +2630,4 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 	return(cmdmap);
     }
 }
+  
