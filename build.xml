@@ -297,6 +297,8 @@
     </copy>
     <copy file="etc/ansgar-config.properties" tofile="bin/haven-config.properties" />
     <chmod file="bin/hafen.jar" perm="a+x" />
+    <copy file="bin/hafen.jar" tofile="bin/hafen-niri.jar" overwrite="true" />
+    <chmod file="bin/hafen-niri.jar" perm="a+x" />
   </target>
 
   <target name="niri-bin" depends="bin">

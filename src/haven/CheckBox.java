@@ -69,10 +69,10 @@ public class CheckBox extends ACheckBox {
 	if(lbl != null)
 	    g.image(lbl.tex(), loff.add(box.sz().x, (sz.y - lbl.sz().y) / 2));
 	if(CFG.THEME.get().usesArdHud()) {
+	    // Already dark boxes with a white mark. BTNCOL would multiply
+	    // the mark down to the window fill and hide the checked state.
 	    Tex box = ArdHud.chkbox(this.box == lbox, state());
-	    g.chcolor(ArdHud.BTNCOL);
 	    g.image(box, Coord.z.add(0, (sz.y - box.sz().y) / 2));
-	    g.chcolor();
 	} else {
 	    g.image(box, Coord.z.add(0, (sz.y - box.sz().y) / 2));
 	    if(state())

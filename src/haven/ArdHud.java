@@ -148,6 +148,7 @@ public class ArdHud {
 	return(textedit[id]);
     }
 
+    /** Untinted: textures already include a white mark on a dark box. */
     public static Tex chkbox(boolean large, boolean marked) {
 	ensure();
 	if(chkbox == null)
