@@ -82,6 +82,11 @@ public class GobHelper {
     public static boolean isNotFriendlySteed(Gob gob) {
 	return gob.occupants.stream().noneMatch(g -> g.anyOf(GobTag.ME, GobTag.PARTY));
     }
+
+    /** Mirrors the attack-cursor guard in MapView.Click: bot aggro bypasses that path, so it needs its own check. */
+    public static boolean isNotBlockedTamedHorse(Gob gob) {
+	return !(CFG.BLOCK_ATTACK_TAMED_HORSE.get() && gob.is(GobTag.HORSE) && gob.is(GobTag.DOMESTIC));
+    }
     
     private static Predicate<Gob> gobIs(String what) {
 	return g -> {
