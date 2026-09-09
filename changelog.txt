@@ -1,3 +1,11 @@
+$size[14]{$u{update on 08.09.2026:}
+* Fixed a crash when clicking an entry in the Tile Quality window to jump the map to that tile.
+* Milking assist: an animal's floating name no longer vanishes after it is milked - the roster checkmark and glow show done vs. pending instead. When your container is already full, the animal stays selected rather than being dropped from the batch.
+* Milking assist now follows the actual walk to the animal instead of guessing how long it should take, so chasing a wandering sheep across the pen no longer times out mid-chase and leaves it selected. A milk sound that arrives while the sound resource is still loading is also retried instead of being lost, which was behind intermittent "milked but still selected" cases.
+* Cattle roster highlights now clear properly when the window is closed, instead of lingering while the close animation plays.
+* Running two clients on the same cache folder no longer corrupts or drops shared map cache entries when both regenerate the same zoom grids.
+* A custom map marker whose icon fails to load falls back to the plain flag icon instead of crashing the client on hover.
+`
 $size[14]{$u{update on 26.08.2026:}
 * The "Toggle animal warnings" shortcut no longer disturbs player, gem or midge circles - it now touches animal warnings only. A rare case where a gob could permanently lose its warning circle after a toggle is also fixed.
 * Checkbox changes in the Warn settings window (highlight/warn for players, animals, gems, midges) now apply immediately to everything on screen, instead of only to things entering view afterwards.
