@@ -5,6 +5,7 @@ import haven.Console;
 import haven.Coord;
 import haven.GOut;
 import haven.Glob;
+import haven.Gob;
 import haven.MapView;
 import haven.UI;
 import haven.UID;
@@ -182,6 +183,33 @@ public final class MilkingAssistDebug implements Feature {
 	verbs.put("clear", (cons, args) -> {
 		MilkingAssist.debugClearPending();
 		cons.out.println("milk: pending cleared");
+	    });
+	verbs.put("barrels", (cons, args) -> {
+		// Every barrel in view with the same fields the resolve-time
+		// container scan records, so a full and a non-full barrel can be
+		// compared side by side (the fill signal is still undecoded).
+		Glob glob = anyGlob();
+		if(glob == null) throw new Exception("milk: no session with a cattle roster open yet");
+		Gob player = (glob.sess.ui != null && glob.sess.ui.gui != null && glob.sess.ui.gui.map != null)
+		    ? glob.sess.ui.gui.map.player() : null;
+		int n = 0;
+		synchronized(glob.oc) {
+		    for(Gob g : glob.oc) {
+			String res = g.resid();
+			if(res == null || !res.startsWith("gfx/terobjs/barrel")) continue;
+			StringBuilder sb = new StringBuilder();
+			sb.append("gob=").append(g.id);
+			if(player != null) {
+			    if(player.occupants.contains(g)) sb.append(" LIFTED");
+			    else if(player.rc != null && g.rc != null)
+				sb.append(String.format(" dist=%.1f", player.rc.dist(g.rc) / MilkingAssist.TILE_UNITS));
+			}
+			MilkingAssist.describeLiftedContainer(g, sb);
+			cons.out.println(sb.toString());
+			n++;
+		    }
+		}
+		cons.out.println("milk: " + n + " barrel(s) in view");
 	    });
 	return verbs;
     }

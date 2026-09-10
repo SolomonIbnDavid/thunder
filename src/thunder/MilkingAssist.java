@@ -61,7 +61,7 @@ import java.util.ArrayList;
  */
 public class MilkingAssist {
     /** World units per tile (matches {@link MCache#tilesz}). */
-    private static final double TILE_UNITS = 11.0;
+    static final double TILE_UNITS = 11.0;
     /** Within this distance, no walk is needed; the pending starts ACTING. */
     private static final double ADJACENT_RANGE_UNITS = 2 * TILE_UNITS;
     /** How long after arm the server gets to start the approach walk.
@@ -503,7 +503,7 @@ public class MilkingAssist {
      * server encodes one, shows up here. Nothing client-side decodes it yet,
      * so the verdict is the FULL tag only (never set for barrels today).
      */
-    private static boolean describeLiftedContainer(Gob g, StringBuilder sb) {
+    static boolean describeLiftedContainer(Gob g, StringBuilder sb) {
 	String res = g.resid();
 	if(res == null || !res.startsWith("gfx/terobjs/barrel")) return false;
 	sb.append(" [lifted] ").append(res).append(" sdt=").append(g.sdt());
