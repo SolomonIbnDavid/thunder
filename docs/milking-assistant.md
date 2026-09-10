@@ -68,9 +68,16 @@ end is visible as the `Moving` attr dropping, and success fires the sfx.
      visible the capture now stays open `RESOLVE_TAIL_MS` (1.5 s) after a
      resolve and repeats the scan at the tail end (`milk: tail end`), so a
      post-milking overlay change or a server text message is in the file.
-     Next step once a full-barrel capture exists: compare `olsdt` before
-     and after, or the tail's widget messages, and turn that into the
-     verdict.
+     **Result (2026-09-10):** capture-resolved-20260910-132653 shows the
+     lifted milk barrel at the sfx with `sdt=1`, `olsdt=-` (the overlay
+     carries no bytes), no barrel traffic and no server text before the
+     drop 1.1 s later. `dev.milk.barrels` over 55 barrels in view -- salt
+     water partially and completely full beside the player, and three
+     empty barrels with no content overlay -- printed `sdt=1` for every
+     one. So neither the gob sdt nor the overlay encodes fill, and the
+     server does not announce a capped take. The client has **no** fill
+     signal for a barrel; the "container is full" message and the
+     keep-selected rule fire only for inventory containers with a Level.
    (Until 2026-09-02 this was inverted: the resolve always cleared the
    mark and used the capacity check to decide whether to *unmemorize*,
    hiding the floating name. Users read the vanishing name as the animal

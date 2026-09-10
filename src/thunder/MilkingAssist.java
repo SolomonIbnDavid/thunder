@@ -506,7 +506,7 @@ public class MilkingAssist {
     static boolean describeLiftedContainer(Gob g, StringBuilder sb) {
 	String res = g.resid();
 	if(res == null || !res.startsWith("gfx/terobjs/barrel")) return false;
-	sb.append(" [lifted] ").append(res).append(" sdt=").append(g.sdt());
+	sb.append(" [barrel] ").append(res).append(" sdt=").append(g.sdt());
 	if(g.is(GobTag.FULL)) sb.append(" tag=FULL");
 	if(g.is(GobTag.EMPTY)) sb.append(" tag=EMPTY");
 	for(Gob.Overlay ol : new ArrayList<>(g.ols)) {
