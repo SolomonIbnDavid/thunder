@@ -51,9 +51,26 @@ end is visible as the `Moving` attr dropping, and success fires the sfx.
      left -- it stays fully selected (outcome
      `resolved_container_full`) and a red "Milk container is full" chat
      message says so. The scan writes a `milk: container scan -- full=..`
-     NOTE listing every milk container it saw (inventory, plus the hand
-     slot for reference) with `cur/max`, so a capture that resolved
-     normally while a bucket was full shows *why* the check missed it.
+     NOTE listing every milk container it saw (inventory, the hand slot
+     for reference, and any lifted barrel) so a capture that resolved
+     normally while a container was full shows *why* the check missed it.
+   - **Lifted barrel (open, 2026-09-09).** Milking into a carried barrel
+     is the common case, and the client has no fill-level signal for it:
+     the "Display container fullness" tint comes from `etc/containers.json5`
+     (ten chest-like types, no barrel), and the barrel resources have no
+     code. What the scan records for a barrel in `player.occupants` (a
+     lifted gob's `Following` targets the player, mirrored there by
+     `Gob.setVehicle`): resource, gob sdt, FULL/EMPTY tags, and each
+     `gfx/terobjs/barrel-<subst>` overlay with its raw sdt bytes. That
+     overlay is two rlinks (`barrel-opt` + `subst/<x>`); `barrel-opt`'s
+     meshes have ids 0, 2, 3 and StaticSprite picks them by sdt bits, so if
+     the server encodes a fill state it is in `olsdt=`. To make that
+     visible the capture now stays open `RESOLVE_TAIL_MS` (1.5 s) after a
+     resolve and repeats the scan at the tail end (`milk: tail end`), so a
+     post-milking overlay change or a server text message is in the file.
+     Next step once a full-barrel capture exists: compare `olsdt` before
+     and after, or the tail's widget messages, and turn that into the
+     verdict.
    (Until 2026-09-02 this was inverted: the resolve always cleared the
    mark and used the capacity check to decide whether to *unmemorize*,
    hiding the floating name. Users read the vanishing name as the animal

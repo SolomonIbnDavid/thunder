@@ -7,7 +7,10 @@ import haven.res.ui.croster.CattleId;
 import haven.res.ui.croster.CattleRoster;
 import haven.res.ui.croster.Entry;
 import haven.res.ui.croster.RosterWindow;
+import me.ender.ResName;
 import org.json.JSONObject;
+
+import java.util.ArrayList;
 
 /**
  * Auto-deselects a cattle in the roster after it is milked.
@@ -80,6 +83,15 @@ public class MilkingAssist {
      * within this window after it -- arrival objdata and the sfx uimsg can
      * land in the same server batch in either order. */
     static final long ARRIVAL_RACE_MS = 500;
+    /** After a resolve the capture stays open this long so the server's
+     * follow-up (a barrel overlay update, any "full" text message) lands in
+     * the file. The lifted-container scan is repeated at the tail end. */
+    static final long RESOLVE_TAIL_MS = 1500;
+
+    private String tailOutcome;
+    private JSONObject tailMeta;
+    private UI tailUi;
+    private long tailEndAt;
 
     private static final MilkingAssist INSTANCE = new MilkingAssist();
     public static MilkingAssist get() { return INSTANCE; }
@@ -180,6 +192,7 @@ public class MilkingAssist {
 	double distance = playerRc.dist(gob.rc);
 	Pending pending = new Pending(cid.id, player.id, playerRc, distance, gob.id, gob.rc);
 
+	INSTANCE.flushTail("next arm");
 	INSTANCE.cap.endIfActive("superseded", endMeta(null, null));
 	INSTANCE.observer.setPending(pending);
 
@@ -255,9 +268,10 @@ public class MilkingAssist {
     public static void onItemTick(GItem item) { INSTANCE.driveTimers(item); }
 
     private void driveTimers(GItem item) {
+	long now = System.currentTimeMillis();
+	if(tailOutcome != null && now >= tailEndAt) flushTail("tail elapsed");
 	Pending p = observer.peekPending();
 	if(p == null) return;
-	long now = System.currentTimeMillis();
 	if(now > p.deadline) {
 	    String outcome = (p.phase == Phase.ACCEPT) ? "rejected_no_movement" : "expired";
 	    if(p.phase == Phase.ACCEPT)
@@ -364,7 +378,7 @@ public class MilkingAssist {
 	    if(containerFull)
 		ui.message("Milk container is full - animal stays selected.", GameUI.MsgType.BAD);
 	    observer.clearPending();
-	    cap.endIfActive(outcome, endMeta(p.cattleId, sfxResname));
+	    scheduleEnd(outcome, endMeta(p.cattleId, sfxResname), ui);
 	    return;
 	}
 	// Fell through every roster without finding the entry: the pending
@@ -423,6 +437,29 @@ public class MilkingAssist {
 	return "resolved";
     }
 
+    /** Keep the capture open for RESOLVE_TAIL_MS after a resolve (see the
+     * constant). Without an active capture there is nothing to hold. */
+    private void scheduleEnd(String outcome, JSONObject meta, UI ui) {
+	if(!cap.isActive()) return;
+	tailOutcome = outcome;
+	tailMeta = meta;
+	tailUi = ui;
+	tailEndAt = System.currentTimeMillis() + RESOLVE_TAIL_MS;
+	cap.note("milk: capture tail " + RESOLVE_TAIL_MS + "ms -- waiting for server follow-up", null, 0);
+    }
+
+    private void flushTail(String why) {
+	if(tailOutcome == null) return;
+	String outcome = tailOutcome;
+	JSONObject meta = tailMeta;
+	UI ui = tailUi;
+	tailOutcome = null;
+	tailMeta = null;
+	tailUi = null;
+	cap.note("milk: tail end (" + why + ") container scan -- " + scanMilkContainers(ui).detail, null, 0);
+	cap.endIfActive(outcome, meta);
+    }
+
     /** Result of the milk-container scan: the verdict plus a human-readable
      * trail of every container examined, for the capture NOTE. */
     static final class ContainerScan {
@@ -446,11 +483,42 @@ public class MilkingAssist {
 		full |= describeMilkContainer(wi, "inv", sb);
 	    if(ui.gui.vhand != null)
 		describeMilkContainer(ui.gui.vhand, "hand", sb);
+	    Gob player = (ui.gui.map != null) ? ui.gui.map.player() : null;
+	    if(player != null)
+		for(Gob g : new ArrayList<>(player.occupants))
+		    full |= describeLiftedContainer(g, sb);
 	} catch(RuntimeException e) {
 	    sb.append(" scan-error=").append(e.getClass().getSimpleName());
 	}
 	if(sb.length() == 0) sb.append("no milk container found");
 	return new ContainerScan(full, "full=" + full + ";" + sb);
+    }
+
+    /**
+     * A lifted barrel rides in the player's occupants set (its Following attr
+     * targets the player). Appends its resource, gob sdt, container tags and
+     * every content overlay with that overlay's raw sdt bytes: the content
+     * overlay is barrel-<subst> over gfx/terobjs/barrel-opt, whose meshes
+     * (ids 0, 2, 3) are picked by those sdt bits, so a fill level, if the
+     * server encodes one, shows up here. Nothing client-side decodes it yet,
+     * so the verdict is the FULL tag only (never set for barrels today).
+     */
+    private static boolean describeLiftedContainer(Gob g, StringBuilder sb) {
+	String res = g.resid();
+	if(res == null || !res.startsWith("gfx/terobjs/barrel")) return false;
+	sb.append(" [lifted] ").append(res).append(" sdt=").append(g.sdt());
+	if(g.is(GobTag.FULL)) sb.append(" tag=FULL");
+	if(g.is(GobTag.EMPTY)) sb.append(" tag=EMPTY");
+	for(Gob.Overlay ol : new ArrayList<>(g.ols)) {
+	    String name = ol.name();
+	    if(name == null || !name.startsWith(ResName.BARREL_WITH_CONTENTS)) continue;
+	    sb.append(" ol=").append(name);
+	    if(ol.sm instanceof OCache.OlSprite) {
+		byte[] sdt = ((OCache.OlSprite) ol.sm).sdt;
+		sb.append(" olsdt=").append((sdt == null || sdt.length == 0) ? "-" : Utils.hex.enc(sdt));
+	    }
+	}
+	return g.is(GobTag.FULL);
     }
 
     /** Appends "[where] name cur/max" for a milk-content item; returns true if it is at capacity. */
