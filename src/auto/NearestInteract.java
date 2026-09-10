@@ -7,8 +7,8 @@ import java.util.*;
 import static haven.OCache.posres;
 
 /** "Interact with closest ..." keybind action: right-clicks the nearest enabled
- * object - fence gates, building doorways, cellar doors, mineholes/ladders and
- * road milestones. The set of enabled kinds is configured in Options -> General. */
+ * object - fence gates, building doorways, cellar doors, mineholes/ladders,
+ * stairs and road milestones. The set of enabled kinds is configured in Options -> General. */
 public class NearestInteract {
     private static final double RADIUS = 35;
 
@@ -17,6 +17,7 @@ public class NearestInteract {
 	DOORWAY("Doorways"),
 	CELLAR("Cellar doors"),
 	MINEHOLE("Mineholes & ladders"),
+	STAIRS("Stairs"),
 	GATE_PALISADE("Palisade gates"),
 	GATE_TWIG("Twig (roundpole) gates"),
 	GATE_STONE("Drystone gates"),
@@ -112,6 +113,7 @@ public class NearestInteract {
 	if(res.endsWith("-door")) {return Kind.DOORWAY;}
 	if("gfx/terobjs/arch/cellardoor".equals(res) || "gfx/terobjs/arch/cellarstairs".equals(res)) {return Kind.CELLAR;}
 	if("gfx/terobjs/minehole".equals(res) || "gfx/terobjs/ladder".equals(res)) {return Kind.MINEHOLE;}
+	if("gfx/terobjs/arch/upstairs".equals(res)) {return Kind.STAIRS;}
 	return null;
     }
 
