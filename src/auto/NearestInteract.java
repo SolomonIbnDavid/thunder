@@ -28,6 +28,30 @@ public class NearestInteract {
 	Kind(String label) {this.label = label;}
     }
 
+    /* A saved kinds list is explicit, so a kind added later would stay off
+     * for everyone who ever touched the checkboxes. Kinds that should start
+     * enabled are listed here under a tag; each tag is folded into the saved
+     * list once (CFG.INTERACT_NEAREST_DEFAULTS_APPLIED records it), after
+     * which the user's own choice for that kind is respected. */
+    private static final Map<String, Kind> NEW_DEFAULTS = new LinkedHashMap<>();
+    static {
+	NEW_DEFAULTS.put("stairs-2026-09", Kind.STAIRS);
+	applyNewDefaults();
+    }
+
+    static void applyNewDefaults() {
+	Set<String> applied = new HashSet<>(CFG.INTERACT_NEAREST_DEFAULTS_APPLIED.get());
+	Set<Kind> kinds = new HashSet<>(CFG.INTERACT_NEAREST_FOR.get());
+	boolean appliedChanged = false, kindsChanged = false;
+	for(Map.Entry<String, Kind> e : NEW_DEFAULTS.entrySet()) {
+	    if(!applied.add(e.getKey())) continue;
+	    appliedChanged = true;
+	    kindsChanged |= kinds.add(e.getValue());
+	}
+	if(kindsChanged) CFG.INTERACT_NEAREST_FOR.set(kinds);
+	if(appliedChanged) CFG.INTERACT_NEAREST_DEFAULTS_APPLIED.set(applied);
+    }
+
     private static final Map<String, Kind> GATES = new HashMap<>();
     static {
 	GATES.put("gfx/terobjs/arch/palisadegate", Kind.GATE_PALISADE);
