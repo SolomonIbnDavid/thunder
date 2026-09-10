@@ -17,7 +17,7 @@ public class NearestInteract {
 	DOORWAY("Doorways"),
 	CELLAR("Cellar doors"),
 	MINEHOLE("Mineholes & ladders"),
-	STAIRS("Stairs"),
+	STAIRS("Indoor stairs"),
 	GATE_PALISADE("Palisade gates"),
 	GATE_TWIG("Twig (roundpole) gates"),
 	GATE_STONE("Drystone gates"),
@@ -113,7 +113,7 @@ public class NearestInteract {
 	if(res.endsWith("-door")) {return Kind.DOORWAY;}
 	if("gfx/terobjs/arch/cellardoor".equals(res) || "gfx/terobjs/arch/cellarstairs".equals(res)) {return Kind.CELLAR;}
 	if("gfx/terobjs/minehole".equals(res) || "gfx/terobjs/ladder".equals(res)) {return Kind.MINEHOLE;}
-	if("gfx/terobjs/arch/upstairs".equals(res)) {return Kind.STAIRS;}
+	if("gfx/terobjs/arch/upstairs".equals(res) || "gfx/terobjs/arch/downstairs".equals(res)) {return Kind.STAIRS;}
 	return null;
     }
 
