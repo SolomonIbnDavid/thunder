@@ -810,11 +810,28 @@ public class MapFile {
 	    return(null);
 	}
 
+	/* Overlay resource names that failed to load with a hard error (not
+	 * Loading), warned once each. The shared map store can hold grids
+	 * saved by another client whose overlays were that client's own local
+	 * resources (e.g. map/overlay/minesup-o, map/overlay/areas-oN); we
+	 * cannot fetch those, and one such entry must not blank the whole
+	 * grid image. */
+	private static final Set<String> badols = Collections.synchronizedSet(new HashSet<>());
+
 	public BufferedImage olrender(Coord off, String tag) {
 	    WritableRaster buf = PUtils.imgraster(cmaps);
 	    for(Overlay ol : ols) {
-		MCache.ResOverlay olid = ol.olid.get().flayer(MCache.ResOverlay.class);
-		if(!olid.tags().contains(tag))
+		MCache.ResOverlay olid;
+		try {
+		    olid = ol.olid.get().flayer(MCache.ResOverlay.class);
+		} catch(Loading l) {
+		    throw(l);
+		} catch(RuntimeException e) {
+		    if(badols.add(ol.olid.name))
+			warn(e, "skipping unloadable map overlay " + ol.olid.name + " (v" + ol.olid.ver + ")");
+		    continue;
+		}
+		if(olid == null || !olid.tags().contains(tag))
 		    continue;
 		Color col = olcol(olid);
 		if(col == null)
