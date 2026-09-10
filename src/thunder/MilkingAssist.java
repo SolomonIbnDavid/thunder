@@ -33,7 +33,7 @@ import org.json.JSONObject;
  *              go, the floating name itself stays. If a milk container in
  *              the main inventory is at capacity, the take was capped and
  *              the animal likely has milk left -- it stays selected
- *              ({@code resolved_container_full}). No sfx = expired
+ *              ({@code resolved_container_full}) and a chat message says so. No sfx = expired
  *              (no-milk is signal-free).
  *
  * An sfx heard before ACTING cannot be ours (the player hasn't arrived), so
@@ -353,12 +353,16 @@ public class MilkingAssist {
 	RosterWindow rw = findRosterWindow(ui);
 	if(rw == null) return;
 
-	boolean containerFull = anyMilkContainerFull(ui);
+	ContainerScan scan = scanMilkContainers(ui);
+	cap.note("milk: container scan -- " + scan.detail, null, 0);
+	boolean containerFull = scan.full;
 
 	for(CattleRoster<?> r : rw.children(CattleRoster.class)) {
 	    Entry e = r.entries.get(p.cattleId);
 	    if(e == null) continue;
 	    String outcome = applyResolve(e.mark, containerFull);
+	    if(containerFull)
+		ui.message("Milk container is full - animal stays selected.", GameUI.MsgType.BAD);
 	    observer.clearPending();
 	    cap.endIfActive(outcome, endMeta(p.cattleId, sfxResname));
 	    return;
@@ -419,21 +423,59 @@ public class MilkingAssist {
 	return "resolved";
     }
 
-    /** True if any milk-content item in the main inventory is at capacity. */
-    private static boolean anyMilkContainerFull(UI ui) {
-	if(ui == null || ui.gui == null || ui.gui.maininv == null) return false;
+    /** Result of the milk-container scan: the verdict plus a human-readable
+     * trail of every container examined, for the capture NOTE. */
+    static final class ContainerScan {
+	final boolean full;
+	final String detail;
+	ContainerScan(boolean full, String detail) { this.full = full; this.detail = detail; }
+    }
+
+    /**
+     * True if any milk-content item in the main inventory is at capacity.
+     * The hand slot is reported in the detail for forensics but does not
+     * count: only inventory containers receive the take.
+     */
+    private static ContainerScan scanMilkContainers(UI ui) {
+	if(ui == null || ui.gui == null || ui.gui.maininv == null)
+	    return new ContainerScan(false, "no gui/inventory");
+	boolean full = false;
+	StringBuilder sb = new StringBuilder();
 	try {
-	    for(WItem wi : ui.gui.maininv.children(WItem.class)) {
-		ItemData.Content c = wi.item.contains.get();
-		if(c == null || c.name == null) continue;
-		if(!c.name.toLowerCase().contains("milk")) continue;
-		try {
-		    Level lvl = ItemInfo.find(Level.class, wi.item.info());
-		    if(lvl != null && lvl.cur >= lvl.max) return true;
-		} catch(Loading l) { /* skip */ }
+	    for(WItem wi : ui.gui.maininv.children(WItem.class))
+		full |= describeMilkContainer(wi, "inv", sb);
+	    if(ui.gui.vhand != null)
+		describeMilkContainer(ui.gui.vhand, "hand", sb);
+	} catch(RuntimeException e) {
+	    sb.append(" scan-error=").append(e.getClass().getSimpleName());
+	}
+	if(sb.length() == 0) sb.append("no milk container found");
+	return new ContainerScan(full, "full=" + full + ";" + sb);
+    }
+
+    /** Appends "[where] name cur/max" for a milk-content item; returns true if it is at capacity. */
+    private static boolean describeMilkContainer(WItem wi, String where, StringBuilder sb) {
+	ItemData.Content c;
+	try {
+	    c = wi.item.contains.get();
+	} catch(Loading l) {
+	    return false;
+	}
+	if(c == null || c.name == null) return false;
+	if(!c.name.toLowerCase().contains("milk")) return false;
+	sb.append(" [").append(where).append("] ").append(c.name);
+	try {
+	    Level lvl = ItemInfo.find(Level.class, wi.item.info());
+	    if(lvl == null) {
+		sb.append(" level=none");
+		return false;
 	    }
-	} catch(RuntimeException ignored) {}
-	return false;
+	    sb.append(' ').append(lvl.cur).append('/').append(lvl.max);
+	    return lvl.cur >= lvl.max;
+	} catch(Loading l) {
+	    sb.append(" level=loading");
+	    return false;
+	}
     }
 
     private static boolean isMilkSfx(String resname) {

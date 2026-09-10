@@ -49,7 +49,11 @@ end is visible as the `Moving` attr dropping, and success fires the sfx.
    - Any milk container in main inventory at capacity (`Level.cur >=
      Level.max`): the take was capped, so the animal likely has milk
      left -- it stays fully selected (outcome
-     `resolved_container_full`).
+     `resolved_container_full`) and a red "Milk container is full" chat
+     message says so. The scan writes a `milk: container scan -- full=..`
+     NOTE listing every milk container it saw (inventory, plus the hand
+     slot for reference) with `cur/max`, so a capture that resolved
+     normally while a bucket was full shows *why* the check missed it.
    (Until 2026-09-02 this was inverted: the resolve always cleared the
    mark and used the capacity check to decide whether to *unmemorize*,
    hiding the floating name. Users read the vanishing name as the animal
