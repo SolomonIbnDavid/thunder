@@ -1,3 +1,8 @@
+$size[14]{$u{update on 11.09.2026:}
+* Eating Helper now plans meals against both hunger and FEP goals, favoring distinct foods before repeat servings when that produces a better plan.
+* Meat varieties are tracked separately, and equivalent FEP event variants are combined by attribute so planning results are more accurate.
+* Feast-mode Auto-Eat now uses table-item clicks, matching the interaction the game expects while dining at a table.
+`
 $size[14]{$u{update on 02.09.2026:}
 * Inventory and container windows get Stack all / Unstack all buttons next to Sort (Hurricane-style). Stack merges matching items; Unstack unpacks every "stack of" pile. Bindable as "Stack all opened inventories" / "Unstack all opened inventories" in Options -> Shortcuts.
 * Stack all stops when a leftover cannot merge (full or incompatible pile) instead of picking the item up and putting it down.
