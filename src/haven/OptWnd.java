@@ -648,6 +648,8 @@ public class OptWnd extends WindowX {
 	    y = addbtn(cont, "Toggle UI", GameUI.kb_hide, y);
 	    y = addbtn(cont, "Log out", GameUI.kb_logout, y);
 	    y = addbtn(cont, "Switch character", GameUI.kb_switchchr, y);
+	    y = cont.adda(new Label("Windows"), cont.sz.x / 2, y + UI.scale(10), 0.5, 0.0).pos("bl").adds(0, 5).y;
+	    y = addbtn(cont, "Collapse focused window", Window.kb_collapse, y);
 	    y = cont.adda(new Label("Map options"), cont.sz.x / 2, y + UI.scale(10), 0.5, 0.0).pos("bl").adds(0, 5).y;
 	    y = addbtn(cont, "Display claims", GameUI.kb_claim, y);
 	    y = addbtn(cont, "Display villages", GameUI.kb_vil, y);

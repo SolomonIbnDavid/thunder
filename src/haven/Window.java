@@ -31,16 +31,21 @@ import haven.rx.Reactor;
 import me.ender.WindowDetector;
 
 import java.awt.*;
+import java.awt.event.KeyEvent;
 import haven.render.*;
 import java.util.function.*;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static haven.PUtils.*;
 
 public class Window extends Widget {
+    public static final KeyBinding kb_collapse = KeyBinding.get("window-collapse", KeyMatch.forcode(KeyEvent.VK_SPACE, 0));
     public static final Pipe.Op bgblend = FragColor.blend.nil;
     public static final Pipe.Op cblend  = FragColor.blend(new BlendMode(BlendMode.Function.ADD, BlendMode.Factor.SRC_ALPHA, BlendMode.Factor.INV_SRC_ALPHA,
 									BlendMode.Function.ADD, BlendMode.Factor.ONE, BlendMode.Factor.INV_SRC_ALPHA));
@@ -109,6 +114,8 @@ public class Window extends Widget {
     private Coord restoredSize;
     private Coord minimumContentSize;
     private WindowControl lockbtn, minbtn, hidebtn;
+    private long lastCapClick = 0;
+    private final Set<Widget> collapsedChildren = Collections.newSetFromMap(new IdentityHashMap<>());
 
     @RName("wnd")
     public static class $_ implements Factory {
@@ -169,15 +176,14 @@ public class Window extends Widget {
 
     protected void initCfg() {
 	if(cfg != null) {
-	    /* Legacy global window controls were removed. Do not restore their
-	     * saved states or a window could remain locked, hidden, or minimized
-	     * with no visible control for reversing it. */
+	    /* Legacy lock and auto-hide controls were removed. */
 	    locked = false;
 	    autoHide = false;
 	    frameHidden = false;
-	    minimized = false;
 	    if((cfg.sz != null) && persistSavedSize())
 		resize2(clampUserSize(cfg.sz));
+	    if(cfg.getValue("minimized", false))
+		setMinimized(true, false);
 	}
 	if(cfg != null && cfg.c != null) {
 	    if(!skipInitPos) {c = xlate(cfg.c, false);}
@@ -284,16 +290,40 @@ public class Window extends Widget {
 	setMinimized(!minimized, true);
     }
 
+    public void toggleCollapsed() {
+	toggleMinimize();
+    }
+
     private void setMinimized(boolean val, boolean save) {
 	if(minimized == val)
 	    return;
 	if(val) {
 	    restoredSize = csz();
+	    collapsedChildren.clear();
+	    for(Widget ch = child; ch != null; ch = ch.next) {
+		if((ch != deco) && ch.visible) {
+		    collapsedChildren.add(ch);
+		    ch.hide();
+		}
+	    }
 	    minimized = true;
 	    resizeFrameOnly(Coord.of(Math.max(restoredSize.x, UI.scale(140)), 0));
 	} else {
 	    minimized = false;
-	    resize2((restoredSize == null) ? minimumContentSize : restoredSize);
+	    for(Widget ch : collapsedChildren) {
+		if(ch.parent == this)
+		    ch.show();
+	    }
+	    collapsedChildren.clear();
+	    Coord content = contentsz();
+	    Coord target = restoredSize;
+	    if((target == null) || (target.x <= 0) || (target.y <= 0))
+		target = content;
+	    else if((content.x > 0) && (content.y > 0))
+		target = Coord.of(Math.max(target.x, content.x), Math.max(target.y, content.y));
+	    if((target == null) || (target.x <= 0) || (target.y <= 0))
+		target = minimumContentSize;
+	    resize2(clampUserSize(target));
 	}
 	if(save)
 	    updateCfg();
@@ -417,6 +447,7 @@ public class Window extends Widget {
 
 	public abstract void iresize(Coord isz);
 	public abstract Area contarea();
+	public boolean captionhit(Coord c) {return(false);}
     }
 
     public abstract static class DragDeco extends Deco {
@@ -427,6 +458,8 @@ public class Window extends Widget {
 		Window wnd = (Window)parent;
 		wnd.parent.setfocus(wnd);
 		wnd.raise();
+		if((ev.b == 1) && (wnd.minimized() || captionhit(ev.c)) && wnd.captionClick())
+		    return(true);
 		if((ev.b == 1) && !wnd.locked())
 		    wnd.drag(ev.c);
 		return(true);
@@ -483,6 +516,11 @@ public class Window extends Widget {
 
 	public Area contarea() {
 	    return(aa);
+	}
+
+	@Override
+	public boolean captionhit(Coord c) {
+	    return(c.isect(cptl, cpsz));
 	}
 
 	protected void cdraw(GOut g) {
@@ -736,7 +774,17 @@ public class Window extends Widget {
     }
 
     public void resize(Coord sz) {
-	resize2(sz);
+	if(minimized) {
+	    /* Hiding the content can make layout-driven windows report a
+	     * zero-sized content area. Do not let that destroy the size that
+	     * must be restored when the title bar is expanded again. */
+	    if(sz.y > 0)
+		restoredSize = sz;
+	    Coord base = (restoredSize == null) ? minimumContentSize : restoredSize;
+	    resizeFrameOnly(Coord.of(Math.max(base.x, UI.scale(140)), 0));
+	} else {
+	    resize2(sz);
+	}
     }
 
     public void uimsg(String msg, Object... args) {
@@ -819,6 +867,10 @@ public class Window extends Widget {
     public boolean keydown(KeyDownEvent ev) {
 	if(ev.propagate(this))
 	    return(true);
+	if(kb_collapse.key().match(ev) && (cap != null)) {
+	    toggleCollapsed();
+	    return(true);
+	}
 	if(key_esc.match(ev)) {
 	    if(justclose)
 		close();
@@ -827,6 +879,29 @@ public class Window extends Widget {
 	    return(true);
 	}
 	return(super.keydown(ev));
+    }
+
+    protected boolean onCaptionBar(Coord c) {
+	if((cap == null) || (deco == null) || (c.x < 0) || (c.x >= sz.x) || (c.y < 0))
+	    return(false);
+	int h = UI.scale(30);
+	if(deco instanceof DefaultDeco) {
+	    DefaultDeco dd = (DefaultDeco)deco;
+	    if(dd.cpsz.y > 0)
+		h = dd.cpsz.y;
+	}
+	return(c.y < h);
+    }
+
+    private boolean captionClick() {
+	long now = System.currentTimeMillis();
+	if(now - lastCapClick < 400) {
+	    lastCapClick = 0;
+	    toggleCollapsed();
+	    return(true);
+	}
+	lastCapClick = now;
+	return(false);
     }
     
     @Override

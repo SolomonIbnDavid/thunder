@@ -707,7 +707,7 @@ public class MenuGrid extends Widget implements KeyBinding.Bindable {
 		dragging = null;
 	    } else if(pressed != null) {
 		if(pressed == h)
-		    use(h, new Interaction(1, ui.modflags()), false);
+		    use(h, new Interaction(1, ui.modflags()), shouldResetAfterUse(ui.modflags()));
 		pressed = null;
 	    }
 	    grab.remove();
@@ -796,12 +796,16 @@ public class MenuGrid extends Widget implements KeyBinding.Bindable {
 	    }
 	}
 	if(pag != null) {
-	    use(pag, new Interaction(), (ev.mods & KeyMatch.S) == 0);
+	    use(pag, new Interaction(), shouldResetAfterUse(ev.mods));
 	    if(this.cur != null)
 		showkeys = true;
 	    return(true);
 	}
 	return(super.globtype(ev));
+    }
+
+    static boolean shouldResetAfterUse(int mods) {
+	return((mods & KeyMatch.S) == 0);
     }
     
     private void selectCraft(Pagina r) {
