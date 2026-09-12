@@ -1,5 +1,5 @@
 $size[14]{$u{update on 12.09.2026:}
-* Fixed a rare crash after combat ends when "Clear damage from player" (on by default) or "Clear damage from everyone" cleared a damage record at the same moment a creature came into view, leaving a null record that the object tick then dereferenced.
+* Fixed a crash after combat ends when "Clear damage from player" (on by default) or "Clear damage from everyone" cleared a damage record at the same moment a creature came into view, leaving a null record that the object tick then dereferenced.
 `
 $size[14]{$u{update on 08.09.2026:}
 * Fixed a crash when clicking an entry in the Tile Quality window to jump the map to that tile.
