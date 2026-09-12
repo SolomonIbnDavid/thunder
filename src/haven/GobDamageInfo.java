@@ -25,12 +25,10 @@ public class GobDamageInfo extends GobInfo {
 	super(owner);
 	up(12);
 	center = new Pair<>(0.5, 1.0);
-	if(gobDamage.containsKey(gob.id)) {
-	    damage = gobDamage.get(gob.id);
-	} else {
-	    damage = new DamageVO();
-	    gobDamage.put(gob.id, damage);
-	}
+	/* Atomic: "Clear damage" removes ids on the UI thread while gobs are
+	 * constructed on the session thread; a containsKey/get pair here handed
+	 * render() a null damage when the removal landed in between. */
+	damage = gobDamage.computeIfAbsent(gob.id, id -> new DamageVO());
     }
     
     @Override
