@@ -127,8 +127,6 @@ public class Window extends Widget {
 	this.large = lg;
 	setfocusctl(true);
 	chdeco(defdeco ? makedeco() : deco);
-	if((cap != null) && (this.deco instanceof DecoX))
-	    initWindowControls();
     }
 
     public Window(Coord sz, String cap, boolean lg, Deco deco) {
@@ -171,8 +169,13 @@ public class Window extends Widget {
 
     protected void initCfg() {
 	if(cfg != null) {
-	    locked = cfg.getValue("locked", false);
-	    autoHide = cfg.getValue("auto-hide", false);
+	    /* Legacy global window controls were removed. Do not restore their
+	     * saved states or a window could remain locked, hidden, or minimized
+	     * with no visible control for reversing it. */
+	    locked = false;
+	    autoHide = false;
+	    frameHidden = false;
+	    minimized = false;
 	    if((cfg.sz != null) && persistSavedSize())
 		resize2(clampUserSize(cfg.sz));
 	}
@@ -182,8 +185,6 @@ public class Window extends Widget {
 	    updateCfg();
 	}
 	clampToParent();
-	if((cfg != null) && cfg.getValue("minimized", false))
-	    setMinimized(true, false);
     }
 
     protected void updateCfg(){
