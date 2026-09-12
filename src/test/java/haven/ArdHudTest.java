@@ -48,7 +48,6 @@ public class ArdHudTest {
     @Test
     void themeUsesVendoredArdHud() {
 	assertTrue(Theme.Ard.usesArdHud());
-	assertTrue(Theme.Ard.usesFloatingHud());
 	assertFalse(Theme.Pretty.usesArdHud());
     }
 

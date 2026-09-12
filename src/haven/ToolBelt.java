@@ -145,7 +145,7 @@ public class ToolBelt extends DraggableWidget implements DTarget, DropTarget {
     
     @Override
     public void draw(GOut g) {
-	boolean clean = CFG.THEME.get().usesFloatingHud();
+	boolean clean = CFG.THEME.get().usesArdHud();
 	if(over) {
 	    if(!locked) {
 		g.chcolor(clean ? new Color(18, 21, 22, 190) : BG_COLOR);

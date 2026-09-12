@@ -15,7 +15,4 @@ public enum Theme {
 	return this == Ard;
     }
 
-    public boolean usesFloatingHud() {
-	return this == Ard;
-    }
 }

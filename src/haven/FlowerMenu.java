@@ -119,7 +119,7 @@ public class FlowerMenu extends Widget {
 	    super(Coord.z);
 	    this.name = name;
 	    text = ptf.render(L10N.flower(name),
-		CFG.THEME.get().usesFloatingHud() ? new Color(225, 227, 228) : ptc);
+		CFG.THEME.get().usesArdHud() ? new Color(225, 227, 228) : ptc);
 	    resize(text.sz().x + UI.scale(25), ph);
 	}
 
@@ -132,7 +132,7 @@ public class FlowerMenu extends Widget {
 	}
 
 	public void draw(GOut g) {
-	    if(CFG.THEME.get().usesFloatingHud()) {
+	    if(CFG.THEME.get().usesArdHud()) {
 		g.chcolor(new Color(17, 19, 21, (int)(245 * a)));
 		g.frect(Coord.z, sz);
 		g.chcolor(new Color(225, 227, 228, (int)(255 * a)));

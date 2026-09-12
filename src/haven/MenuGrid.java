@@ -555,7 +555,7 @@ public class MenuGrid extends Widget implements KeyBinding.Bindable {
 	for(int y = 0; y < gsz.y; y++) {
 	    for(int x = 0; x < gsz.x; x++) {
 		Coord p = bgsz.mul(new Coord(x, y));
-		if(CFG.THEME.get().usesFloatingHud()) {
+		if(CFG.THEME.get().usesArdHud()) {
 		    g.chcolor(new Color(20, 23, 24, 150));
 		    g.frect(p, bgsz);
 		    g.chcolor();

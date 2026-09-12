@@ -60,7 +60,8 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
     private static final int blpw = UI.scale(142), brpw = UI.scale(142);
     public final String chrid, genus;
     public final long plid;
-    private final boolean ardHud;
+    /** Layout choice only. Visual styling comes from CFG.THEME. */
+    private final boolean floatingHud;
     private final Hidepanel ulpanel, umpanel, urpanel, blpanel, mapmenupanel, brpanel, menupanel;
     public StatusWdg statuswdg;
     public TimeWdg timewdg;
@@ -324,26 +325,26 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 	this.chrid = chrid;
 	this.plid = plid;
 	this.genus = genus;
-	this.ardHud = CFG.FLOATING_HUD.get();
-	if(ardHud)
+	this.floatingHud = CFG.FLOATING_HUD.get();
+	if(floatingHud)
 	    beltwdg.hide();
 	if(MappingClient.initialized()) {
 	    MappingClient.getInstance().setGenus(genus);
 	}
 	setcanfocus(true);
 	setfocusctl(true);
-	ChatUI newchat = new ChatUI(ardHud) {
+	ChatUI newchat = new ChatUI(floatingHud) {
 	    public void resize(Coord c)
 	    {
 		super.resize(c);
-		if (!ardHud && (blpanel != null))
+		if (!floatingHud && (blpanel != null))
 		    blpanel.move();
-		if(!ardHud && (fold_bl[2] != null))
+		if(!floatingHud && (fold_bl[2] != null))
 		    fold_bl[2].presize();
 		repositionQuestPanel();
 	    }
 	};
-	if(ardHud) {
+	if(floatingHud) {
 	    chat = newchat;
 	    chatwnd = add(new ChatHudWnd(chat), UI.scale(20, 350));
 	    boolean chatvis = Utils.getprefb("chatvis", true);
@@ -397,7 +398,7 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 	ulpanel = add(new Hidepanel("gui-ul", null, new Coord(-1, -1)));
 	umpanel = add(new Hidepanel("gui-um", null, new Coord( 0, -1)));
 	urpanel = add(new Hidepanel("gui-ur", null, new Coord( 1, -1)));
-	if(ardHud) {
+	if(floatingHud) {
 	    minimapc = Coord.z;
 	    menugridc = Coord.z;
 	    blpanel.hide();
@@ -418,8 +419,8 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 	    foldbuttons();
 	}
 	if(CFG.HIDE_GAMEUI_PORTRAIT.get()) {
-	    portrait = ulpanel.add(new Widget(ardHud ? Avaview.dasz : Avaview.dasz.add(Window.wbox.bisz())), UI.scale(10, 10));
-	} else if(ardHud) {
+	    portrait = ulpanel.add(new Widget(floatingHud ? Avaview.dasz : Avaview.dasz.add(Window.wbox.bisz())), UI.scale(10, 10));
+	} else if(floatingHud) {
 	    portrait = ulpanel.add(new Avaview(Avaview.dasz, plid, "avacam"), UI.scale(10, 10));
 	} else {
 	    portrait = ulpanel.add(Frame.with(new Avaview(Avaview.dasz, plid, "avacam"), false), UI.scale(10, 10));
@@ -441,7 +442,7 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 	statuswdg = add(new StatusWdg());
 	CFG.Observer<Boolean> change = cfg -> {
 	    synchronized (this) {
-		if (!ardHud && !blpanel.tvis && CFG.VANILLA_CHAT.get()) {
+		if (!floatingHud && !blpanel.tvis && CFG.VANILLA_CHAT.get()) {
 		    blpanel.mshow2(true);
 		    mapmenupanel.mshow2(true);
 		}
@@ -449,7 +450,7 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 		resize(GameUI.this.sz);
 	    }
 	};
-	if(!ardHud)
+	if(!floatingHud)
 	    CFG.VANILLA_CHAT.observe(change);
     }
 
@@ -553,7 +554,7 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
     private final IButton[] fold_br = new IButton[4];
     private final IButton[] fold_bl = new IButton[4];
     private void updfold(boolean reset) {
-	if(ardHud)
+	if(floatingHud)
 	    return;
 	int br;
 	if(brpanel.tvis && menupanel.tvis)
@@ -761,7 +762,7 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
     }
     
     public void toggleChat() {
-	if(ardHud) {
+	if(floatingHud) {
 	    if(chatwnd.visible() && !chat.hasfocus) {
 		chatwnd.raise();
 		setfocus(chat);
@@ -792,7 +793,7 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
     }
 
     public void toggleMinimap() {
-	if(!ardHud || (mmapwnd == null))
+	if(!floatingHud || (mmapwnd == null))
 	    return;
 	boolean show = !mmapwnd.visible();
 	mmapwnd.show(show);
@@ -1462,12 +1463,12 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 
     private final BMap<String, Window> wndids = new HashBMap<String, Window>();
 
-    private boolean usesArdHud() {
-	return ardHud;
+    private boolean usesFloatingHud() {
+	return floatingHud;
     }
 
     private void repositionQuestPanel() {
-	if(!ardHud && (questPanel instanceof AlignPanel))
+	if(!floatingHud && (questPanel instanceof AlignPanel))
 	    ((AlignPanel)questPanel).move(questPanel.c);
     }
 
@@ -1583,9 +1584,9 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 		     * existing mapfile with a new one is better. */
 		    throw(new RuntimeException("failed to load mapfile", e));
 		}
-		CornerMap cornermap = new CornerMap(UI.scale(new Coord(133, 133)), file, ardHud);
+		CornerMap cornermap = new CornerMap(UI.scale(new Coord(133, 133)), file, floatingHud);
 		mmap = cornermap;
-		if(ardHud) {
+		if(floatingHud) {
 		    mmapwnd = add(new MinimapHudWnd(this, cornermap), UI.scale(20, 80));
 		    boolean mmapvis = Utils.getprefb("wndvis-minimap", CFG.SHOW_MINIMAP_ON_START.get());
 		    mmapwnd.show(mmapvis);
@@ -1606,7 +1607,7 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 	    placemmap();
 	} else if(place == "menu") {
 	    menu = (MenuGrid)brpanel.add(child, menugridc);
-	    if(usesArdHud()) {
+	    if(usesFloatingHud()) {
 		int gap = UI.scale(4);
 		Widget toolbar = brpanel.add(makeArdMenuToolbar(menu.sz.x), Coord.z);
 		menu.move(Coord.of(0, toolbar.sz.y + gap));
@@ -1696,7 +1697,7 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 	    if(qqview != null)
 		qqview.reqdestroy();
 	    final Widget cref = qqview = child;
-	    if(ardHud) {
+	    if(floatingHud) {
 		questPanel = add(new QuestHud(cref),
 		    UI.scale(10), Math.max(0, sz.y - cref.sz.y - UI.scale(10)));
 	    } else {
@@ -1706,7 +1707,7 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 		    public final Hidepanel mapmenureference = mapmenupanel;
 		
 		    protected Coord getc() {
-			if(ardHud)
+			if(floatingHud)
 			    return(new Coord(UI.scale(10), GameUI.this.sz.y - this.sz.y - UI.scale(10)));
 			return(new Coord(10, mapmenureference.c.y - this.sz.y - 10));
 		    }
@@ -1844,7 +1845,7 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
     
     public void placemmap() {
 	if(mmap == null) {return;}
-	if(ardHud) {
+	if(floatingHud) {
 	    if(mmapwnd != null) {
 		mmapwnd.show(Utils.getprefb("wndvis-minimap", CFG.SHOW_MINIMAP_ON_START.get()));
 		applyHudSavedPos(mmapwnd);
@@ -1909,20 +1910,20 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
     }
 
     public void draw(GOut g) {
-	if(ardHud) {
+	if(floatingHud) {
 	    beltwdg.c = new Coord(UI.scale(10), sz.y - beltwdg.sz.y - UI.scale(5));
 	} else {
 	    int beltoffset = (CFG.VANILLA_CHAT.get() ? 0 : blpw);
 	    beltwdg.c = new Coord(chat.c.x + beltoffset, Math.min(chat.c.y - beltwdg.sz.y, sz.y - beltwdg.sz.y));
 	}
 	super.draw(g);
-	int by = sz.y;
-	boolean chatvis = ardHud ? chatwnd.visible() : chat.visible();
-	if(!ardHud && chatvis)
+	int by = sz.y - UI.scale(10);
+	boolean chatvis = floatingHud ? chatwnd.visible() : chat.visible();
+	if(!floatingHud && chatvis)
 	    by = Math.min(by, chat.c.y);
 	if(beltwdg.visible())
 	    by = Math.min(by, beltwdg.c.y);
-	int msgx = ardHud ? UI.scale(10) : blpw + UI.scale(10);
+	int msgx = floatingHud ? UI.scale(20) : blpw + UI.scale(10);
 	if(cmdline != null) {
 	    drawcmd(g, new Coord(msgx, by -= UI.scale(20)));
 	} else if(lastmsg != null) {
@@ -2232,10 +2233,9 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 	    return;
 	if((sz.x <= 0) || (sz.y <= 0) || (widget.sz.x <= 0) || (widget.sz.y <= 0))
 	    return;
-	int visible = UI.scale(40);
 	widget.c = Coord.of(
-	    Math.max(-widget.sz.x + visible, Math.min(widget.c.x, sz.x - visible)),
-	    Math.max(0, Math.min(widget.c.y, Math.max(0, sz.y - visible))));
+	    Math.max(0, Math.min(widget.c.x, Math.max(0, sz.x - widget.sz.x))),
+	    Math.max(0, Math.min(widget.c.y, Math.max(0, sz.y - widget.sz.y))));
     }
 
     private void applyHudSavedPos(Window wnd) {
@@ -2392,7 +2392,7 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 
     private int uimode = 1;
     private Hidepanel[] uipanels() {
-	if(ardHud)
+	if(floatingHud)
 	    return(new Hidepanel[] {brpanel, ulpanel, umpanel, urpanel});
 	return(new Hidepanel[] {blpanel, brpanel, ulpanel, umpanel, urpanel, menupanel, mapmenupanel});
     }
@@ -2434,7 +2434,7 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
     public void resizeLayout(Coord sz) {
 	if((sz.x < 64) || (sz.y < 64))
 	    return;
-	if(ardHud) {
+	if(floatingHud) {
 	    clampHudWidget(chatwnd);
 	    clampHudWidget(mmapwnd);
 	    clampHudWidget(questPanel);
@@ -2455,7 +2455,7 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 	    map.resize(sz);
 	if(prog != null)
 	    prog.move(sz.sub(prog.sz).mul(0.5, 0.35));
-	beltwdg.c = new Coord((ardHud ? 0 : blpw) + UI.scale(10), sz.y - beltwdg.sz.y - UI.scale(5));
+	beltwdg.c = new Coord((floatingHud ? 0 : blpw) + UI.scale(10), sz.y - beltwdg.sz.y - UI.scale(5));
 	statuswdg.c = new Coord(sz.x/2 + UI.scale(70), UI.scale(10));
 	timewdg.c = new Coord(sz.x/2 - UI.scale(270), UI.scale(10));
     }
@@ -2766,7 +2766,7 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
     }
 
     private void createToolBelts() {
-	if(ardHud) {
+	if(floatingHud) {
 	    createToolBelt("BeltNumbers", 0, 5, ToolBelt.NKEYS, CFG.SHOW_ARD_NUMBERBELT, UI.scale(50, 300));
 	    createToolBelt("Belt0", 132, 4, ToolBelt.FKEYS, CFG.SHOW_TOOLBELT_0, UI.scale(50, 200));
 	    createToolBelt("Belt1", 120, 4, 12, CFG.SHOW_TOOLBELT_1, UI.scale(50, 250));
@@ -2790,8 +2790,8 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 		wdgmsg("act", ad);
 	});
 	cmdmap.put("belt", (cons, args) -> {
-	    if(usesArdHud()) {
-		msg("Ard hotbars are controlled from UI settings.", MsgType.INFO);
+	    if(usesFloatingHud()) {
+		msg("Floating HUD hotbars are controlled from UI settings.", MsgType.INFO);
 		return;
 	    }
 	    if(args[1].equals("f")) {
