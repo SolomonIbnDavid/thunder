@@ -138,22 +138,18 @@ public final class StagingPlanner {
       double cap = Math.max(spec.maxDist + PLANNING_SLACK, standoff + CELL * 2.0);
       double[] costs = LocalPlanner.occupancyCosts(player, occ);
       List<Candidate> all = new ArrayList<Candidate>();
+      Candidate best = null;
       for (double radius = standoff; radius <= cap + 1.0E-9; radius += CELL) {
          for (int i = 0; i < ANGLES.length; i++) {
             Candidate c = probe(origin, rotate(toward, Math.toRadians(ANGLES[i])), radius, ANGLES[i], occ, costs);
             if (all.size() < MAX_CONSIDERED) {
                all.add(c);
             }
-         }
-      }
-      Candidate best = null;
-      for (int i = 0; i < all.size(); i++) {
-         Candidate c = all.get(i);
-         if (c.reject != null) {
-            continue;
-         }
-         if (best == null || better(c, best)) {
-            best = c;
+            // MAX_CONSIDERED limits diagnostics only. The safer or cheaper
+            // staging pose can be on a later, wider ring.
+            if (c.reject == null && (best == null || better(c, best))) {
+               best = c;
+            }
          }
       }
       if (best == null) {

@@ -113,15 +113,31 @@ class StagingPlannerTest {
    }
 
    @Test
+   void diagnosticCandidateCapDoesNotLimitSelection() {
+      Coord2d player = Coord2d.of(0.0, 0.0);
+      Coord2d target = Coord2d.of(40.0, 0.0);
+      OccupancyGrid occ = grid(player, 72, 72);
+      haven.nav.InteractionSpec targetSpec = spec(target);
+      StagingPlanner.Result r = StagingPlanner.select(player, targetSpec, occ);
+      double standoff = StagingPlanner.standoffRadius(targetSpec);
+
+      Assertions.assertTrue(r.ok(), "staging candidate found, reason=" + r.reason);
+      Assertions.assertEquals(StagingPlanner.MAX_CONSIDERED, r.considered.size(),
+         "diagnostic output remains bounded");
+      Assertions.assertTrue(r.selected.radius > standoff + StagingPlanner.CELL * 2.0,
+         "selection must evaluate the safer outer rings beyond the diagnostic cap");
+   }
+
+   @Test
    void stagingFallsBackToArcWhenFacingRayOccupied() {
       Coord2d player = Coord2d.of(0.0, 0.0);
       Coord2d target = Coord2d.of(40.0, 0.0);
       OccupancyGrid occ = grid(player, 72, 72);
       solidBlob(occ, target, 2);
-      // Block the player-facing band west of the target so the ray candidate
-      // is occupied and the pick must fall back to the angular arc.
+      // Block the full player-facing band west of the target, including every
+      // allowed staging radius, so the pick must fall back to the angular arc.
       Coord tc = occ.cellOf(target);
-      for (int x = tc.x - 5; x <= tc.x - 1; x++) {
+      for (int x = tc.x - 11; x <= tc.x - 1; x++) {
          for (int y = tc.y - 2; y <= tc.y + 2; y++) {
             occ.occ[y * occ.w + x] = OccupancyGrid.SOLID;
          }
@@ -152,11 +168,11 @@ class StagingPlannerTest {
       Coord2d player = Coord2d.of(0.0, 0.0);
       Coord2d target = Coord2d.of(40.0, 0.0);
       OccupancyGrid occ = grid(player, 72, 72);
-      // Fully seal the target so no staging coordinate is reachable.
+      // Cover every allowed staging ring so no coordinate can qualify.
       int cx = occ.cellOf(target).x;
       int cy = occ.cellOf(target).y;
-      for (int x = cx - 6; x <= cx + 6; x++) {
-         for (int y = cy - 6; y <= cy + 6; y++) {
+      for (int x = cx - 12; x <= cx + 12; x++) {
+         for (int y = cy - 12; y <= cy + 12; y++) {
             occ.occ[y * occ.w + x] = OccupancyGrid.SOLID;
          }
       }
