@@ -38,6 +38,7 @@ public final class ClearCutBot {
     private static final long ACTION_TIMEOUT = 120000L;
     private static final double LOG_PLACEMENT_ANGLE = 0.0;
     private static final double BUSH_APPROACH_RADIUS = MCache.tilesz.x * 1.60;
+    private static final double BOULDER_APPROACH_RADIUS = MCache.tilesz.x * 1.25;
     private static volatile boolean running;
     private static volatile String status = "Status: idle";
     private static volatile int treesDone;
@@ -541,7 +542,7 @@ public final class ClearCutBot {
                 }
                 if(!ensureBoulderTool())
                     fail("could not equip a pickaxe or woodcutting axe for boulder " + boulderId);
-                if(!approachWithRetries(boulder)) fail("could not reach boulder " + boulderId);
+                if(!approachBoulderWithRetries(boulder)) fail("could not reach boulder " + boulderId);
                 setPhase("chipping boulder " + (bouldersDone + 1));
 
                 // Start each chip with a clean inventory. More importantly, the
@@ -1400,22 +1401,33 @@ public final class ClearCutBot {
             return false;
         }
 
-        /** Some bushes expose no useful movement hitbox, so generic object
-         * approach correctly fails closed before producing a route. In that
-         * case, choose a collision-checked point just outside the conservative
-         * bush obstacle and let BotMovement route to the nearest open side. */
+        /** Some bushes expose no useful movement hitbox, so use the shared
+         * geometry-free object fallback when normal approach cannot plan. */
         private boolean approachBushWithRetries(Gob bush) throws InterruptedException {
+            return approachWithRingFallback(bush, Kind.BUSH, BUSH_APPROACH_RADIUS, "BUSH");
+        }
+
+        /** Every boulder/bumling uses the same rule, regardless of material or
+         * stage number. Some small stages have no usable movement geometry. */
+        private boolean approachBoulderWithRetries(Gob boulder) throws InterruptedException {
+            return approachWithRingFallback(boulder, Kind.BOULDER, BOULDER_APPROACH_RADIUS, "BOULDER");
+        }
+
+        /** Try exact object approach first, then route to the nearest open
+         * point on a conservative ring when the target has no usable geometry. */
+        private boolean approachWithRingFallback(Gob target, Kind kind, double radius, String label)
+                throws InterruptedException {
             for(int attempt = 1; attempt <= ClearCutConfig.MAX_ATTEMPTS; attempt++) {
-                if(!validGob(bush)) return false;
+                if(!validGob(target)) return false;
                 Gob player = gui.map.player();
-                if(player != null && player.rc != null && player.rc.dist(bush.rc) <= MCache.tilesz.x * 1.5) {
+                if(player != null && player.rc != null && player.rc.dist(target.rc) <= MCache.tilesz.x * 1.5) {
                     waitMovement();
                     return true;
                 }
 
-                BotMovement.Result normal = BotMovement.approach(gui, bot, bush, BotMovement.Mode.LAND);
-                diag("BUSH approach target=%d resid=%s attempt=%d normal=%s detail=%s", bush.id,
-                    resid(bush), attempt, normal == null ? null : normal.status,
+                BotMovement.Result normal = BotMovement.approach(gui, bot, target, BotMovement.Mode.LAND);
+                diag("%s approach target=%d resid=%s attempt=%d normal=%s detail=%s", label, target.id,
+                    resid(target), attempt, normal == null ? null : normal.status,
                     normal == null ? "null result" : normal.detail);
                 if(normal != null && normal.readyToInteract()) {
                     waitMovement();
@@ -1426,24 +1438,24 @@ public final class ClearCutBot {
                 List<Coord2d> candidates = new ArrayList<>();
                 for(int i = 0; i < 24; i++) {
                     double angle = Math.PI * 2.0 * i / 24.0;
-                    candidates.add(bush.rc.add(Math.cos(angle) * BUSH_APPROACH_RADIUS,
-                        Math.sin(angle) * BUSH_APPROACH_RADIUS));
+                    candidates.add(target.rc.add(Math.cos(angle) * radius,
+                        Math.sin(angle) * radius));
                 }
                 if(player != null && player.rc != null)
                     candidates.sort(Comparator.comparingDouble(player.rc::dist));
                 BotMovement.Result ring = BotMovement.moveToAny(gui, bot, candidates,
                     BotMovement.Avoidance.NONE, BotMovement.Mode.LAND);
-                diag("BUSH approach target=%d attempt=%d ring=%s detail=%s goal=%s", bush.id,
+                diag("%s approach target=%d attempt=%d ring=%s detail=%s goal=%s", label, target.id,
                     attempt, ring == null ? null : ring.status,
                     ring == null ? "null result" : ring.detail,
                     ring == null ? null : ring.selectedGoal);
                 waitMovement();
                 player = gui.map.player();
-                Gob current = currentGob(bush.id, Kind.BUSH);
+                Gob current = currentGob(target.id, kind);
                 if(ring != null && ring.arrived() && player != null && player.rc != null &&
                    current != null && player.rc.dist(current.rc) <= MCache.tilesz.x * 1.75)
                     return true;
-                bush = current;
+                target = current;
             }
             return false;
         }

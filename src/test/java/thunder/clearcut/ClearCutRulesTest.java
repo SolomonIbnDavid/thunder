@@ -23,6 +23,8 @@ public class ClearCutRulesTest {
         assertTrue(ClearCutRules.isBoulder("gfx/terobjs/boulder[granite]"));
         assertTrue(ClearCutRules.isBoulder("gfx/terobjs/bumlings/rhyolite0"));
         assertTrue(ClearCutRules.isBoulder("gfx/terobjs/bumlings/feldspar1[2]"));
+        assertTrue(ClearCutRules.isBoulder("gfx/terobjs/bumlings/basalt1"));
+        assertTrue(ClearCutRules.isBoulder("gfx/terobjs/bumlings/cinnabar1"));
         assertFalse(ClearCutRules.isBoulder("gfx/terobjs/items/granite"));
         assertFalse(ClearCutRules.isBoulder("gfx/invobjs/rhyolite"));
         assertTrue(ClearCutRules.isLog("gfx/terobjs/trees/yewoldtrunk"));
