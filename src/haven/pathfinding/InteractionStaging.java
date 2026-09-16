@@ -4,8 +4,6 @@ import auto.Bot;
 import haven.Coord2d;
 import haven.GameUI;
 import haven.UI;
-import haven.nav.NavPlan;
-import haven.nav.NavPlanStatus;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -218,25 +216,32 @@ public final class InteractionStaging {
                   }
                }
             }
-            stagingPoints.add(pick.selected.world);
             PathfinderLog.recordInteraction(phaseRecord(
                PHASE_STAGING_POSE_SELECTED, identity, scene.player, stagingPoints, live, round,
                "angle=" + pick.selected.angle + " radius=" + Math.round(pick.selected.radius)
+                  + " candidates=" + pick.goals.size()
             ));
             if (listener != null) {
                listener.phase(PHASE_STAGING_POSE_SELECTED, identity, scene.player, pick.selected.world,
-                  "angle=" + pick.selected.angle + " radius=" + Math.round(pick.selected.radius));
+                  "angle=" + pick.selected.angle + " radius=" + Math.round(pick.selected.radius)
+                     + " candidates=" + pick.goals.size());
             }
-            String walkErr = walkTo(run, ui, gui, scene, pick.selected.world, identity, bot, avoid);
-            if (walkErr != null) {
+            BotMovement.Result walk = walkTo(
+               run, ui, gui, scene, pick.goals, pick.selected.world, identity, bot, avoid
+            );
+            Coord2d staging = walk.selectedGoal == null ? pick.selected.world : walk.selectedGoal;
+            stagingPoints.add(staging);
+            if (!walk.arrived()) {
+               String walkErr = "staging walk " + walk.status
+                  + (walk.detail.isEmpty() ? "" : " (" + walk.detail + ")");
                PathfinderLog.dumpFailure("staging STAGING_UNREACHABLE: " + walkErr);
                return new Result(STAGING_UNREACHABLE, null, null, identity, stagingPoints, walkErr);
             }
             PathfinderLog.recordInteraction(phaseRecord(
-               PHASE_STAGING_ARRIVED, identity, pick.selected.world, stagingPoints, live, round, ""
+               PHASE_STAGING_ARRIVED, identity, staging, stagingPoints, live, round, ""
             ));
             if (listener != null) {
-               listener.phase(PHASE_STAGING_ARRIVED, identity, pick.selected.world, pick.selected.world, "");
+               listener.phase(PHASE_STAGING_ARRIVED, identity, staging, staging, "");
             }
          }
       } finally {
@@ -246,36 +251,25 @@ public final class InteractionStaging {
    }
 
    /**
-    * Walks a staging leg with the ordinary occupancy pathfinder. Coordinate
-    * destination, but the plan log carries the interaction target label and
-    * phase, so the movement is never mistaken for a plain go-to.
+    * Walks a staging leg to any candidate accepted by the exact live
+    * pathfinder. The plan log carries the interaction target label and phase,
+    * so the movement is never mistaken for a plain go-to.
     */
-   private static String walkTo(
-      PfTestRunner.Run run, UI ui, GameUI gui, MovementScene.Scene scene, Coord2d staging,
+   private static BotMovement.Result walkTo(
+      PfTestRunner.Run run, UI ui, GameUI gui, MovementScene.Scene scene, List<Coord2d> candidates,
+      Coord2d preferred,
       InteractionTarget identity, Bot bot, BotMovement.Avoidance avoidance
    ) throws InterruptedException, PfTestRunner.Cancelled {
-      NavPlan plan = LocalPlanner.planFromOccupancy(scene.player, staging, false, 0.0, scene.occupancy, 0, new PlanningTrace());
-      List<Coord2d> route;
-      if (plan != null && plan.status != NavPlanStatus.FAILED && plan.smoothedRoute != null && plan.smoothedRoute.size() >= 2) {
-         route = plan.smoothedRoute;
-      } else {
-         route = new ArrayList<Coord2d>();
-         route.add(scene.player);
-         route.add(staging);
-      }
       PathfinderLog.recordInteraction(phaseRecord(
-         PHASE_STAGING_MOVEMENT, identity, scene.player, Collections.singletonList(staging), null, -1,
-         "route=" + (route.size() - 1) + "wp plan=" + (plan == null ? "none" : plan.status.name())
+         PHASE_STAGING_MOVEMENT, identity, scene.player, Collections.singletonList(preferred), null, -1,
+         "candidates=" + candidates.size()
       ));
       if (run != null && run.cancelled) {
          throw new PfTestRunner.Cancelled();
       }
-      BotMovement.Result walk = BotMovement.moveToAny(gui, bot, Collections.singletonList(staging),
-         avoidance, BotMovement.Mode.LAND, WALK_BUDGET_MS);
-      if (!walk.arrived()) {
-         return "staging walk " + walk.status + (walk.detail.isEmpty() ? "" : " (" + walk.detail + ")");
-      }
-      return null;
+      return BotMovement.moveToAny(
+         gui, bot, candidates, avoidance, BotMovement.Mode.LAND, WALK_BUDGET_MS
+      );
    }
 
    /** Compact phase record retaining target identity and context for telemetry. */

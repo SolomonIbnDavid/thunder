@@ -2,7 +2,10 @@ package haven.pathfinding;
 
 import haven.Coord;
 import haven.Coord2d;
+import haven.nav.NavPlan;
+import haven.nav.NavPlanStatus;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -149,6 +152,31 @@ class StagingPlannerTest {
    }
 
    @Test
+   void exactPlannerCanUseAnotherStagingGoalWhenPreferredGoalDoesNotFit() {
+      Coord2d player = Coord2d.of(0.0, 0.0);
+      Coord2d target = Coord2d.of(40.0, 0.0);
+      OccupancyGrid occ = grid(player, 72, 72);
+      solidBlob(occ, target, 2);
+      StagingPlanner.Result staging = StagingPlanner.select(player, spec(target), occ);
+
+      Assertions.assertTrue(staging.goals.size() > 1, "staging offers alternatives to the exact planner");
+      Coord2d preferred = staging.selected.world;
+      List<Coord2d[]> solids = Collections.singletonList(
+         box(preferred.x - 0.01, preferred.y - 0.01, preferred.x + 0.01, preferred.y + 0.01)
+      );
+      List<Coord2d[]> body = Collections.singletonList(box(-0.01, -0.01, 0.01, 0.01));
+
+      NavPlan blocked = exactPlan(player, Collections.singletonList(preferred), solids, body);
+      Assertions.assertEquals(NavPlanStatus.FAILED, blocked.status, "preferred point is truly blocked");
+
+      NavPlan fallback = exactPlan(player, staging.goals, solids, body);
+      Assertions.assertEquals(NavPlanStatus.REACHED, fallback.status, fallback.reason);
+      Coord2d reached = fallback.smoothedRoute.get(fallback.smoothedRoute.size() - 1);
+      Assertions.assertNotEquals(preferred, reached, "exact planner chooses a different staging point");
+      Assertions.assertTrue(staging.goals.contains(reached), "arrival is one of the offered staging points");
+   }
+
+   @Test
    void edgeStagingTowardUnseenTargetProgressesAndStaysInGrid() {
       Coord2d player = Coord2d.of(0.0, 0.0);
       Coord2d target = Coord2d.of(130.0, 0.0);
@@ -179,5 +207,34 @@ class StagingPlannerTest {
       StagingPlanner.Result r = StagingPlanner.select(player, spec(target), occ);
       Assertions.assertFalse(r.ok());
       Assertions.assertEquals(StagingPlanner.STAGING_UNREACHABLE, r.reason);
+   }
+
+   private static NavPlan exactPlan(
+      Coord2d start, List<Coord2d> goals, List<Coord2d[]> solids, List<Coord2d[]> body
+   ) {
+      NavGrid grid = LocalPlanner.planGrid(start, goals);
+      boolean[] base = Arrays.copyOf(grid.blocked, grid.blocked.length);
+      LocalPlanner.PolyBounds bounds = LocalPlanner.PolyBounds.of(solids);
+      for (int y = 0; y < grid.h; y++) {
+         for (int x = 0; x < grid.w; x++) {
+            if (LocalPlanner.bodyHitsAny(grid.world(Coord.of(x, y)), body, solids, null, bounds)) {
+               grid.block(x, y);
+            }
+         }
+      }
+      grid.configureExactCollision(solids, body, base);
+      LocalPlanner.ClipResult clip = LocalPlanner.clipToHorizon(start, goals);
+      return LocalPlanner.planCore(
+         start, goals, clip.targets, clip.clipped, false, 0.0, grid,
+         new boolean[grid.w * grid.h], Arrays.copyOf(grid.blocked, grid.blocked.length),
+         solids.size(), new PlanningTrace()
+      );
+   }
+
+   private static Coord2d[] box(double minx, double miny, double maxx, double maxy) {
+      return new Coord2d[] {
+         Coord2d.of(minx, miny), Coord2d.of(maxx, miny),
+         Coord2d.of(maxx, maxy), Coord2d.of(minx, maxy)
+      };
    }
 }

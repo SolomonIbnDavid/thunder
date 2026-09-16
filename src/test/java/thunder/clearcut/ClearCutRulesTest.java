@@ -100,4 +100,16 @@ public class ClearCutRulesTest {
             previous = y;
         }
     }
+
+    @Test public void surveyOffersNearbyCandidatesInsteadOfOneExactTile() {
+        Area allowed = new Area(Coord.of(10, 20), Coord.of(15, 25));
+        Coord preferred = Coord.of(12, 22);
+        List<Coord> candidates = ClearCutRules.surveyCandidateTiles(preferred, allowed, 2);
+        assertEquals(preferred, candidates.get(0));
+        assertTrue(candidates.contains(Coord.of(11, 22)));
+        assertTrue(candidates.contains(Coord.of(13, 23)));
+        assertEquals(25, candidates.size());
+        assertEquals(candidates.size(), new java.util.HashSet<>(candidates).size());
+        for(Coord candidate : candidates) assertTrue(allowed.contains(candidate));
+    }
 }

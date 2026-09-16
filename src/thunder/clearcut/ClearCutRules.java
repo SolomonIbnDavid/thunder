@@ -151,6 +151,22 @@ public final class ClearCutRules {
         return out;
     }
 
+    /** Preferred survey tile first, followed by nearby alternatives in
+     * expanding rings. Movement decides which candidate is actually reachable. */
+    public static List<Coord> surveyCandidateTiles(Coord preferred, Area allowed, int radius) {
+        if(preferred == null || allowed == null || !allowed.positive() || radius < 0)
+            return Collections.emptyList();
+        List<Coord> out = new ArrayList<>();
+        for(int ring = 0; ring <= radius; ring++) {
+            for(int dy = -ring; dy <= ring; dy++) for(int dx = -ring; dx <= ring; dx++) {
+                if(Math.max(Math.abs(dx), Math.abs(dy)) != ring) continue;
+                Coord candidate = preferred.add(dx, dy);
+                if(allowed.contains(candidate)) out.add(candidate);
+            }
+        }
+        return out;
+    }
+
     private static List<Integer> axisPoints(int low, int high, int maxStep) {
         List<Integer> out = new ArrayList<>();
         out.add(low);

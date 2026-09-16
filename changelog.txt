@@ -1,3 +1,8 @@
+$size[14]{$u{experimental Clear-Cut follow-up on 16.09.2026:}
+* Clear-Cut survey walks now give the pathfinder nearby alternatives instead of failing when one exact survey tile is blocked.
+* Interaction staging now lets the exact live pathfinder choose among every valid staging pose when the preferred position does not fit.
+* Optional food and water areas are checked only when resupply is actually needed, avoiding unnecessary startup travel.
+`
 $size[14]{$u{experimental Clear-Cut update on 16.09.2026:}
 * Clear-Cut now evaluates every legal staging position, including safer outer-ring routes that used to be hidden by the diagnostic candidate limit.
 * Boulders are chipped before loose logs are hauled, so a nearby rock cannot block the log-carrying approach.

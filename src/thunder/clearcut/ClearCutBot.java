@@ -252,17 +252,11 @@ public final class ClearCutBot {
                 fail("the belt needs an empty slot to swap the selected axe and shovel");
             if(gui.hand() != null) fail("clear the cursor before starting");
 
-            if(config.hasWaterArea()) {
-                observeArea(config.water, "water area");
-                if(gobsIn(config.water, this::isWaterSource).isEmpty())
-                    fail("no water-filled container found in the water area");
-            } else if(!hasWater()) {
+            // Do not travel to inspect optional supply areas at startup. Runtime
+            // resupply validates them only when carried water is actually empty
+            // or energy has actually fallen below the eating threshold.
+            if(!config.hasWaterArea() && !hasWater()) {
                 fail("no water remains in carried drink containers and no water area was selected");
-            }
-            if(config.hasFoodArea()) {
-                observeArea(config.food, "food area");
-                if(!hasAccessibleInventoryContainer(config.food, true))
-                    fail("no accessible container or table with recognized food found in the food area");
             }
             if(config.collectTreeProducts) {
                 observeArea(config.productDropOff, "tree-product area");
@@ -394,8 +388,8 @@ public final class ClearCutBot {
                 bot.checkCancelled();
                 ensureSupplies();
                 setPhase(label + " " + (i + 1) + "/" + waypoints.size());
-                Coord2d target = clearObservationPoint(waypoints.get(i), config.clearCut);
-                if(target == null || !walkWithRetries(target, MCache.tilesz.x * 1.25))
+                List<Coord2d> targets = surveyObservationPoints(waypoints.get(i), config.clearCut);
+                if(targets.isEmpty() || !plannedWalkToAny(targets, 20000L, MCache.tilesz.x * 1.25))
                     fail("could not cover survey tile " + waypoints.get(i));
                 waitMovement();
                 // Object and tag updates can trail movement slightly. Sample the
@@ -1347,27 +1341,11 @@ public final class ClearCutBot {
             return out;
         }
 
-        private Coord2d clearObservationPoint(Coord tile, Area area) {
-            Area allowed = area.margin(2);
-            for(int radius = 0; radius <= 8; radius++) {
-                for(int dy = -radius; dy <= radius; dy++) for(int dx = -radius; dx <= radius; dx++) {
-                    Coord candidate = tile.add(dx, dy);
-                    if(!allowed.contains(candidate)) continue;
-                    Coord2d point = tileCenter(candidate);
-                    if(pointClear(point)) return point;
-                }
-            }
-            return null;
-        }
-
-        private boolean pointClear(Coord2d point) {
-            synchronized(gui.ui.sess.glob.oc) {
-                for(Gob gob : gui.ui.sess.glob.oc) {
-                    if(!validGob(gob) || gob == gui.map.player()) continue;
-                    if(gob.rc.dist(point) < MCache.tilesz.x * 0.8) return false;
-                }
-            }
-            return true;
+        private List<Coord2d> surveyObservationPoints(Coord tile, Area area) {
+            List<Coord2d> out = new ArrayList<>();
+            for(Coord candidate : ClearCutRules.surveyCandidateTiles(tile, area.margin(2), 2))
+                out.add(tileCenter(candidate));
+            return out;
         }
 
         private boolean walkWithRetries(Coord2d point, double tolerance) throws InterruptedException {
@@ -1383,6 +1361,18 @@ public final class ClearCutBot {
             BotMovement.Result result = BotMovement.moveTo(gui, bot, point, BotMovement.Mode.LAND, timeout);
             player = gui.map.player();
             return result.arrived() && player != null && player.rc != null && player.rc.dist(point) <= tolerance;
+        }
+
+        private boolean plannedWalkToAny(List<Coord2d> points, long timeout, double tolerance)
+                throws InterruptedException {
+            Gob player = gui.map.player();
+            if(player == null || player.rc == null || points == null || points.isEmpty()) return false;
+            for(Coord2d point : points) if(player.rc.dist(point) <= tolerance) return true;
+            BotMovement.Result result = BotMovement.moveToAny(gui, bot, points,
+                BotMovement.Avoidance.NONE, BotMovement.Mode.LAND, timeout);
+            player = gui.map.player();
+            return result.arrived() && result.selectedGoal != null && player != null && player.rc != null &&
+                player.rc.dist(result.selectedGoal) <= tolerance;
         }
 
         private boolean approachWithRetries(Gob gob) throws InterruptedException {

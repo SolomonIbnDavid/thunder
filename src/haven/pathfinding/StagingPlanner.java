@@ -106,11 +106,14 @@ public final class StagingPlanner {
    public static final class Result {
       public final Candidate selected;
       public final List<Candidate> considered;
+      /** Walkable staging positions for the exact live pathfinder to choose between. */
+      public final List<Coord2d> goals;
       public final String reason;
 
-      Result(Candidate selected, List<Candidate> considered, String reason) {
+      Result(Candidate selected, List<Candidate> considered, List<Coord2d> goals, String reason) {
          this.selected = selected;
          this.considered = Collections.unmodifiableList(considered);
+         this.goals = Collections.unmodifiableList(goals);
          this.reason = reason == null ? "" : reason;
       }
 
@@ -128,7 +131,7 @@ public final class StagingPlanner {
     */
    public static Result select(Coord2d player, InteractionSpec spec, OccupancyGrid occ) {
       if (player == null || spec == null || spec.origin == null || occ == null || occ.occ == null) {
-         return new Result(null, Collections.<Candidate>emptyList(), "no_scene");
+         return new Result(null, Collections.<Candidate>emptyList(), Collections.<Coord2d>emptyList(), "no_scene");
       }
       Coord2d origin = spec.origin;
       // Player-facing ray: direction from the target toward the player, so
@@ -138,6 +141,7 @@ public final class StagingPlanner {
       double cap = Math.max(spec.maxDist + PLANNING_SLACK, standoff + CELL * 2.0);
       double[] costs = LocalPlanner.occupancyCosts(player, occ);
       List<Candidate> all = new ArrayList<Candidate>();
+      List<Coord2d> goals = new ArrayList<Coord2d>();
       Candidate best = null;
       for (double radius = standoff; radius <= cap + 1.0E-9; radius += CELL) {
          for (int i = 0; i < ANGLES.length; i++) {
@@ -147,15 +151,18 @@ public final class StagingPlanner {
             }
             // MAX_CONSIDERED limits diagnostics only. The safer or cheaper
             // staging pose can be on a later, wider ring.
-            if (c.reject == null && (best == null || better(c, best))) {
-               best = c;
+            if (c.reject == null) {
+               goals.add(c.world);
+               if (best == null || better(c, best)) {
+                  best = c;
+               }
             }
          }
       }
       if (best == null) {
-         return new Result(null, all, STAGING_UNREACHABLE);
+         return new Result(null, all, goals, STAGING_UNREACHABLE);
       }
-      return new Result(best, all, "");
+      return new Result(best, all, goals, "");
    }
 
    /**
@@ -165,7 +172,7 @@ public final class StagingPlanner {
     */
    public static Result selectToward(Coord2d player, Coord2d targetRc, OccupancyGrid occ) {
       if (player == null || targetRc == null || occ == null || occ.occ == null) {
-         return new Result(null, Collections.<Candidate>emptyList(), "no_scene");
+         return new Result(null, Collections.<Candidate>emptyList(), Collections.<Coord2d>emptyList(), "no_scene");
       }
       double halfExtent = Math.min(occ.w, occ.h) * occ.cell * 0.5;
       Coord2d toward = unit(targetRc.sub(player));
@@ -187,9 +194,11 @@ public final class StagingPlanner {
          }
       }
       if (best == null) {
-         return new Result(null, all, STAGING_UNREACHABLE);
+         return new Result(null, all, Collections.<Coord2d>emptyList(), STAGING_UNREACHABLE);
       }
-      return new Result(best, all, "");
+      // A toward-target hop has a different job from object-side staging: it
+      // must make maximum forward progress. Keep that destination singular.
+      return new Result(best, all, Collections.singletonList(best.world), "");
    }
 
    private static Candidate probe(Coord2d from, Coord2d dir, double d, double angle, OccupancyGrid occ, double[] costs) {
