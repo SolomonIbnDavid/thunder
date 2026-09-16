@@ -17,8 +17,8 @@ class InteractionPhasesTest {
    private static final long DOOR_ID = 1844735939L;
    private static final Coord2d DOOR_RC = Coord2d.of(-10466.5, -10411.5);
 
-   private static PrototypePathfinder.GobGeom doorGob(long id, Coord2d rc) {
-      PrototypePathfinder.GobGeom g = new PrototypePathfinder.GobGeom();
+   private static MovementScene.GobGeom doorGob(long id, Coord2d rc) {
+      MovementScene.GobGeom g = new MovementScene.GobGeom();
       g.id = id;
       g.resid = "gfx/terobjs/arch/cellardoor";
       g.rc = rc;
@@ -74,7 +74,7 @@ class InteractionPhasesTest {
 
    @Test
    void stagingFailsCleanlyWhenUnobservedTargetHasNoWalkableProgress() throws Exception {
-      final PrototypePathfinder.Scene scene = new PrototypePathfinder.Scene();
+      final MovementScene.Scene scene = new MovementScene.Scene();
       scene.player = Coord2d.of(0.0, 0.0);
       scene.origin = Coord2d.of(-99.0, -99.0);
       scene.w = 72;
@@ -92,12 +92,12 @@ class InteractionPhasesTest {
       InteractionStaging.Result r = InteractionStaging.stage(
          null, null, null, new InteractionStaging.SceneSupplier() {
             @Override
-            public PrototypePathfinder.Scene get() {
+            public MovementScene.Scene get() {
                return scene;
             }
          }, door(), new InteractionStaging.SpecMaker() {
             @Override
-            public InteractionSpec spec(PrototypePathfinder.GobGeom g, Coord2d near) {
+            public InteractionSpec spec(MovementScene.GobGeom g, Coord2d near) {
                return InteractionAdapter.fromFootprint(
                   "door", g.rc, Coord2d.of(2.0, 2.0), InteractionSpec.ALL_SIDES, 1.0, 35.0, 1, null,
                   InteractionVerifier.STATE_CHANGED
@@ -111,7 +111,7 @@ class InteractionPhasesTest {
 
    @Test
    void stagingFailsCleanlyWhenUnobservedTargetHasNoLastPosition() throws Exception {
-      final PrototypePathfinder.Scene scene = new PrototypePathfinder.Scene();
+      final MovementScene.Scene scene = new MovementScene.Scene();
       scene.player = Coord2d.of(0.0, 0.0);
       scene.origin = Coord2d.of(-99.0, -99.0);
       scene.w = 72;
@@ -126,12 +126,12 @@ class InteractionPhasesTest {
       InteractionStaging.Result r = InteractionStaging.stage(
          null, null, null, new InteractionStaging.SceneSupplier() {
             @Override
-            public PrototypePathfinder.Scene get() {
+            public MovementScene.Scene get() {
                return scene;
             }
          }, identity, new InteractionStaging.SpecMaker() {
             @Override
-            public InteractionSpec spec(PrototypePathfinder.GobGeom g, Coord2d near) {
+            public InteractionSpec spec(MovementScene.GobGeom g, Coord2d near) {
                return InteractionAdapter.fromFootprint(
                   "door", g.rc, Coord2d.of(2.0, 2.0), InteractionSpec.ALL_SIDES, 1.0, 35.0, 1, null,
                   InteractionVerifier.STATE_CHANGED
@@ -147,8 +147,8 @@ class InteractionPhasesTest {
    void stagingFailsCleanlyWhenNoWalkableStagingPointExists() throws Exception {
       Coord2d player = Coord2d.of(0.0, 0.0);
       Coord2d doorRc = Coord2d.of(80.0, 0.0);
-      PrototypePathfinder.GobGeom g = doorGob(DOOR_ID, doorRc);
-      final PrototypePathfinder.Scene scene = new PrototypePathfinder.Scene();
+      MovementScene.GobGeom g = doorGob(DOOR_ID, doorRc);
+      final MovementScene.Scene scene = new MovementScene.Scene();
       scene.player = player;
       scene.origin = player.sub(99.0, 99.0);
       scene.w = 72;
@@ -164,18 +164,18 @@ class InteractionPhasesTest {
          }
       }
       scene.occupancy = new PathfinderLog.Occupancy(scene.origin, 72, 72, 2.75, occ, null, null, null, null);
-      scene.gobs = new ArrayList<PrototypePathfinder.GobGeom>();
+      scene.gobs = new ArrayList<MovementScene.GobGeom>();
       scene.gobs.add(g);
-      final PrototypePathfinder.GobGeom live = g;
+      final MovementScene.GobGeom live = g;
       InteractionStaging.Result r = InteractionStaging.stage(
          null, null, null, new InteractionStaging.SceneSupplier() {
             @Override
-            public PrototypePathfinder.Scene get() {
+            public MovementScene.Scene get() {
                return scene;
             }
          }, door(), new InteractionStaging.SpecMaker() {
             @Override
-            public InteractionSpec spec(PrototypePathfinder.GobGeom gg, Coord2d near) {
+            public InteractionSpec spec(MovementScene.GobGeom gg, Coord2d near) {
                return InteractionAdapter.fromFootprint(
                   "door", live.rc, Coord2d.of(2.0, 2.0), InteractionSpec.ALL_SIDES, 1.0, 35.0, 1, null,
                   InteractionVerifier.STATE_CHANGED

@@ -624,6 +624,11 @@ public class GItem extends AWidget implements ItemInfo.SpriteOwner, GSprite.Owne
 		    raise();
 	    } else if(nst == "wnd") {
 		chdeco(new DecoX(false));
+		/* Item-contained inventories must never reopen in a persisted
+		 * collapsed state. With no visible contents, these windows look as
+		 * though right-clicking the pouch did nothing. */
+		if(minimized())
+		    toggleCollapsed();
 		show();
 		z(0);
 		if(parent != null)
@@ -671,6 +676,16 @@ public class GItem extends AWidget implements ItemInfo.SpriteOwner, GSprite.Owne
 	}
 	
 	private Coord lc = null;
+	private void ensureonscreen() {
+	    if(parent == null)
+		return;
+	    int maxx = Math.max(0, parent.sz.x - sz.x);
+	    int maxy = Math.max(0, parent.sz.y - sz.y);
+	    Coord nc = Coord.of(Utils.clip(c.x, 0, maxx), Utils.clip(c.y, 0, maxy));
+	    if(!nc.equals(c))
+		move(nc);
+	}
+
 	public void tick(double dt) {
 	    children().forEach(wdg->checkContentsUpdate(wdg, cont));
 	    super.tick(dt);
@@ -682,6 +697,7 @@ public class GItem extends AWidget implements ItemInfo.SpriteOwner, GSprite.Owne
 	    if(!Utils.eq(inv.sz, psz))
 		resize(inv.c.add(psz = inv.sz));
 	    if(st == "wnd") {
+		ensureonscreen();
 		if(!Utils.eq(lc, this.c) && (id != null))
 		    Utils.setprefc(String.format("cont-wndc/%s", id), lc = this.c);
 	    }
@@ -720,6 +736,7 @@ public class GItem extends AWidget implements ItemInfo.SpriteOwner, GSprite.Owne
 		chstate("wnd");
 		if(wc != null)
 		    move(wc);
+		ensureonscreen();
 	    } else if(!show && (st == "wnd")) {
 		chstate("hide");
 	    }

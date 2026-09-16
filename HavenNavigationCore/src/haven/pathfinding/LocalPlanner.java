@@ -12,7 +12,7 @@ import java.util.List;
 
 /**
  * Local occupancy planner: body clearance, eight-way A*, no-corner-cutting,
- * collision-checked smoothing, receding-horizon clip. No live-client or renderer types.
+ * collision-checked smoothing, and bounded local-horizon clipping. No live-client or renderer types.
  */
 public final class LocalPlanner {
    public static final double CELL = 2.75;
@@ -52,9 +52,17 @@ public final class LocalPlanner {
             tr.startInSolid = solid[sc.y * w + sc.x];
             applyClearanceCost(grid.cost, solid, w, h);
             tr.startBlocked = dilated[sc.y * w + sc.x];
-            openFootprint(grid.blocked, w, h, sc.x, sc.y, dil, solid);
-            if (grid.blocked[sc.y * w + sc.x]) {
-               openStartPocket(grid.blocked, w, h, sc.x, sc.y, dil + 1);
+            if (grid.exactCollisionEnabled()) {
+               // The server may leave the player touching a hitbox after an
+               // interaction. Open only the occupied start node; exact swept
+               // collision governs the departure edge. Never carve a radius
+               // through neighboring object hitboxes.
+               grid.allowStart(sc, start);
+            } else {
+               openFootprint(grid.blocked, w, h, sc.x, sc.y, dil, solid);
+               if (grid.blocked[sc.y * w + sc.x]) {
+                  openStartPocket(grid.blocked, w, h, sc.x, sc.y, dil + 1);
+               }
             }
 
             tr.startBlockedAfter = grid.blocked[sc.y * w + sc.x];
@@ -68,12 +76,13 @@ public final class LocalPlanner {
             for (int ti = 0; ti < targets.size(); ti++) {
                Coord2d t = targets.get(ti);
                Coord req = clamp(grid.cell(t), w, h);
-               if (!solid[req.y * w + req.x] && grid.blocked[req.y * w + req.x]) {
+               if (!grid.exactCollisionEnabled() && !solid[req.y * w + req.x] && grid.blocked[req.y * w + req.x]) {
                   openFootprint(grid.blocked, w, h, req.x, req.y, dil, solid);
                }
 
                Coord gc = req;
-               if (grid.blocked[req.y * w + req.x]) {
+               boolean exactPointBlocked = grid.exactCollisionEnabled() && !grid.positionClear(t);
+               if (grid.blocked[req.y * w + req.x] || exactPointBlocked) {
                   if (!snap) {
                      continue;
                   }
@@ -99,6 +108,12 @@ public final class LocalPlanner {
                for (Coord c : result.cells) {
                   raw.add(grid.world(c));
                }
+               // Execution begins at the authoritative live coordinate, not
+               // at the center of its occupancy cell. This matters when the
+               // server has left the body fractionally overlapping a hitbox.
+               if (!raw.isEmpty()) {
+                  raw.set(0, start);
+               }
 
                tr.astar = new ArrayList<>(raw);
                tr.occupancy = OccupancyGrid.capture(
@@ -117,9 +132,13 @@ public final class LocalPlanner {
                            && exact.x >= grid.origin.x
                            && exact.y >= grid.origin.y
                            && exact.x < grid.origin.x + (double)w * 2.75
-                           && exact.y < grid.origin.y + (double)h * 2.75) {
-                           raw.set(raw.size() - 1, exact);
-                           reachedRequested = true;
+                           && exact.y < grid.origin.y + (double)h * 2.75
+                           && (!grid.exactCollisionEnabled() || grid.positionClear(exact))) {
+                           Coord2d before = raw.size() >= 2 ? raw.get(raw.size() - 2) : start;
+                           if (!grid.exactCollisionEnabled() || grid.segmentClear(before, exact, raw.size() <= 2)) {
+                              raw.set(raw.size() - 1, exact);
+                              reachedRequested = true;
+                           }
                         }
                         break;
                      }
@@ -222,6 +241,20 @@ public final class LocalPlanner {
     * {@link #planFromOccupancy} with radius 0.
     */
    public static double[] occupancyCosts(Coord2d start, OccupancyGrid occ) {
+      return occupancyDistances(start, occ, true);
+   }
+
+   /**
+    * Shortest legal route length from {@code start} to every cell. Unlike
+    * {@link #occupancyCosts}, this does not add a soft penalty for walking
+    * near an obstacle. Dilated/body-blocked cells remain impassable.
+    */
+   public static double[] occupancyRouteLengths(Coord2d start, OccupancyGrid occ) {
+      return occupancyDistances(start, occ, false);
+   }
+
+   private static double[] occupancyDistances(Coord2d start, OccupancyGrid occ,
+                                               boolean penalizeLowClearance) {
       if (start == null || occ == null || occ.w <= 0 || occ.h <= 0 || occ.occ == null) {
          return new double[0];
       }
@@ -246,7 +279,9 @@ public final class LocalPlanner {
          return miss;
       }
       int dil = dilationCells(0.0);
-      applyClearanceCost(grid.cost, solid, w, h);
+      if (penalizeLowClearance) {
+         applyClearanceCost(grid.cost, solid, w, h);
+      }
       openFootprint(grid.blocked, w, h, sc.x, sc.y, dil, solid);
       if (grid.blocked[sc.y * w + sc.x]) {
          openStartPocket(grid.blocked, w, h, sc.x, sc.y, dil + 1);
@@ -923,19 +958,95 @@ public final class LocalPlanner {
          return true;
       }
       double pad = bodyExtent(body);
-      if (bodyHitsAny(a, body, solids, ignore, bounds) || bodyHitsAny(b, body, solids, ignore, bounds)) {
+      boolean hasBody = body != null && !body.isEmpty();
+      for (int i = 0; i < solids.size(); i++) {
+         Coord2d[] poly = solids.get(i);
+         if (poly == null || poly.length < 2 || listed(poly, ignore)) {
+            continue;
+         }
+         if (bounds != null) {
+            if (!bounds.nearSegment(i, a, b, pad)) {
+               continue;
+            }
+         } else if (!segmentNearPoly(a, b, poly, pad)) {
+            continue;
+         }
+         if (hasBody ? sweptBodyHits(a, b, body, poly) : segmentHitsPolygon(a, b, poly, 0.0)) {
+            return false;
+         }
+      }
+      return true;
+   }
+
+   /** Exact translational sweep for the player's polygon. The swept area is
+    * the union of both endpoint bodies and one quadrilateral per body edge. */
+   public static boolean sweptBodyHits(Coord2d a, Coord2d b, List<Coord2d[]> body, Coord2d[] obstacle) {
+      if (a == null || b == null || body == null || obstacle == null || obstacle.length < 2) {
          return false;
       }
+      for (int p = 0; p < body.size(); p++) {
+         Coord2d[] local = body.get(p);
+         if (local == null || local.length < 2) {
+            continue;
+         }
+         Coord2d[] atA = new Coord2d[local.length];
+         Coord2d[] atB = new Coord2d[local.length];
+         for (int i = 0; i < local.length; i++) {
+            Coord2d point = local[i] == null ? Coord2d.of(0.0, 0.0) : local[i];
+            atA[i] = a.add(point);
+            atB[i] = b.add(point);
+         }
+         if (polygonsOverlap(atA, obstacle) || polygonsOverlap(atB, obstacle)) {
+            return true;
+         }
+         for (int i = 0; i < local.length; i++) {
+            int j = (i + 1) % local.length;
+            Coord2d[] sweptEdge = new Coord2d[]{atA[i], atA[j], atB[j], atB[i]};
+            if (polygonsOverlap(sweptEdge, obstacle)) {
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   /**
+    * Exact swept check for leaving a conservative collision boundary. The
+    * server may have placed the player a fraction inside our body-expanded
+    * model after interacting with a neighboring object. Only obstacles that
+    * overlap the initial body are forgiven, and only for the short initial
+    * portion of this one segment; its endpoint and remainder stay exact.
+    */
+   public static boolean sweptClearLeaving(
+      Coord2d a, Coord2d b, List<Coord2d[]> body, List<Coord2d[]> solids, List<Coord2d[]> ignore, PolyBounds bounds
+   ) {
+      if (a == null || b == null) {
+         return false;
+      }
+      if (solids == null || solids.isEmpty()) {
+         return true;
+      }
+      if (bodyHitsAny(b, body, solids, ignore, bounds)) {
+         return false;
+      }
+      double skip = bodyExtent(body) + 1.0;
       for (int s = 1; s < 8; s++) {
          double t = s / 8.0;
          Coord2d p = Coord2d.of(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+         if (p.dist(a) <= skip) {
+            continue;
+         }
          if (bodyHitsAny(p, body, solids, ignore, bounds)) {
             return false;
          }
       }
+      double pad = bodyExtent(body);
       for (int i = 0; i < solids.size(); i++) {
          Coord2d[] poly = solids.get(i);
          if (poly == null || poly.length < 2 || listed(poly, ignore)) {
+            continue;
+         }
+         if (bodyHits(a, body, poly)) {
             continue;
          }
          if (bounds != null) {
@@ -1110,7 +1221,7 @@ public final class LocalPlanner {
          while (at < raw.size() - 1) {
             int next = raw.size() - 1;
 
-            while (next > at + 1 && !canSmooth(raw.get(at), raw.get(next), grid, los)) {
+            while (next > at + 1 && !canSmooth(raw.get(at), raw.get(next), grid, los, at == 0)) {
                next--;
             }
 
@@ -1123,6 +1234,13 @@ public final class LocalPlanner {
    }
 
    public static boolean canSmooth(Coord2d a, Coord2d b, NavGrid grid, boolean[] los) {
+      return canSmooth(a, b, grid, los, false);
+   }
+
+   private static boolean canSmooth(Coord2d a, Coord2d b, NavGrid grid, boolean[] los, boolean leaving) {
+      if (grid.exactCollisionEnabled()) {
+         return grid.segmentClear(a, b, leaving);
+      }
       if (!clear(a, b, grid, los)) {
          return false;
       } else {

@@ -3,25 +3,25 @@ package haven.pathfinding;
 import haven.Coord;
 import haven.Coord2d;
 import haven.pathfinding.PathfinderLog.Trace;
-import haven.pathfinding.PrototypePathfinder.ClipResult;
-import haven.pathfinding.PrototypePathfinder.Grid;
-import haven.pathfinding.PrototypePathfinder.Plan;
-import haven.pathfinding.PrototypePathfinder.Plan.Status;
+import haven.pathfinding.MovementScene.ClipResult;
+import haven.pathfinding.MovementScene.Grid;
+import haven.pathfinding.MovementScene.Plan;
+import haven.pathfinding.MovementScene.Plan.Status;
 import java.util.List;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 public class PathfinderPlanStatusTest {
    private static Plan planOn(Coord2d start, Coord2d dest, boolean snap, PathfinderPlanStatusTest.Blocker blocker) {
-      ClipResult clip = PrototypePathfinder.clipToHorizon(start, List.of(dest));
-      Grid grid = PrototypePathfinder.planGrid(start, clip.targets);
+      ClipResult clip = MovementScene.clipToHorizon(start, List.of(dest));
+      Grid grid = MovementScene.planGrid(start, clip.targets);
       boolean[] solid = new boolean[grid.w * grid.h];
       boolean[] dilated = new boolean[grid.w * grid.h];
       if (blocker != null) {
          blocker.block(grid, solid, dilated);
       }
 
-      return PrototypePathfinder.planCore(start, List.of(dest), clip.targets, clip.clipped, snap, 4.5, grid, solid, dilated, 0, new Trace());
+      return MovementScene.planCore(start, List.of(dest), clip.targets, clip.clipped, snap, 4.5, grid, solid, dilated, 0, new Trace());
    }
 
    private static Plan planTo(Coord2d start, Coord2d dest, boolean snap) {
@@ -32,7 +32,7 @@ public class PathfinderPlanStatusTest {
    void farGoalIsClippedLocalLegNotArrival() {
       Coord2d start = Coord2d.of(0.0, 0.0);
       Coord2d dest = Coord2d.of(0.0, 500.0);
-      double maxReach = PrototypePathfinder.maxReach();
+      double maxReach = MovementScene.maxReach();
       Assertions.assertTrue(dest.dist(start) > maxReach, "fixture must be beyond the horizon");
       Plan plan = planTo(start, dest, true);
       Assertions.assertEquals(Status.CLIPPED, plan.status, "a far goal is a local leg, not destination arrival");
@@ -49,7 +49,7 @@ public class PathfinderPlanStatusTest {
    void inRangeGoalIsReached() {
       Coord2d start = Coord2d.of(0.0, 0.0);
       Coord2d dest = Coord2d.of(0.0, 100.0);
-      Assertions.assertTrue(dest.dist(start) < PrototypePathfinder.maxReach(), "fixture must be in range");
+      Assertions.assertTrue(dest.dist(start) < MovementScene.maxReach(), "fixture must be in range");
       Plan plan = planTo(start, dest, true);
       Assertions.assertEquals(Status.REACHED, plan.status);
       Assertions.assertTrue(plan.complete);
@@ -60,10 +60,36 @@ public class PathfinderPlanStatusTest {
    }
 
    @Test
+   void unsnappedMultiGoalSkipsBlockedCandidateBesideStart() {
+      Coord2d start = Coord2d.of(0.0, 0.0);
+      Coord2d blocked = Coord2d.of(5.5, 0.0);
+      Coord2d free = Coord2d.of(0.0, 22.0);
+      List<Coord2d> destinations = List.of(blocked, free);
+      ClipResult clip = MovementScene.clipToHorizon(start, destinations);
+      Grid grid = MovementScene.planGrid(start, clip.targets);
+      boolean[] solid = new boolean[grid.w * grid.h];
+      boolean[] dilated = new boolean[grid.w * grid.h];
+      Coord blockedCell = MovementScene.worldCell(grid.origin, blocked);
+      solid[blockedCell.y * grid.w + blockedCell.x] = true;
+      dilated[blockedCell.y * grid.w + blockedCell.x] = true;
+      grid.block(blockedCell.x, blockedCell.y);
+
+      Plan plan = MovementScene.planCore(
+         start, destinations, clip.targets, clip.clipped, false, 4.5,
+         grid, solid, dilated, 1, new Trace());
+
+      Assertions.assertEquals(Status.REACHED, plan.status);
+      Assertions.assertTrue(plan.waypoints.size() >= 2);
+      Coord2d end = plan.waypoints.get(plan.waypoints.size() - 1);
+      Assertions.assertEquals(0.0, end.dist(free), 1.0E-6,
+         "a blocked nearby choice must not hide the reachable candidate");
+   }
+
+   @Test
    void planGridLeavesRoomToWalkAroundVillageClutter() {
       Coord2d start = Coord2d.of(0.0, 0.0);
       Coord2d dest = Coord2d.of(120.0, 0.0);
-      Grid grid = PrototypePathfinder.planGrid(start, List.of(dest));
+      Grid grid = MovementScene.planGrid(start, List.of(dest));
       Assertions.assertTrue(
          grid.h * 2.75 >= 180.0,
          "start-dest sausage was too skinny to detour a crowded yard (h=" + grid.h + ")"
@@ -75,8 +101,8 @@ public class PathfinderPlanStatusTest {
       Coord2d start = Coord2d.of(0.0, 0.0);
       Coord2d dest = Coord2d.of(120.0, 0.0);
       Plan plan = planOn(start, dest, true, (grid, solid, dilated) -> {
-         Coord left = PrototypePathfinder.worldCell(grid.origin, Coord2d.of(50.0, -40.0));
-         Coord right = PrototypePathfinder.worldCell(grid.origin, Coord2d.of(70.0, 40.0));
+         Coord left = MovementScene.worldCell(grid.origin, Coord2d.of(50.0, -40.0));
+         Coord right = MovementScene.worldCell(grid.origin, Coord2d.of(70.0, 40.0));
          int x0 = Math.max(0, Math.min(left.x, right.x));
          int x1 = Math.min(grid.w - 1, Math.max(left.x, right.x));
          int y0 = Math.max(0, Math.min(left.y, right.y));
@@ -96,11 +122,10 @@ public class PathfinderPlanStatusTest {
 
    @Test
    void jammedWalkIsAReplanNotARouteAbort() {
-      Assertions.assertTrue(MoveToAutoOpenGroundScenario.retryAfterWalk(WaypointWalker.Result.STUCK));
-      Assertions.assertTrue(MoveToAutoOpenGroundScenario.retryAfterWalk(WaypointWalker.Result.SHORT_STOP));
-      Assertions.assertTrue(MoveToAutoOpenGroundScenario.retryAfterWalk(WaypointWalker.Result.TIMEOUT));
-      Assertions.assertFalse(MoveToAutoOpenGroundScenario.retryAfterWalk(WaypointWalker.Result.ARRIVED));
-      Assertions.assertFalse(MoveToAutoOpenGroundScenario.retryAfterWalk(WaypointWalker.Result.REJECTED));
+      Assertions.assertTrue(MoveToAutoOpenGroundScenario.retryAfterWalk(ConfirmedRouteRunner.Status.BLOCKED));
+      Assertions.assertTrue(MoveToAutoOpenGroundScenario.retryAfterWalk(ConfirmedRouteRunner.Status.TIMEOUT));
+      Assertions.assertFalse(MoveToAutoOpenGroundScenario.retryAfterWalk(ConfirmedRouteRunner.Status.ARRIVED));
+      Assertions.assertFalse(MoveToAutoOpenGroundScenario.retryAfterWalk(ConfirmedRouteRunner.Status.PLAYER_GONE));
    }
 
    @Test
@@ -121,7 +146,7 @@ public class PathfinderPlanStatusTest {
       Coord2d start = Coord2d.of(0.0, 0.0);
       Coord2d dest = Coord2d.of(0.0, 100.0);
       Plan plan = planOn(start, dest, true, (grid, solid, dilated) -> {
-         Coord destCell = PrototypePathfinder.worldCell(grid.origin, dest);
+         Coord destCell = MovementScene.worldCell(grid.origin, dest);
          solid[destCell.y * grid.w + destCell.x] = true;
          dilated[destCell.y * grid.w + destCell.x] = true;
          grid.block(destCell.x, destCell.y);
@@ -138,7 +163,7 @@ public class PathfinderPlanStatusTest {
       Coord2d start = Coord2d.of(0.0, 0.0);
       Coord2d dest = Coord2d.of(0.0, 100.0);
       Plan plan = planOn(start, dest, true, (grid, solid, dilated) -> {
-         Coord wallRow = PrototypePathfinder.worldCell(grid.origin, Coord2d.of(0.0, 50.0));
+         Coord wallRow = MovementScene.worldCell(grid.origin, Coord2d.of(0.0, 50.0));
 
          for (int x = 0; x < grid.w; x++) {
             solid[wallRow.y * grid.w + x] = true;
@@ -157,7 +182,7 @@ public class PathfinderPlanStatusTest {
       Coord2d start = Coord2d.of(0.0, 0.0);
       Coord2d dest = Coord2d.of(0.0, 100.0);
       Plan plan = planOn(start, dest, false, (grid, solid, dilated) -> {
-         Coord destCell = PrototypePathfinder.worldCell(grid.origin, dest);
+         Coord destCell = MovementScene.worldCell(grid.origin, dest);
          solid[destCell.y * grid.w + destCell.x] = true;
          dilated[destCell.y * grid.w + destCell.x] = true;
          grid.block(destCell.x, destCell.y);
@@ -173,7 +198,7 @@ public class PathfinderPlanStatusTest {
       boolean[] solid = new boolean[64];
       boolean[] dilated = new boolean[64];
       Trace tr = new Trace();
-      Plan plan = PrototypePathfinder.planCore(
+      Plan plan = MovementScene.planCore(
          Coord2d.of(0.0, -100.0), List.of(Coord2d.of(0.0, -50.0)), List.of(Coord2d.of(0.0, -50.0)), List.of(false), true, 4.5, grid, solid, dilated, 0, tr
       );
       Assertions.assertEquals(Status.FAILED, plan.status);
@@ -184,14 +209,14 @@ public class PathfinderPlanStatusTest {
    @Test
    void clipToHorizonPullsFarGoalsBackToMaxReach() {
       Coord2d start = Coord2d.of(0.0, 0.0);
-      double maxReach = PrototypePathfinder.maxReach();
-      ClipResult far = PrototypePathfinder.clipToHorizon(start, List.of(Coord2d.of(0.0, 500.0)));
+      double maxReach = MovementScene.maxReach();
+      ClipResult far = MovementScene.clipToHorizon(start, List.of(Coord2d.of(0.0, 500.0)));
       Assertions.assertEquals(1, far.targets.size());
       Assertions.assertTrue((Boolean)far.clipped.get(0));
       Assertions.assertEquals(0.0, ((Coord2d)far.targets.get(0)).x, 1.0E-6);
       Assertions.assertEquals(maxReach, ((Coord2d)far.targets.get(0)).y, 1.0E-6);
       Assertions.assertEquals(maxReach, ((Coord2d)far.targets.get(0)).dist(start), 1.0E-6);
-      ClipResult near = PrototypePathfinder.clipToHorizon(start, List.of(Coord2d.of(0.0, 100.0)));
+      ClipResult near = MovementScene.clipToHorizon(start, List.of(Coord2d.of(0.0, 100.0)));
       Assertions.assertFalse((Boolean)near.clipped.get(0));
       Assertions.assertEquals(100.0, ((Coord2d)near.targets.get(0)).y, 1.0E-6, "in-range destinations are untouched");
    }

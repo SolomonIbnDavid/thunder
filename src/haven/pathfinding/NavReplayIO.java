@@ -90,18 +90,18 @@ public final class NavReplayIO {
          world.put("goal_cell", cell(occ.goal));
          world.put("free_goal_cell", cell(occ.freeGoal));
       } else if (scene != null) {
-         world.put("cell", scene.optDouble("cell", PrototypePathfinder.CELL));
+         world.put("cell", scene.optDouble("cell", MovementScene.CELL));
          world.put("origin", scene.optJSONArray("origin"));
          world.put("grid", scene.optJSONArray("grid"));
       } else {
-         world.put("cell", PrototypePathfinder.CELL);
+         world.put("cell", MovementScene.CELL);
          world.put("origin", new JSONArray());
          world.put("grid", new JSONArray().put(0).put(0));
       }
       if (scene != null) {
          world.put("player", scene.optJSONArray("player"));
          world.put("player_cell", scene.opt("player_cell"));
-         world.put("radius", scene.optDouble("radius", PrototypePathfinder.DEFAULT_AGENT_RADIUS));
+         world.put("radius", scene.optDouble("radius", MovementScene.DEFAULT_AGENT_RADIUS));
          world.put("moving", scene.optBoolean("moving"));
          world.put("obstacles", scene.optInt("obstacles"));
       } else {
@@ -111,7 +111,7 @@ public final class NavReplayIO {
          }
          world.put("player", point(player));
          world.put("player_cell", occ == null ? JSONObject.NULL : cell(occ.start));
-         world.put("radius", PrototypePathfinder.DEFAULT_AGENT_RADIUS);
+         world.put("radius", MovementScene.DEFAULT_AGENT_RADIUS);
          world.put("moving", false);
          world.put("obstacles", 0);
       }

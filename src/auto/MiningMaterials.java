@@ -1,8 +1,11 @@
 package auto;
 
+import haven.pathfinding.WorldObjectRegistry;
+
 import haven.*;
 
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -19,6 +22,42 @@ import static auto.GobHelper.gobIs;
  */
 public class MiningMaterials {
     private MiningMaterials() {}
+
+    /**
+     * Tables expose a normal inventory but are deliberately not tagged as
+     * general-purpose containers. They are nevertheless valid food sources.
+     */
+    public static boolean isFoodTableResid(String resid) {
+        String name = baseResid(resid);
+        if(name == null) {return false;}
+        return "gfx/terobjs/htable".equals(name)
+            || "gfx/terobjs/table".equals(name)
+            || name.startsWith("gfx/terobjs/furn/table-");
+    }
+
+    /** Basket resources open normal inventories but older container data omitted them. */
+    public static boolean isInventoryBasketResid(String resid) {
+        String name = baseResid(resid);
+        return name != null && name.startsWith("gfx/terobjs/") && name.endsWith("basket");
+    }
+
+    private static String baseResid(String resid) {
+        if(resid == null || resid.isEmpty()) {return null;}
+        int variant = resid.indexOf('[');
+        return variant > 0 ? resid.substring(0, variant) : resid;
+    }
+
+    /** Shared food-zone classification used by preflight and runtime eating. */
+    public static boolean isFoodInventorySource(Gob gob) {
+        if(gob == null || gob.disposed()) {return false;}
+        if(gob.is(GobTag.CONTAINER)) {return true;}
+        try {
+            String resid = gob.resid();
+            return isFoodTableResid(resid) || isInventoryBasketResid(resid);
+        } catch(RuntimeException ignored) {
+            return false;
+        }
+    }
 
     // User-confirmed, exhaustive list: every rock-type item name H&H produces from
     // mining, minus the 18 ore types below. Any of these count as "stone" for
@@ -51,6 +90,17 @@ public class MiningMaterials {
 
     public static boolean isOre(WItem w) {
         return ORE_NAMES.contains(itemName(w.item));
+    }
+
+    /** Any stone or ore item produced by chipping a boulder. */
+    public static boolean isRockMaterial(WItem w) {
+        return w != null && isRockMaterial(w.item);
+    }
+
+    public static boolean isRockMaterial(GItem item) {
+        if(item == null) return false;
+        String name = itemName(item);
+        return STONE_NAMES.contains(name) || ORE_NAMES.contains(name);
     }
 
     public static boolean isHardBar(WItem w) {
@@ -167,9 +217,13 @@ public class MiningMaterials {
      * resource so containers.json5 can be corrected instead of guessed at a second time.
      */
     private static void logZoneContents(GameUI gui, Area zone) {
-        gui.ui.sess.glob.oc.stream()
-            .filter(g -> zone.contains(g.rc.floor(MCache.tilesz)))
-            .forEach(g -> MiningBot.diag("[minebot-diag] zone content: resid=%s tags=%s", g.resid(), GobTag.tags(g)));
+        Gob player = gui.map.player();
+        WorldObjectRegistry.Snapshot world = WorldObjectRegistry.snapshot(gui, player, 0);
+        world.objects.stream()
+            .filter(e -> zone.contains(e.position.floor(MCache.tilesz)))
+            .forEach(e -> MiningBot.diag("[minebot-diag] zone content: id=%d resid=%s category=%s loading=%b tags=%s",
+                e.id, e.resource, e.category, e.loading, GobTag.tags(e.gob)));
+        if(world.unresolved > 0) MiningBot.diag("[minebot-diag] zone scan unresolved=%d", world.unresolved);
     }
 
     /**
@@ -210,10 +264,13 @@ public class MiningMaterials {
         logZoneContents(gui, zone);
         if(countMatching(gui, want) >= need) {return true;}
 
-        List<Gob> containers = gui.ui.sess.glob.oc.stream()
-            .filter(gobIs(GobTag.CONTAINER))
-            .filter(g -> zone.contains(g.rc.floor(MCache.tilesz)))
-            .sorted(PositionHelper.byDistanceToPlayer)
+        Gob player = gui.map.player();
+        WorldObjectRegistry.Snapshot world = WorldObjectRegistry.snapshot(gui, player, 0);
+        List<Gob> containers = world.objects.stream()
+            .filter(e -> e.category == WorldObjectRegistry.Category.CONTAINER || e.category == WorldObjectRegistry.Category.STOCKPILE)
+            .filter(e -> zone.contains(e.position.floor(MCache.tilesz)))
+            .sorted(Comparator.comparingDouble(e -> player == null ? 0 : player.rc.dist(e.position)))
+            .map(e -> e.gob)
             .collect(Collectors.toList());
         MiningBot.diag("[minebot-diag] fetchFromZone: %d container(s) in zone", containers.size());
 
@@ -398,7 +455,8 @@ public class MiningMaterials {
                 InvHelper.POUCHES_CONTAINED(gui).get().stream().filter(InvHelper::isDrinkContainer),
                 InvHelper.INVENTORY_CONTAINED(gui).get().stream().filter(InvHelper::isDrinkContainer),
                 InvHelper.BELT_CONTAINED(gui).get().stream().filter(InvHelper::isDrinkContainer),
-                InvHelper.HANDS_CONTAINED(gui).get().stream().filter(InvHelper::isBucket)
+                InvHelper.HANDS_CONTAINED(gui).get().stream()
+                    .filter(ci -> InvHelper.isDrinkContainer(ci) || InvHelper.isBucket(ci))
             ).flatMap(x -> x)
             // canBeFilledWith requires the container to ALREADY contain water
             // (item.contains.get().is("Water")) to count as fillable -- a fully empty
@@ -408,6 +466,10 @@ public class MiningMaterials {
             // remaining capacity, which is the actual condition that matters here.
             .filter(InvHelper::isNotFull)
             .collect(Collectors.toList());
+        // A two-handed container is represented by both equipment slots. Fill the
+        // underlying item once, in the stable body-location order above.
+        Set<GItem> seenVessels = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        targets.removeIf(ci -> !seenVessels.add(ci.item.item));
         MiningBot.diag("[minebot-diag] refillWaterFromZone: %d not-full drink container(s) found on person", targets.size());
 
         for(InvHelper.ContainedItem ci : targets) {
@@ -421,11 +483,20 @@ public class MiningMaterials {
             boolean putBackOk = BotUtil.waitHeldChanged(gui, 2000);
             MiningBot.diag("[minebot-diag] refillWaterFromZone: fill attempt -- take=%b putBack=%b", tookOk, putBackOk);
         }
+        BotUtil.pause(200);
+        if(targets.isEmpty()) return false;
+        for(InvHelper.ContainedItem target : targets) {
+            try {
+                if(InvHelper.isNotFull(target) || !InvHelper.HAS_WATER.test(target.item)) return false;
+            } catch(Loading e) {
+                return false;
+            }
+        }
         return true;
     }
 
     /**
-     * Walks to each GobTag.CONTAINER gob in the food zone and eats directly from
+     * Walks to each container or inventory-opening table in the food zone and eats directly from
      * its own inventory -- food is never transferred to personal inventory first
      * (user-confirmed: unnecessary, just right-click the item inside the container
      * and choose "Eat" from its flower menu). Stops once the "nrj" meter reaches
@@ -443,7 +514,7 @@ public class MiningMaterials {
         MiningBot.diag("[minebot-diag] eatFromZone: target=%.2f", target);
 
         List<Gob> containers = gui.ui.sess.glob.oc.stream()
-            .filter(gobIs(GobTag.CONTAINER))
+            .filter(MiningMaterials::isFoodInventorySource)
             .filter(g -> zone.contains(g.rc.floor(MCache.tilesz)))
             .sorted(PositionHelper.byDistanceToPlayer)
             .collect(Collectors.toList());

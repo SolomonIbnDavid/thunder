@@ -38,7 +38,7 @@ public class BuildingDoorTest {
 
    @Test
    void houseInteractionSpecIsTheDoorNotTheBuildingAabb() {
-      PrototypePathfinder.GobGeom g = new PrototypePathfinder.GobGeom();
+      MovementScene.GobGeom g = new MovementScene.GobGeom();
       g.id = 9L;
       g.resid = "gfx/terobjs/arch/greathall";
       g.rc = Coord2d.of(0.0, 0.0);
@@ -65,7 +65,7 @@ public class BuildingDoorTest {
       Assertions.assertEquals(203.5, t.origin.y, 1.0E-6);
       Assertions.assertEquals(16, t.mesh);
       Assertions.assertTrue(t.half.x <= 6.0 && t.half.y <= 6.0);
-      PrototypePathfinder.GobGeom g = new PrototypePathfinder.GobGeom();
+      MovementScene.GobGeom g = new MovementScene.GobGeom();
       g.id = 9L;
       g.resid = "gfx/terobjs/arch/stonemansion";
       g.rc = hull;
@@ -88,77 +88,77 @@ public class BuildingDoorTest {
 
    @Test
    void scenePrefersTheDoorGobOverTheHall() {
-      PrototypePathfinder.Scene scene = new PrototypePathfinder.Scene();
+      MovementScene.Scene scene = new MovementScene.Scene();
       scene.player = Coord2d.of(90.0, 0.0);
-      scene.gobs = new ArrayList<PrototypePathfinder.GobGeom>();
-      PrototypePathfinder.GobGeom hall = new PrototypePathfinder.GobGeom();
+      scene.gobs = new ArrayList<MovementScene.GobGeom>();
+      MovementScene.GobGeom hall = new MovementScene.GobGeom();
       hall.id = 1L;
       hall.resid = "gfx/terobjs/arch/greathall";
       hall.rc = Coord2d.of(0.0, 0.0);
-      PrototypePathfinder.GobGeom door = new PrototypePathfinder.GobGeom();
+      MovementScene.GobGeom door = new MovementScene.GobGeom();
       door.id = 2L;
       door.resid = "gfx/terobjs/arch/greathall-door";
       door.rc = Coord2d.of(77.0, 0.0);
       scene.gobs.add(hall);
       scene.gobs.add(door);
-      PrototypePathfinder.GobGeom picked = BuildingDoor.preferDoor(scene, hall);
+      MovementScene.GobGeom picked = BuildingDoor.preferDoor(scene, hall);
       Assertions.assertEquals(2L, picked.id);
       Assertions.assertEquals("gfx/terobjs/arch/greathall-door", picked.resid);
    }
 
    @Test
    void resolveDoorPrefersTheDoorGobInScene() {
-      PrototypePathfinder.Scene scene = new PrototypePathfinder.Scene();
+      MovementScene.Scene scene = new MovementScene.Scene();
       scene.player = Coord2d.of(90.0, 0.0);
-      scene.gobs = new ArrayList<PrototypePathfinder.GobGeom>();
-      PrototypePathfinder.GobGeom hall = new PrototypePathfinder.GobGeom();
+      scene.gobs = new ArrayList<MovementScene.GobGeom>();
+      MovementScene.GobGeom hall = new MovementScene.GobGeom();
       hall.id = 1L;
       hall.resid = "gfx/terobjs/arch/greathall";
       hall.rc = Coord2d.of(0.0, 0.0);
-      PrototypePathfinder.GobGeom door = new PrototypePathfinder.GobGeom();
+      MovementScene.GobGeom door = new MovementScene.GobGeom();
       door.id = 2L;
       door.resid = "gfx/terobjs/arch/greathall-door";
       door.rc = Coord2d.of(77.0, 0.0);
       scene.gobs.add(hall);
       scene.gobs.add(door);
-      PrototypePathfinder.GobGeom picked = BuildingDoor.resolveDoor(null, scene, hall);
+      MovementScene.GobGeom picked = BuildingDoor.resolveDoor(null, scene, hall);
       Assertions.assertEquals(2L, picked.id);
       Assertions.assertEquals("gfx/terobjs/arch/greathall-door", picked.resid);
    }
 
    @Test
    void resolveDoorKeepsHullWhenNoDoorObservable() {
-      PrototypePathfinder.Scene scene = new PrototypePathfinder.Scene();
+      MovementScene.Scene scene = new MovementScene.Scene();
       scene.player = Coord2d.of(90.0, 0.0);
-      scene.gobs = new ArrayList<PrototypePathfinder.GobGeom>();
-      PrototypePathfinder.GobGeom hall = new PrototypePathfinder.GobGeom();
+      scene.gobs = new ArrayList<MovementScene.GobGeom>();
+      MovementScene.GobGeom hall = new MovementScene.GobGeom();
       hall.id = 1L;
       hall.resid = "gfx/terobjs/arch/greathall";
       hall.rc = Coord2d.of(0.0, 0.0);
       scene.gobs.add(hall);
-      PrototypePathfinder.GobGeom picked = BuildingDoor.resolveDoor(null, scene, hall);
+      MovementScene.GobGeom picked = BuildingDoor.resolveDoor(null, scene, hall);
       Assertions.assertEquals(1L, picked.id);
       Assertions.assertEquals("gfx/terobjs/arch/greathall", picked.resid);
    }
 
    @Test
    void resolveDoorIgnoresDoorGobFromAnotherBuildingFamily() {
-      PrototypePathfinder.Scene scene = new PrototypePathfinder.Scene();
+      MovementScene.Scene scene = new MovementScene.Scene();
       scene.player = Coord2d.of(0.0, 0.0);
-      scene.gobs = new ArrayList<PrototypePathfinder.GobGeom>();
-      PrototypePathfinder.GobGeom hall = new PrototypePathfinder.GobGeom();
+      scene.gobs = new ArrayList<MovementScene.GobGeom>();
+      MovementScene.GobGeom hall = new MovementScene.GobGeom();
       hall.id = 1L;
       hall.resid = "gfx/terobjs/arch/greathall";
       hall.rc = Coord2d.of(0.0, 0.0);
       // A stone hut door far outside the greathall search radius must not be
       // mistaken for the greathall's own door.
-      PrototypePathfinder.GobGeom otherDoor = new PrototypePathfinder.GobGeom();
+      MovementScene.GobGeom otherDoor = new MovementScene.GobGeom();
       otherDoor.id = 3L;
       otherDoor.resid = "gfx/terobjs/arch/stonehut-door";
       otherDoor.rc = Coord2d.of(500.0, 0.0);
       scene.gobs.add(hall);
       scene.gobs.add(otherDoor);
-      PrototypePathfinder.GobGeom picked = BuildingDoor.resolveDoor(null, scene, hall);
+      MovementScene.GobGeom picked = BuildingDoor.resolveDoor(null, scene, hall);
       Assertions.assertEquals(1L, picked.id);
       Assertions.assertEquals("gfx/terobjs/arch/greathall", picked.resid);
    }

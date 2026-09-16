@@ -14,8 +14,8 @@ import org.junit.jupiter.api.Test;
  * multi-door buildings and biases single-door houses to the wrong face.
  */
 public class DoorApproachSideTest {
-   private static PrototypePathfinder.GobGeom gob(String resid, long id, Coord2d rc, double a) {
-      PrototypePathfinder.GobGeom g = new PrototypePathfinder.GobGeom();
+   private static MovementScene.GobGeom gob(String resid, long id, Coord2d rc, double a) {
+      MovementScene.GobGeom g = new MovementScene.GobGeom();
       g.id = id;
       g.resid = resid;
       g.rc = rc;
@@ -49,7 +49,7 @@ public class DoorApproachSideTest {
    void multiDoorGobFollowsThePlayerNotTheDoorCenter() {
       // greathall-door carries three doorways at offsets (0,-30),(0,0),(0,30)
       Coord2d rc = Coord2d.of(1000.0, 2000.0);
-      PrototypePathfinder.GobGeom g = gob("gfx/terobjs/arch/greathall-door", 7L, rc, 0.0);
+      MovementScene.GobGeom g = gob("gfx/terobjs/arch/greathall-door", 7L, rc, 0.0);
       Coord2d player = Coord2d.of(1000.0, 1880.0); // north of the building
       BuildingDoor.Target t = BuildingDoor.target(g, player);
       Assertions.assertNotNull(t);
@@ -71,7 +71,7 @@ public class DoorApproachSideTest {
       // (28,77),(0,77),(-28,77) on the south face. A player at the southeast
       // corner must get the corner doorway, not the one nearest the hull center.
       Coord2d hall = Coord2d.of(0.0, 0.0);
-      PrototypePathfinder.GobGeom g = gob("gfx/terobjs/arch/greathall", 11L, hall, Math.PI / 2.0);
+      MovementScene.GobGeom g = gob("gfx/terobjs/arch/greathall", 11L, hall, Math.PI / 2.0);
       Coord2d player = Coord2d.of(40.0, 120.0);
       BuildingDoor.Target t = BuildingDoor.target(g, player);
       Assertions.assertNotNull(t);
@@ -87,7 +87,7 @@ public class DoorApproachSideTest {
    void standIsOnThePlayersSideOfTheWallAndReachable() {
       int wallX = 20;
       OccupancyGrid occ = houseWall(40, 32, wallX, 15, 16);
-      PrototypePathfinder.GobGeom door = gob("gfx/terobjs/arch/greathall-door", 21L, occ.world(wallX, 15), 0.0);
+      MovementScene.GobGeom door = gob("gfx/terobjs/arch/greathall-door", 21L, occ.world(wallX, 15), 0.0);
       Coord2d player = occ.world(24, 15); // east of the wall
       InteractionSpec spec = InteractionAdapter.fromGob(
          door, InteractionSpec.ALL_SIDES, 1.0, 35.0, 0, null, InteractionVerifier.STATE_CHANGED, player

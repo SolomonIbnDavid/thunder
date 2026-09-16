@@ -46,7 +46,7 @@ public final class MechanicsProbe implements Feature {
    private static final Color FAIL = new Color(255, 90, 90);
    private static final long CLICK_MS = 5000L;
    private static final long STEP_MS = 8000L;
-   private static volatile PrototypePathfinder.Scene last;
+   private static volatile MovementScene.Scene last;
    private static volatile String lastKind = "";
    private static volatile String lastDetail = "";
 
@@ -102,12 +102,12 @@ public final class MechanicsProbe implements Feature {
       }
    }
 
-   static PrototypePathfinder.Scene lastScene() {
+   static MovementScene.Scene lastScene() {
       return last;
    }
 
    static void room(GameUI gui) {
-      PrototypePathfinder.Scene scene = PrototypePathfinder.observe(gui);
+      MovementScene.Scene scene = MovementScene.observe(gui);
       last = scene;
       lastKind = "occupancy";
       if (scene.occupancy != null) {
@@ -139,7 +139,7 @@ public final class MechanicsProbe implements Feature {
    }
 
    private static void runClick(GameUI gui, Bot bot, Long gobId) throws InterruptedException {
-      PrototypePathfinder.Scene before = PrototypePathfinder.observe(gui);
+      MovementScene.Scene before = MovementScene.observe(gui);
       last = before;
       Gob player = gui.map.player();
       Gob gob = pickCupboard(gui, player, gobId);
@@ -162,7 +162,7 @@ public final class MechanicsProbe implements Feature {
          o.put("target_resid", gob.resid());
          o.put("target_a", round(gob.a));
          o.put("click", arr(clickAt));
-         o.put("poly_dist", round(PrototypePathfinder.minPolyDist(start, Hitbox.worldPolygons(gob, false)) / MCache.tilesz.x));
+         o.put("poly_dist", round(MovementScene.minPolyDist(start, Hitbox.worldPolygons(gob, false)) / MCache.tilesz.x));
          o.put("extender_before", extenders);
          o.put("moving_before", moving0);
          Set<Integer> windowsBefore = windowIds(gui);
@@ -207,7 +207,7 @@ public final class MechanicsProbe implements Feature {
                gob.id,
                opened ? "OPEN" : "NO WINDOW",
                moved,
-               PrototypePathfinder.minPolyDist(start, Hitbox.worldPolygons(gob, false)) / MCache.tilesz.x,
+               MovementScene.minPolyDist(start, Hitbox.worldPolygons(gob, false)) / MCache.tilesz.x,
                opened
             );
             gui.msg("PF probe click: " + lastDetail, opened ? MsgType.INFO : MsgType.ERROR);
@@ -222,7 +222,7 @@ public final class MechanicsProbe implements Feature {
    }
 
    private static void runStep(GameUI gui, Bot bot, double dx, double dy) throws InterruptedException {
-      PrototypePathfinder.Scene before = PrototypePathfinder.observe(gui);
+      MovementScene.Scene before = MovementScene.observe(gui);
       last = before;
       if (before.occupancy != null) {
          PathfinderLog.recordOccupancy(before.occupancy);
@@ -256,7 +256,7 @@ public final class MechanicsProbe implements Feature {
             Thread.sleep(50L);
          }
 
-         PrototypePathfinder.Scene after = PrototypePathfinder.observe(gui);
+         MovementScene.Scene after = MovementScene.observe(gui);
          last = after;
          if (after.occupancy != null) {
             PathfinderLog.recordOccupancy(after.occupancy);
@@ -290,7 +290,7 @@ public final class MechanicsProbe implements Feature {
    }
 
    private static void paintHud(GOut g, MapView mv) {
-      PrototypePathfinder.Scene scene = last;
+      MovementScene.Scene scene = last;
       if (scene != null || !lastKind.isEmpty()) {
          g.chcolor(scene != null && scene.playerInSolid && !scene.moving ? FAIL : TEXT);
          int y = 12;
@@ -314,7 +314,7 @@ public final class MechanicsProbe implements Feature {
             y += 14;
             int shown = 0;
 
-            for (PrototypePathfinder.GobGeom gob : scene.gobs) {
+            for (MovementScene.GobGeom gob : scene.gobs) {
                if (gob.cupboard || !(gob.polyDist > 12.0)) {
                   g.atext(
                      String.format(
@@ -369,7 +369,7 @@ public final class MechanicsProbe implements Feature {
       return o;
    }
 
-   private static JSONObject sceneJson(GameUI gui, PrototypePathfinder.Scene scene) {
+   private static JSONObject sceneJson(GameUI gui, MovementScene.Scene scene) {
       JSONObject o = new JSONObject();
       if (scene == null) {
          return o;
@@ -393,7 +393,7 @@ public final class MechanicsProbe implements Feature {
 
          JSONArray gobs = new JSONArray();
 
-         for (PrototypePathfinder.GobGeom g : scene.gobs) {
+         for (MovementScene.GobGeom g : scene.gobs) {
             JSONObject j = new JSONObject();
             j.put("id", g.id);
             j.put("name", g.name);
@@ -454,12 +454,12 @@ public final class MechanicsProbe implements Feature {
       return (double)Math.round(v * 100.0) / 100.0;
    }
 
-   private static int cupCount(PrototypePathfinder.Scene scene) {
+   private static int cupCount(MovementScene.Scene scene) {
       int n = 0;
       if (scene == null) {
          return 0;
       } else {
-         for (PrototypePathfinder.GobGeom g : scene.gobs) {
+         for (MovementScene.GobGeom g : scene.gobs) {
             if (g.cupboard) {
                n++;
             }
@@ -498,7 +498,7 @@ public final class MechanicsProbe implements Feature {
                      }
                   }
 
-                  double d = PrototypePathfinder.minPolyDist(player.rc, Hitbox.worldPolygons(gob, false));
+                  double d = MovementScene.minPolyDist(player.rc, Hitbox.worldPolygons(gob, false));
                   if (d < bestD) {
                      bestD = d;
                      best = gob;

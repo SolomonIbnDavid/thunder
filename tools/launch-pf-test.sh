@@ -1,6 +1,6 @@
 #!/bin/bash
-# Isolated Navigation Lab client. Binds DevControl on 127.0.0.1:18762 so it
-# does not collide with a normal graphical session on 18761.
+# Isolated Pathfinder test session using the regular Thunder jar. Binds
+# DevControl on 127.0.0.1:18762 so it does not collide with another session.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PORT="${HAVEN_DEV_CONTROL_PORT:-18762}"

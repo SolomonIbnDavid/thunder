@@ -20,7 +20,6 @@ public class RosterWindow extends Window {
     private boolean collapsed = false;
     private Coord uncollapsedSz;
     private Coord requestedSz;
-    private long lastCapClick = 0;
     private CattleRoster lastShown = null;
     private boolean packing = false;
     private static final String PREF_HIGHLIGHT = "croster/highlight";
@@ -321,39 +320,11 @@ public class RosterWindow extends Window {
     @Override
     public boolean keydown(KeyDownEvent ev) {
 	if(super.keydown(ev)) return(true);
-	if(ev.code == ev.awt.VK_SPACE) {
-	    toggleCollapsed();
-	    return(true);
-	}
 	if((ev.mods & KeyMatch.S) != 0 && lastShown != null) {
 	    if(ev.code == ev.awt.VK_UP)   return(lastShown.selectToTop());
 	    if(ev.code == ev.awt.VK_DOWN) return(lastShown.selectToBottom());
 	}
 	return(false);
-    }
-
-    @Override
-    public boolean mousedown(MouseDownEvent ev) {
-	if((ev.b == 1) && onCaptionBar(ev.c)) {
-	    long now = System.currentTimeMillis();
-	    if(now - lastCapClick < 400) {
-		toggleCollapsed();
-		lastCapClick = 0;
-		return(true);
-	    }
-	    lastCapClick = now;
-	}
-	return(super.mousedown(ev));
-    }
-
-    private boolean onCaptionBar(Coord c) {
-	if(c.x < 0 || c.x >= sz.x || c.y < 0) return(false);
-	int h = UI.scale(30);
-	if(deco instanceof DefaultDeco) {
-	    DefaultDeco dd = (DefaultDeco) deco;
-	    if(dd.cpsz.y > 0) h = dd.cpsz.y;
-	}
-	return(c.y < h);
     }
 
     public void reqclose() {

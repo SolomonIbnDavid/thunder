@@ -4,7 +4,7 @@ import haven.Coord;
 import haven.Coord2d;
 import haven.pathfinding.PathfinderLog.Occupancy;
 import haven.pathfinding.PathfinderLog.Trace;
-import haven.pathfinding.PrototypePathfinder.Scene;
+import haven.pathfinding.MovementScene.Scene;
 import java.util.List;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;

@@ -28,8 +28,7 @@ final class SurfaceTravelScenario implements PfTestRunner.Scenario {
       CLIFF("surface_cliff_boundary", null),
       MOVING("surface_moving_neutral", null),
       HOSTILE("surface_hostile_exclusion", null),
-      UNKNOWN("surface_unknown_geometry", null),
-      FRONTIER("surface_explore_frontier", NavigationTestSpotSelector.Profile.KNOWN_MAP_LONG_LEG);
+      UNKNOWN("surface_unknown_geometry", null);
 
       final String name;
       final NavigationTestSpotSelector.Profile profile;
@@ -71,12 +70,12 @@ final class SurfaceTravelScenario implements PfTestRunner.Scenario {
          JSONObject facts = new JSONObject().put("refusal", "NO_GAME").put("selected", false).put("kind", this.kind.name());
          return PfTestHarness.body(checks, "not in game", facts);
       }
-      if (this.kind.profile == null || this.kind.profile == NavigationTestSpotSelector.Profile.KNOWN_MAP_LONG_LEG) {
+      if (this.kind.profile == null) {
          return failClosed(checks, "NO_FIXTURE", "no automatic fixture for " + this.kind.name);
       }
-      PrototypePathfinder.Scene scene;
+      MovementScene.Scene scene;
       synchronized (ui) {
-         scene = PrototypePathfinder.observe(gui);
+         scene = MovementScene.observe(gui);
       }
       NavigationTestSpotSelector.Selection sel = this.kind.profile == NavigationTestSpotSelector.Profile.OPEN_GROUND
          ? NavigationTestSpotSelector.openGround(scene)
@@ -85,8 +84,8 @@ final class SurfaceTravelScenario implements PfTestRunner.Scenario {
          return failClosed(checks, "NO_FIXTURE", sel == null ? "no selection" : sel.evidence);
       }
       checks.add(PfTestRunner.check("fixture", true, this.kind.name + " target " + PfTestHarness.pt(sel.targetWorld)));
-      PrototypePathfinder.Plan plan = PrototypePathfinder.planAny(gui, Collections.singletonList(sel.targetWorld), true);
-      if (plan == null || plan.status != PrototypePathfinder.Plan.Status.REACHED) {
+      MovementScene.Plan plan = MovementScene.planAny(gui, Collections.singletonList(sel.targetWorld), true);
+      if (plan == null || plan.status != MovementScene.Plan.Status.REACHED) {
          return failClosed(checks, "NO_FIXTURE", plan == null ? "no local plan" : "plan " + plan.status + " is not a complete local route");
       }
       Bot bot = Bot.execute(new Bot.BotAction[0]);
@@ -98,7 +97,7 @@ final class SurfaceTravelScenario implements PfTestRunner.Scenario {
          .put("kind", this.kind.name())
          .put("selected", true)
          .put("refusal", JSONObject.NULL)
-         .put("arrived", mv != null && mv.walk == WaypointWalker.Result.ARRIVED);
+         .put("arrived", mv != null && mv.walk == ConfirmedRouteRunner.Status.ARRIVED);
       return PfTestHarness.body(checks, null, facts);
    }
 

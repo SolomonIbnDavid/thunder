@@ -74,7 +74,7 @@ public final class BuildingDoor {
       if (isHouseHull(resid)) {
          return true;
       }
-      String name = PrototypePathfinder.baseResid(resid);
+      String name = MovementScene.baseResid(resid);
       return name != null && OFFSETS.containsKey(name);
    }
 
@@ -82,7 +82,7 @@ public final class BuildingDoor {
       if (!usesDoorTarget(resid) || rc == null) {
          return null;
       }
-      Off[] offs = OFFSETS.get(PrototypePathfinder.baseResid(resid));
+      Off[] offs = OFFSETS.get(MovementScene.baseResid(resid));
       Coord2d origin = rc;
       int mesh = -1;
       if (offs != null && offs.length > 0) {
@@ -102,12 +102,12 @@ public final class BuildingDoor {
       return new Target(id, resid, origin, half, doorBox(origin, half), mesh);
    }
 
-   public static Target target(PrototypePathfinder.GobGeom g, Coord2d near) {
+   public static Target target(MovementScene.GobGeom g, Coord2d near) {
       return g == null ? null : target(g.resid, g.rc, g.a, g.id, near);
    }
 
    /** Live door origin for the same doorway {@code spec} already planned. */
-   public static Coord2d liveOrigin(PrototypePathfinder.GobGeom live, haven.nav.InteractionSpec spec) {
+   public static Coord2d liveOrigin(MovementScene.GobGeom live, haven.nav.InteractionSpec spec) {
       if (live == null || live.rc == null) {
          return null;
       }
@@ -117,13 +117,13 @@ public final class BuildingDoor {
    }
 
    public static boolean isHouseHull(String resid) {
-      if (!PrototypePathfinder.solidFootprint(resid)) {
+      if (!MovementScene.solidFootprint(resid)) {
          return false;
       }
       if (TransitionApproachSelector.doorGateKind(resid) == TransitionApproachSelector.DoorGateKind.DOOR) {
          return false;
       }
-      String name = PrototypePathfinder.baseResid(resid);
+      String name = MovementScene.baseResid(resid);
       return name != null && !name.endsWith("-door");
    }
 
@@ -140,7 +140,7 @@ public final class BuildingDoor {
    }
 
    public static Coord2d interactHalf(String resid) {
-      if ("gfx/terobjs/arch/greathall-door".equals(PrototypePathfinder.baseResid(resid))) {
+      if ("gfx/terobjs/arch/greathall-door".equals(MovementScene.baseResid(resid))) {
          return Coord2d.of(8.0, 8.0);
       }
       return DEFAULT_HALF;
@@ -160,7 +160,7 @@ public final class BuildingDoor {
    }
 
    public static Gob preferDoorGob(GameUI gui, Gob gob) {
-      if (gob == null || !isHouseHull(CriticalRouteBook.gobResid(gob))) {
+      if (gob == null || !isHouseHull(safeResid(gob))) {
          return gob;
       }
       Gob door = nearestDoorGob(gui, gob);
@@ -172,7 +172,7 @@ public final class BuildingDoor {
          return null;
       }
       Coord2d near = gui.map.player() == null ? hull.rc : gui.map.player().rc;
-      double max = searchRadius(CriticalRouteBook.gobResid(hull));
+      double max = searchRadius(safeResid(hull));
       Gob best = null;
       double bestD = Double.POSITIVE_INFINITY;
       synchronized (gui.ui) {
@@ -180,11 +180,11 @@ public final class BuildingDoor {
             if (g == null || g.rc == null || g.id == hull.id) {
                continue;
             }
-            String resid = CriticalRouteBook.gobResid(g);
+            String resid = safeResid(g);
             if (!isDoorGob(resid)) {
                continue;
             }
-            if (!sameBuildingFamily(CriticalRouteBook.gobResid(hull), resid) && g.rc.dist(hull.rc) > max) {
+            if (!sameBuildingFamily(safeResid(hull), resid) && g.rc.dist(hull.rc) > max) {
                continue;
             }
             double d = g.rc.dist(near);
@@ -197,24 +197,24 @@ public final class BuildingDoor {
       return best;
    }
 
-   public static PrototypePathfinder.GobGeom preferDoor(PrototypePathfinder.Scene scene, PrototypePathfinder.GobGeom gob) {
+   public static MovementScene.GobGeom preferDoor(MovementScene.Scene scene, MovementScene.GobGeom gob) {
       if (scene == null || gob == null || !isHouseHull(gob.resid)) {
          return gob;
       }
-      PrototypePathfinder.GobGeom door = nearestDoor(scene, gob);
+      MovementScene.GobGeom door = nearestDoor(scene, gob);
       return door != null ? door : gob;
    }
 
-   public static PrototypePathfinder.GobGeom nearestDoor(PrototypePathfinder.Scene scene, PrototypePathfinder.GobGeom hull) {
+   public static MovementScene.GobGeom nearestDoor(MovementScene.Scene scene, MovementScene.GobGeom hull) {
       if (scene == null || scene.gobs == null || hull == null || hull.rc == null) {
          return null;
       }
       Coord2d near = scene.player != null ? scene.player : hull.rc;
       double max = searchRadius(hull.resid);
-      PrototypePathfinder.GobGeom best = null;
+      MovementScene.GobGeom best = null;
       double bestD = Double.POSITIVE_INFINITY;
       for (int i = 0; i < scene.gobs.size(); i++) {
-         PrototypePathfinder.GobGeom g = scene.gobs.get(i);
+         MovementScene.GobGeom g = scene.gobs.get(i);
          if (g == null || g.rc == null || g.id == hull.id || !isDoorGob(g.resid)) {
             continue;
          }
@@ -237,11 +237,11 @@ public final class BuildingDoor {
     * and hardcoded offsets are never as accurate. Returns the door gob when
     * found, otherwise the original gob.
     */
-   public static PrototypePathfinder.GobGeom resolveDoor(GameUI gui, PrototypePathfinder.Scene scene, PrototypePathfinder.GobGeom gob) {
+   public static MovementScene.GobGeom resolveDoor(GameUI gui, MovementScene.Scene scene, MovementScene.GobGeom gob) {
       if (scene == null || gob == null || !isHouseHull(gob.resid)) {
          return gob;
       }
-      PrototypePathfinder.GobGeom door = nearestDoor(scene, gob);
+      MovementScene.GobGeom door = nearestDoor(scene, gob);
       if (door != null) {
          return door;
       }
@@ -255,76 +255,13 @@ public final class BuildingDoor {
       if (hullLive != null) {
          Gob doorLive = nearestDoorGob(gui, hullLive);
          if (doorLive != null) {
-            PrototypePathfinder.GobGeom resolved = PrototypePathfinder.gobGeom(gui, doorLive.id);
+            MovementScene.GobGeom resolved = MovementScene.gobGeom(gui, doorLive.id);
             if (resolved != null && resolved.rc != null && isDoorGob(resolved.resid)) {
                return resolved;
             }
          }
       }
       return gob;
-   }
-
-   public static Coord2d markerWorld(GameUI gui, CriticalRouteBook.Leg leg, Coord2d stored) {
-      if (stored == null || leg == null || !isHouseHull(leg.resid)) {
-         return stored;
-      }
-      Gob hull = CriticalRouteBook.resolveGob(gui, leg.gobId, leg.resid, stored);
-      if (hull == null) {
-         return stored;
-      }
-      Gob door = nearestDoorGob(gui, hull);
-      if (door != null && door.rc != null) {
-         if (stored.dist(door.rc) <= SurfaceStream.LAST_HOP) {
-            return stored;
-         }
-         return door.rc;
-      }
-      Target t = target(CriticalRouteBook.gobResid(hull), hull.rc, hull.a, hull.id, stored);
-      if (t == null || t.origin == null) {
-         return stored;
-      }
-      if (stored.dist(t.origin) <= SurfaceStream.LAST_HOP) {
-         return stored;
-      }
-      return t.origin;
-   }
-
-   /**
-    * Walk-to point for a house leg: the doorway centre pushed outward by
-    * {@link #DOOR_APPROACH_U}. Walking all the way to the doorway centre
-    * leaves the bot inside the doorway's interaction box and the hull's
-    * inflated wall, so the transition's pose selection rejects every stand
-    * as unreachable ("no reachable interaction pose").
-    */
-   public static Coord2d walkWorld(GameUI gui, CriticalRouteBook.Leg leg, Coord2d stored) {
-      if (leg == null || stored == null) {
-         return stored;
-      }
-      Gob hull = CriticalRouteBook.resolveGob(gui, leg.gobId, leg.resid, stored);
-      if (hull == null || hull.rc == null) {
-         // Hull not streamed in yet (bot far): walk toward the recorded doorway
-         // but stop DOOR_APPROACH_U short of it on the approach line, so the
-         // goal stays in free space once the hull appears. Walking to the
-         // doorway centre itself would target a solid cell as soon as the hull
-         // loads, leaving followTo with "no route around obstacles".
-         Coord2d at = gui != null && gui.map != null && gui.map.player() != null ? gui.map.player().rc : null;
-         if (at == null) {
-            return stored;
-         }
-         return beforePoint(at, stored, DOOR_APPROACH_U);
-      }
-      Coord2d doorWorld;
-      Gob door = nearestDoorGob(gui, hull);
-      if (door != null && door.rc != null) {
-         doorWorld = door.rc;
-      } else {
-         Target t = target(CriticalRouteBook.gobResid(hull), hull.rc, hull.a, hull.id, stored);
-         if (t == null || t.origin == null) {
-            return stored;
-         }
-         doorWorld = t.origin;
-      }
-      return standoff(doorWorld, hull.rc, DOOR_APPROACH_U);
    }
 
    /** {@code beforeU} units before {@code door} on the approach line from {@code from}. */
@@ -364,7 +301,7 @@ public final class BuildingDoor {
          return;
       }
       Coord2d near = spec != null && spec.origin != null ? spec.origin : gob.rc;
-      Target t = target(CriticalRouteBook.gobResid(gob), gob.rc, gob.a, gob.id, near);
+      Target t = target(safeResid(gob), gob.rc, gob.a, gob.id, near);
       if (t == null || t.origin == null || t.mesh < 0) {
          gob.rclick(0);
          return;
@@ -374,7 +311,7 @@ public final class BuildingDoor {
    }
 
    static double searchRadius(String resid) {
-      Coord2d[] known = PrototypePathfinder.knownBuildingFootprint(resid, Coord2d.of(0.0, 0.0), 0.0);
+      Coord2d[] known = MovementScene.knownBuildingFootprint(resid, Coord2d.of(0.0, 0.0), 0.0);
       if (known == null || known.length < 2) {
          return 120.0;
       }
@@ -386,8 +323,8 @@ public final class BuildingDoor {
    }
 
    static boolean sameBuildingFamily(String hull, String door) {
-      String h = PrototypePathfinder.baseResid(hull);
-      String d = PrototypePathfinder.baseResid(door);
+      String h = MovementScene.baseResid(hull);
+      String d = MovementScene.baseResid(door);
       return h != null && d != null && d.startsWith(h);
    }
 
@@ -401,7 +338,7 @@ public final class BuildingDoor {
    }
 
    static List<Coord2d> doorWorlds(String resid, Coord2d rc, double a) {
-      Off[] offs = OFFSETS.get(PrototypePathfinder.baseResid(resid));
+      Off[] offs = OFFSETS.get(MovementScene.baseResid(resid));
       if (rc == null || offs == null) {
          return Collections.emptyList();
       }
@@ -410,5 +347,14 @@ public final class BuildingDoor {
          out.add(rc.add(rotate(offs[i].off, a)));
       }
       return out;
+   }
+
+   private static String safeResid(Gob gob) {
+      if (gob == null) return null;
+      try {
+         return gob.resid();
+      } catch (RuntimeException ignored) {
+         return null;
+      }
    }
 }

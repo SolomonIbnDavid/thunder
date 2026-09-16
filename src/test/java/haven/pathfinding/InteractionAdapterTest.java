@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 public class InteractionAdapterTest {
    @Test
    void footprintFromPolygonsBecomesAabb() {
-      PrototypePathfinder.GobGeom g = new PrototypePathfinder.GobGeom();
+      MovementScene.GobGeom g = new MovementScene.GobGeom();
       g.id = 42L;
       g.rc = Coord2d.of(100.0, 50.0);
       List<Coord2d[]> polys = new ArrayList<>();
@@ -34,13 +34,38 @@ public class InteractionAdapterTest {
 
    @Test
    void missingPolygonsFallBackToDefaultHalf() {
-      PrototypePathfinder.GobGeom g = new PrototypePathfinder.GobGeom();
+      MovementScene.GobGeom g = new MovementScene.GobGeom();
       g.id = 7L;
       g.rc = Coord2d.of(1.0, 2.0);
       InteractionSpec spec = InteractionAdapter.fromGob(g, InteractionSpec.SIDE_E, 2.0, 11.0, 1, null, InteractionVerifier.TARGET_GONE);
       Assertions.assertEquals(5.5, spec.half.x, 1.0E-9);
       Assertions.assertEquals(InteractionSpec.SIDE_E, spec.allowedSides);
       Assertions.assertEquals(CollisionGeom.UNAVAILABLE, spec.geometrySource);
+   }
+
+   @Test
+   void authoritativeFallbackIsUsedForInteractionAndLosExclusion() {
+      MovementScene.GobGeom g = new MovementScene.GobGeom();
+      g.id = 8L;
+      g.rc = Coord2d.of(100.0, 50.0);
+      g.movement = java.util.Collections.singletonList(rect(97.0, 39.0, 103.0, 61.0));
+      Coord2d[] fallback = rect(96.5625, 39.0, 103.4375, 61.0);
+      g.collision = java.util.Collections.singletonList(fallback);
+      g.collisionSource = CollisionGeom.FALLBACK;
+
+      InteractionSpec spec = InteractionAdapter.fromGob(
+         g, InteractionSpec.ALL_SIDES, 0.5, 16.5, 0, null, InteractionVerifier.WINDOW_OPENED
+      );
+
+      Assertions.assertEquals(CollisionGeom.FALLBACK, spec.geometrySource);
+      Assertions.assertEquals(1, spec.polygons.size());
+      Assertions.assertArrayEquals(fallback, spec.polygons.get(0));
+      Assertions.assertEquals(3.4375, spec.half.x, 1.0E-9);
+      Assertions.assertEquals(11.0, spec.half.y, 1.0E-9);
+   }
+
+   private static Coord2d[] rect(double x0, double y0, double x1, double y1) {
+      return new Coord2d[]{Coord2d.of(x0, y0), Coord2d.of(x1, y0), Coord2d.of(x1, y1), Coord2d.of(x0, y1)};
    }
 
    @Test

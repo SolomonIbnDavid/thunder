@@ -12,7 +12,6 @@ import haven.MapFile;
 import haven.Moving;
 import haven.UI;
 import haven.Utils;
-import haven.NamedPlaceResolver.Place;
 import java.io.IOException;
 import java.io.Writer;
 import java.nio.file.Files;
@@ -69,9 +68,9 @@ final class ObserveScenario implements PfTestRunner.Scenario {
                   throw new PfTestRunner.Cancelled();
                }
 
-               PrototypePathfinder.Scene scene;
+               MovementScene.Scene scene;
                synchronized (ui) {
-                  scene = PrototypePathfinder.observe(gui);
+                  scene = MovementScene.observe(gui);
                }
 
                checks.add(
@@ -113,7 +112,7 @@ final class ObserveScenario implements PfTestRunner.Scenario {
       }
    }
 
-   private static JSONObject body(List<JSONObject> checks, PrototypePathfinder.Scene scene, String note) {
+   private static JSONObject body(List<JSONObject> checks, MovementScene.Scene scene, String note) {
       JSONObject o = new JSONObject();
       o.put("verdict", PfTestRunner.verdictOf(checks));
       JSONArray arr = new JSONArray();

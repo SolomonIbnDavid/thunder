@@ -1,6 +1,6 @@
 package haven.pathfinding;
 
-/** Pure area-selection math shared by the Navigation Lab panel and tests. */
+/** Pure area-selection math shared by the Thunder panel and tests. */
 public final class BoardStockpileMath {
     public static final double TILE = 11.0;
     private BoardStockpileMath() {}

@@ -12,7 +12,7 @@ import org.json.JSONObject;
 
 /**
  * Offline NavReplay v1 runner. Replays planning against the captured occupancy
- * using {@link PrototypePathfinder#planFromOccupancy} — the same planCore used
+ * using {@link MovementScene#planFromOccupancy} — the same planCore used
  * by live scenarios. Does not connect to the game.
  */
 public final class NavReplayRunner {
@@ -31,10 +31,10 @@ public final class NavReplayRunner {
       PathfinderLog.Occupancy occ = occupancyOf(world);
       Coord2d start = NavReplay.coord2d(world == null ? null : world.opt("player"));
       Coord2d dest = goal == null ? null : NavReplay.coord2d(goal.opt("position"));
-      double radius = world == null ? PrototypePathfinder.DEFAULT_AGENT_RADIUS : world.optDouble("radius", PrototypePathfinder.DEFAULT_AGENT_RADIUS);
+      double radius = world == null ? MovementScene.DEFAULT_AGENT_RADIUS : world.optDouble("radius", MovementScene.DEFAULT_AGENT_RADIUS);
       int obstacles = world == null ? 0 : world.optInt("obstacles");
       PathfinderLog.Trace tr = new PathfinderLog.Trace();
-      PrototypePathfinder.Plan plan = PrototypePathfinder.planFromOccupancy(start, dest, true, radius, occ, obstacles, tr);
+      MovementScene.Plan plan = MovementScene.planFromOccupancy(start, dest, true, radius, occ, obstacles, tr);
       List<Coord2d> recordedRaw = NavReplay.coords2d(body.optJSONArray("raw_route"));
       List<Coord2d> recordedSmooth = NavReplay.coords2d(body.optJSONArray("smoothed_route"));
       out.put("reason", tr.reason == null ? "" : tr.reason);
@@ -101,7 +101,7 @@ public final class NavReplayRunner {
       int w = grid == null || grid.length() < 1 ? 0 : grid.getInt(0);
       int h = grid == null || grid.length() < 2 ? 0 : grid.getInt(1);
       Coord2d origin = NavReplay.coord2d(originArr);
-      double cell = world.optDouble("cell", PrototypePathfinder.CELL);
+      double cell = world.optDouble("cell", MovementScene.CELL);
       return PathfinderLog.Occupancy.decode(
          origin,
          w,

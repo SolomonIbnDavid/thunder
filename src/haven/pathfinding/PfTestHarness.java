@@ -218,24 +218,24 @@ final class PfTestHarness {
       return "preflight refused";
    }
 
-   static List<PrototypePathfinder.GobGeom> cupboardGobs(PrototypePathfinder.Scene scene) {
-      List<PrototypePathfinder.GobGeom> out = new ArrayList<>();
+   static List<MovementScene.GobGeom> cupboardGobs(MovementScene.Scene scene) {
+      List<MovementScene.GobGeom> out = new ArrayList<>();
       if (scene != null && scene.gobs != null) {
-         for (PrototypePathfinder.GobGeom g : scene.gobs) {
+         for (MovementScene.GobGeom g : scene.gobs) {
             if (g != null && g.cupboard && g.rc != null) {
                out.add(g);
             }
          }
       }
 
-      out.sort(Comparator.<PrototypePathfinder.GobGeom>comparingDouble(gx -> gx.rc.x).thenComparingDouble(gx -> gx.rc.y));
+      out.sort(Comparator.<MovementScene.GobGeom>comparingDouble(gx -> gx.rc.x).thenComparingDouble(gx -> gx.rc.y));
       return out;
    }
 
-   static List<CupboardCatalog.Node> cupboardNodes(List<PrototypePathfinder.GobGeom> gobs) {
+   static List<CupboardCatalog.Node> cupboardNodes(List<MovementScene.GobGeom> gobs) {
       List<CupboardCatalog.Node> out = new ArrayList<>();
       if (gobs != null) {
-         for (PrototypePathfinder.GobGeom g : gobs) {
+         for (MovementScene.GobGeom g : gobs) {
             if (g != null && g.rc != null) {
                out.add(new CupboardCatalog.Node(g.id, g.rc.x, g.rc.y));
             }
@@ -409,7 +409,7 @@ final class PfTestHarness {
       }
    }
 
-   static JSONObject evaluateCabinets(PrototypePathfinder.Scene scene) {
+   static JSONObject evaluateCabinets(MovementScene.Scene scene) {
       List<JSONObject> checks = new ArrayList<>();
       JSONObject fixture = null;
       String note = null;
@@ -419,7 +419,7 @@ final class PfTestHarness {
          checks.add(check("player_present", false, "no player gob in observed scene"));
       }
 
-      List<PrototypePathfinder.GobGeom> cups = cupboardGobs(scene);
+      List<MovementScene.GobGeom> cups = cupboardGobs(scene);
       if (cups.isEmpty()) {
          checks.add(check("cupboards_present", false, "no cupboards in observed scene (within 220.0 world units of player)"));
       } else {
@@ -478,7 +478,7 @@ final class PfTestHarness {
       return sb.toString();
    }
 
-   static JSONObject sceneJson(PrototypePathfinder.Scene scene) {
+   static JSONObject sceneJson(MovementScene.Scene scene) {
       JSONObject o = new JSONObject();
       if (scene == null) {
          return o;

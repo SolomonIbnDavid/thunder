@@ -31,9 +31,8 @@ public final class InteractionStaging {
    public static final String TARGET_CHANGED = "TARGET_CHANGED";
    public static final String LOCAL_GEOMETRY_UNAVAILABLE = "LOCAL_GEOMETRY_UNAVAILABLE";
 
-   /** Bounded staging refresh rounds before giving up as geometry-unavailable.
-    *  ~89u per selectToward hop over 8 rounds covers ~700u of unobserved approach. */
-   public static final int MAX_ROUNDS = 8;
+   /** Initial local leg plus two bounded staging replans. */
+   public static final int MAX_ROUNDS = 3;
    static final long WALK_BUDGET_MS = 60000L;
 
    private InteractionStaging() {
@@ -41,21 +40,21 @@ public final class InteractionStaging {
 
    /** Builds the interaction spec for the freshly resolved target. */
    public interface SpecMaker {
-      haven.nav.InteractionSpec spec(PrototypePathfinder.GobGeom g, Coord2d near);
+      haven.nav.InteractionSpec spec(MovementScene.GobGeom g, Coord2d near);
    }
 
    /** Live scene observation; injectable for headless regression tests. */
    public interface SceneSupplier {
-      PrototypePathfinder.Scene get() throws InterruptedException;
+      MovementScene.Scene get() throws InterruptedException;
    }
 
    /** Live observation of the game scene. */
    public static SceneSupplier observing(final UI ui, final GameUI gui) {
       return new SceneSupplier() {
          @Override
-         public PrototypePathfinder.Scene get() throws InterruptedException {
+         public MovementScene.Scene get() throws InterruptedException {
             synchronized (ui) {
-               return PrototypePathfinder.observe(gui);
+               return MovementScene.observe(gui);
             }
          }
       };
@@ -69,15 +68,15 @@ public final class InteractionStaging {
    public static final class Result {
       public final String outcome;
       /** Fresh scene after staging; non-null on STAGED. */
-      public final PrototypePathfinder.Scene scene;
+      public final MovementScene.Scene scene;
       /** Freshly resolved target geometry; non-null on STAGED. */
-      public final PrototypePathfinder.GobGeom target;
+      public final MovementScene.GobGeom target;
       /** Identity refreshed with the live observation. */
       public final InteractionTarget identity;
       public final List<Coord2d> stagingPoints;
       public final String detail;
 
-      Result(String outcome, PrototypePathfinder.Scene scene, PrototypePathfinder.GobGeom target,
+      Result(String outcome, MovementScene.Scene scene, MovementScene.GobGeom target,
              InteractionTarget identity, List<Coord2d> stagingPoints, String detail) {
          this.outcome = outcome;
          this.scene = scene;
@@ -104,6 +103,31 @@ public final class InteractionStaging {
    }
 
    /**
+    * Live-game staging entry point for an already-running {@code auto.Bot}:
+    * the bot's own cancellation object is threaded through every staging walk
+    * so Stop/Esc cancels movement instead of racing against an unrelated
+    * uncancellable {@code Bot}.
+    */
+   public static Result stage(
+      UI ui, GameUI gui, InteractionTarget identity, SpecMaker specMaker, Listener listener, Bot bot
+   ) throws InterruptedException {
+      return stage(ui, gui, identity, specMaker, listener, bot, BotMovement.Avoidance.NONE);
+   }
+
+   public static Result stage(
+      UI ui, GameUI gui, InteractionTarget identity, SpecMaker specMaker, Listener listener, Bot bot,
+      BotMovement.Avoidance avoidance
+   ) throws InterruptedException {
+      try {
+         return stage(null, ui, gui, observing(ui, gui), identity, specMaker, listener, bot, avoidance);
+      } catch (PfTestRunner.Cancelled e) {
+         // run is null on this path, so this is unreachable in practice; keep the
+         // public bot-based signature free of the test-runner's cancellation type.
+         throw new InterruptedException(e.getMessage());
+      }
+   }
+
+   /**
     * Staging cycle with an injectable scene source. With a null run, waits
     * and cancellation checks are skipped (headless test mode).
     */
@@ -111,18 +135,42 @@ public final class InteractionStaging {
       PfTestRunner.Run run, UI ui, GameUI gui, SceneSupplier scenes, InteractionTarget identity,
       SpecMaker specMaker, Listener listener
    ) throws InterruptedException, PfTestRunner.Cancelled {
+      return stage(run, ui, gui, scenes, identity, specMaker, listener,
+         Bot.execute(new Bot.BotAction[0]), BotMovement.Avoidance.NONE);
+   }
+
+   /**
+    * Shared staging core. {@code bot} is the movement-cancellation authority:
+    * when null (headless test mode) no bot cancellation checks are made, and
+    * the historical {@code run}-based checks are used instead.
+    */
+   public static Result stage(
+      PfTestRunner.Run run, UI ui, GameUI gui, SceneSupplier scenes, InteractionTarget identity,
+      SpecMaker specMaker, Listener listener, Bot bot
+   ) throws InterruptedException, PfTestRunner.Cancelled {
+      return stage(run, ui, gui, scenes, identity, specMaker, listener, bot,
+         BotMovement.Avoidance.NONE);
+   }
+
+   static Result stage(
+      PfTestRunner.Run run, UI ui, GameUI gui, SceneSupplier scenes, InteractionTarget identity,
+      SpecMaker specMaker, Listener listener, Bot bot, BotMovement.Avoidance avoidance
+   ) throws InterruptedException, PfTestRunner.Cancelled {
       List<Coord2d> stagingPoints = new ArrayList<Coord2d>();
+      BotMovement.Avoidance avoid = avoidance == null ? BotMovement.Avoidance.NONE : avoidance;
       PathfinderLog.setTarget("interact " + identity.label() + " STAGING>INTERACT");
       try {
          for (int round = 0; round < MAX_ROUNDS; round++) {
             if (run != null && run.cancelled) {
                throw new PfTestRunner.Cancelled();
             }
-            PrototypePathfinder.Scene scene = scenes.get();
+            MovementScene.Scene scene = scenes.get();
             if (scene == null || scene.player == null || scene.occupancy == null) {
                return new Result(LOCAL_GEOMETRY_UNAVAILABLE, null, null, identity, stagingPoints, "no local scene");
             }
-            PrototypePathfinder.GobGeom live = identity.resolveIn(scene);
+            OccupancyGrid safeOccupancy = BotMovement.withAvoidance(
+               scene.occupancy, avoid.currentCenters(), avoid.radius);
+            MovementScene.GobGeom live = identity.resolveIn(scene);
             StagingPlanner.Result pick;
             if (live == null) {
                // Target not yet observed: hop toward its last-known position.
@@ -130,7 +178,7 @@ public final class InteractionStaging {
                   PathfinderLog.dumpFailure("staging TARGET_DISAPPEARED: target not in scene and no last position");
                   return new Result(TARGET_DISAPPEARED, null, null, identity, stagingPoints, "target not in scene and no last position");
                }
-               pick = StagingPlanner.selectToward(scene.player, identity.lastRc, scene.occupancy);
+               pick = StagingPlanner.selectToward(scene.player, identity.lastRc, safeOccupancy);
                if (!pick.ok()) {
                   PathfinderLog.dumpFailure("staging STAGING_UNREACHABLE: no walkable progress toward unobserved target " + identity.label());
                   return new Result(STAGING_UNREACHABLE, null, null, identity, stagingPoints, "no walkable progress toward unobserved target");
@@ -151,18 +199,18 @@ public final class InteractionStaging {
                if (spec == null) {
                   return new Result(LOCAL_GEOMETRY_UNAVAILABLE, null, null, identity, stagingPoints, "spec unavailable");
                }
-               if (!StagingPlanner.required(scene.player, scene.occupancy, spec)) {
+               if (!StagingPlanner.required(scene.player, safeOccupancy, spec)) {
                   return new Result("STAGED", scene, live, identity, stagingPoints, "");
                }
-               if (!StagingPlanner.inGrid(scene.occupancy, spec.origin)) {
+               if (!StagingPlanner.inGrid(safeOccupancy, spec.origin)) {
                   // Observed but target origin lies outside the grid: hop toward it.
-                  pick = StagingPlanner.selectToward(scene.player, live.rc, scene.occupancy);
+                  pick = StagingPlanner.selectToward(scene.player, live.rc, safeOccupancy);
                   if (!pick.ok()) {
                      PathfinderLog.dumpFailure("staging STAGING_UNREACHABLE: no walkable progress toward target outside grid " + identity.label());
                      return new Result(STAGING_UNREACHABLE, null, null, identity, stagingPoints, "no walkable progress toward target outside grid");
                   }
                } else {
-                  pick = StagingPlanner.select(scene.player, spec, scene.occupancy);
+                  pick = StagingPlanner.select(scene.player, spec, safeOccupancy);
                   if (!pick.ok()) {
                      PathfinderLog.dumpFailure("staging STAGING_UNREACHABLE: no walkable staging coordinate beside " + identity.label());
                      return new Result(STAGING_UNREACHABLE, null, null, identity, stagingPoints,
@@ -179,7 +227,7 @@ public final class InteractionStaging {
                listener.phase(PHASE_STAGING_POSE_SELECTED, identity, scene.player, pick.selected.world,
                   "angle=" + pick.selected.angle + " radius=" + Math.round(pick.selected.radius));
             }
-            String walkErr = walkTo(run, ui, gui, scene, pick.selected.world, identity);
+            String walkErr = walkTo(run, ui, gui, scene, pick.selected.world, identity, bot, avoid);
             if (walkErr != null) {
                PathfinderLog.dumpFailure("staging STAGING_UNREACHABLE: " + walkErr);
                return new Result(STAGING_UNREACHABLE, null, null, identity, stagingPoints, walkErr);
@@ -189,9 +237,6 @@ public final class InteractionStaging {
             ));
             if (listener != null) {
                listener.phase(PHASE_STAGING_ARRIVED, identity, pick.selected.world, pick.selected.world, "");
-            }
-            if (run != null) {
-               TransitionScenario.waitIdle(run, ui, gui);
             }
          }
       } finally {
@@ -206,7 +251,8 @@ public final class InteractionStaging {
     * phase, so the movement is never mistaken for a plain go-to.
     */
    private static String walkTo(
-      PfTestRunner.Run run, UI ui, GameUI gui, PrototypePathfinder.Scene scene, Coord2d staging, InteractionTarget identity
+      PfTestRunner.Run run, UI ui, GameUI gui, MovementScene.Scene scene, Coord2d staging,
+      InteractionTarget identity, Bot bot, BotMovement.Avoidance avoidance
    ) throws InterruptedException, PfTestRunner.Cancelled {
       NavPlan plan = LocalPlanner.planFromOccupancy(scene.player, staging, false, 0.0, scene.occupancy, 0, new PlanningTrace());
       List<Coord2d> route;
@@ -224,12 +270,10 @@ public final class InteractionStaging {
       if (run != null && run.cancelled) {
          throw new PfTestRunner.Cancelled();
       }
-      Bot bot = Bot.execute(new Bot.BotAction[0]);
-      WaypointWalker.Result walk = WaypointWalker.execute(
-         WaypointWalker.liveEnv(gui), bot, route, 0, WALK_BUDGET_MS, WaypointWalker.Params.DEFAULT, NamedPlaceNavigator.NOOP
-      );
-      if (walk != WaypointWalker.Result.READY_TO_INTERACT && walk != WaypointWalker.Result.ARRIVED) {
-         return "staging walk " + walk;
+      BotMovement.Result walk = BotMovement.moveToAny(gui, bot, Collections.singletonList(staging),
+         avoidance, BotMovement.Mode.LAND, WALK_BUDGET_MS);
+      if (!walk.arrived()) {
+         return "staging walk " + walk.status + (walk.detail.isEmpty() ? "" : " (" + walk.detail + ")");
       }
       return null;
    }
@@ -237,7 +281,7 @@ public final class InteractionStaging {
    /** Compact phase record retaining target identity and context for telemetry. */
    public static JSONObject phaseRecord(
       String phase, InteractionTarget identity, Coord2d player, List<Coord2d> stagingPoints,
-      PrototypePathfinder.GobGeom live, int retry, String detail
+      MovementScene.GobGeom live, int retry, String detail
    ) {
       JSONObject o = new JSONObject();
       o.put("phase", phase);

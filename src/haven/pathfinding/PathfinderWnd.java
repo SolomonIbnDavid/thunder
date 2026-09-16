@@ -23,7 +23,7 @@ public class PathfinderWnd extends Hidewnd {
    private final TextEntry input;
    private final Label status;
    private final PathfinderWnd.ResultList results;
-   private List<PrototypePathfinder.NearbyGob> hits = new ArrayList<>();
+   private List<PathfinderCommands.NearbyGob> hits = new ArrayList<>();
    private long highlighted = -1L;
    private double sinceRefresh;
 
@@ -111,13 +111,13 @@ public class PathfinderWnd extends Hidewnd {
       this.sinceRefresh = 0.0;
       GameUI gui = this.gui();
       if (gui != null) {
-         long keep = this.results.sel != null ? ((PrototypePathfinder.NearbyGob)this.results.sel).id : this.highlighted;
-         this.hits = PrototypePathfinder.nearby(gui, this.input.text());
+         long keep = this.results.sel != null ? ((PathfinderCommands.NearbyGob)this.results.sel).id : this.highlighted;
+         this.hits = PathfinderCommands.nearby(gui, this.input.text());
          this.status
             .settext(this.hits.isEmpty() ? "No nearby objects" : String.format("%d nearby object%s", this.hits.size(), this.hits.size() == 1 ? "" : "s"));
-         PrototypePathfinder.NearbyGob keepHit = null;
+         PathfinderCommands.NearbyGob keepHit = null;
 
-         for (PrototypePathfinder.NearbyGob hit : this.hits) {
+         for (PathfinderCommands.NearbyGob hit : this.hits) {
             if (hit.id == keep) {
                keepHit = hit;
                break;
@@ -132,7 +132,7 @@ public class PathfinderWnd extends Hidewnd {
    }
 
    private void pathToSelected() {
-      PrototypePathfinder.NearbyGob sel = (PrototypePathfinder.NearbyGob)this.results.sel;
+      PathfinderCommands.NearbyGob sel = (PathfinderCommands.NearbyGob)this.results.sel;
       if (sel == null && !this.hits.isEmpty()) {
          sel = this.hits.get(0);
       }
@@ -143,7 +143,7 @@ public class PathfinderWnd extends Hidewnd {
             gui.msg("Pathfinder: pick an object first", MsgType.ERROR);
          }
       } else {
-         PrototypePathfinder.goToGob(this.gui(), sel.id);
+         PathfinderCommands.goToGob(this.gui(), sel.id);
       }
    }
 
@@ -187,7 +187,7 @@ public class PathfinderWnd extends Hidewnd {
       }
    }
 
-   private class ResultList extends Listbox<PrototypePathfinder.NearbyGob> {
+   private class ResultList extends Listbox<PathfinderCommands.NearbyGob> {
       private final Color rowEven = new Color(0, 0, 0, 84);
       private final Color rowOdd = new Color(0, 0, 0, 42);
 
@@ -196,7 +196,7 @@ public class PathfinderWnd extends Hidewnd {
          this.bgcolor = new Color(0, 0, 0, 84);
       }
 
-      protected PrototypePathfinder.NearbyGob listitem(int i) {
+      protected PathfinderCommands.NearbyGob listitem(int i) {
          return PathfinderWnd.this.hits.get(i);
       }
 
@@ -204,26 +204,26 @@ public class PathfinderWnd extends Hidewnd {
          return PathfinderWnd.this.hits.size();
       }
 
-      protected void drawitem(GOut g, PrototypePathfinder.NearbyGob item, int i) {
+      protected void drawitem(GOut g, PathfinderCommands.NearbyGob item, int i) {
          g.chcolor(i % 2 == 0 ? this.rowEven : this.rowOdd);
          g.frect(Coord.z, g.sz());
          g.chcolor();
          g.atext(item.label(), new Coord(UI.scale(4), this.itemh / 2), 0.0, 0.5);
       }
 
-      public void change(PrototypePathfinder.NearbyGob item) {
+      public void change(PathfinderCommands.NearbyGob item) {
          super.change(item);
          if (item != null) {
             PathfinderWnd.this.highlight(item.id);
          }
       }
 
-      protected void itemactivate(PrototypePathfinder.NearbyGob item) {
+      protected void itemactivate(PathfinderCommands.NearbyGob item) {
          this.change(item);
          PathfinderWnd.this.pathToSelected();
       }
 
-      protected Object itemtip(PrototypePathfinder.NearbyGob item) {
+      protected Object itemtip(PathfinderCommands.NearbyGob item) {
          return String.format("%s\n%s\nid %d", item.name, item.resid, item.id);
       }
    }

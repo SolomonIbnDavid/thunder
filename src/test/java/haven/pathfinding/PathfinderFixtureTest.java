@@ -13,6 +13,152 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 public class PathfinderFixtureTest {
+   @Test
+   void trellisFallbackIsAThinOrientedMovementObstacle() {
+      Assertions.assertTrue(MovementScene.trellisResid("gfx/terobjs/trellis"));
+      Assertions.assertTrue(MovementScene.trellisResid("gfx/terobjs/plants/trellis"));
+      Coord2d[] northSouth = MovementScene.knownTrellisFootprint(Coord2d.of(10.0, 20.0), 0.0);
+      Assertions.assertEquals(8.625, northSouth[0].x, 1.0E-9);
+      Assertions.assertEquals(14.5, northSouth[0].y, 1.0E-9);
+      Assertions.assertEquals(11.375, northSouth[2].x, 1.0E-9);
+      Assertions.assertEquals(25.5, northSouth[2].y, 1.0E-9);
+
+      Coord2d[] eastWest = MovementScene.knownTrellisFootprint(Coord2d.of(10.0, 20.0), Math.PI / 2.0);
+      Assertions.assertEquals(15.5, eastWest[0].x, 1.0E-9);
+      Assertions.assertEquals(18.625, eastWest[0].y, 1.0E-9);
+      Assertions.assertEquals(4.5, eastWest[2].x, 1.0E-9);
+      Assertions.assertEquals(21.375, eastWest[2].y, 1.0E-9);
+   }
+
+   @Test
+   void dryingRackUsesNurglingFallbackWhenLiveObstacleIsMissing() {
+      Coord2d center = Coord2d.of(50.0, 75.0);
+      Coord2d[] rack = MovementScene.knownFurnitureFootprint("gfx/terobjs/dframe", center, 0.0);
+      Assertions.assertNotNull(rack);
+      Assertions.assertEquals(46.5625, rack[0].x, 1.0E-9);
+      Assertions.assertEquals(64.0, rack[0].y, 1.0E-9);
+      Assertions.assertEquals(53.4375, rack[2].x, 1.0E-9);
+      Assertions.assertEquals(86.0, rack[2].y, 1.0E-9);
+
+      CollisionGeom geom = MovementScene.furnitureGeometry(
+         "gfx/terobjs/dframe", center, 0.0, Collections.<Coord2d[]>emptyList(), Collections.<Coord2d[]>emptyList()
+      );
+      Assertions.assertEquals(CollisionGeom.FALLBACK, geom.source);
+      Assertions.assertEquals(1, geom.polygons.size());
+
+      MovementScene.GobGeom gob = new MovementScene.GobGeom();
+      gob.id = 17L;
+      gob.resid = "gfx/terobjs/dframe";
+      gob.rc = center;
+      gob.collision = geom.polygons;
+      gob.collisionSource = geom.source;
+      haven.nav.InteractionSpec spec = InteractionAdapter.fromGob(
+         gob, haven.nav.InteractionSpec.ALL_SIDES, 0.5, 16.5, 0, null, "", center
+      );
+      Assertions.assertTrue(spec.faceCentersOnly, "packed drying racks use Nurgling-style face-center approaches");
+      Assertions.assertEquals(
+         haven.nav.InteractionSpec.SIDE_N | haven.nav.InteractionSpec.SIDE_S,
+         spec.preferredSides,
+         "an unrotated drying rack prefers its two row-facing aisle ends"
+      );
+      Assertions.assertEquals(
+         haven.nav.InteractionSpec.SIDE_E | haven.nav.InteractionSpec.SIDE_W,
+         InteractionAdapter.preferredSides("gfx/terobjs/dframe", Math.PI / 2.0),
+         "rack aisle preference rotates with the fixture"
+      );
+   }
+
+   @Test
+   void branchStockpileUsesCatalogGeometryWhenLiveGeometryIsMissing() {
+      CollisionGeom g = MovementScene.catalogBackedGeometry(
+         "gfx/terobjs/stockpile-branch", Coord2d.of(20, 30), 0,
+         java.util.Collections.emptyList(), java.util.Collections.emptyList());
+      Assertions.assertEquals(CollisionGeom.FALLBACK, g.source);
+      Assertions.assertEquals(1, g.polygons.size());
+      Coord2d[] box = InteractionAdapter.aabbBox(g.polygons);
+      Assertions.assertEquals(8.25, box[1].x - box[0].x, 1.0E-9);
+      Assertions.assertEquals(8.25, box[1].y - box[0].y, 1.0E-9);
+   }
+
+   @Test
+   void catalogGeometryWinsEvenWhenLiveGeometryIsAvailable() {
+      Coord2d[] live = new Coord2d[]{
+         Coord2d.of(0, 0), Coord2d.of(30, 0), Coord2d.of(30, 30), Coord2d.of(0, 30)
+      };
+      CollisionGeom g = MovementScene.catalogBackedGeometry(
+         "gfx/terobjs/stockpile-branch", Coord2d.of(20, 30), 0,
+         Collections.singletonList(live), Collections.emptyList());
+      Assertions.assertEquals(CollisionGeom.FALLBACK, g.source);
+      Coord2d[] box = InteractionAdapter.aabbBox(g.polygons);
+      Assertions.assertEquals(8.25, box[1].x - box[0].x, 1.0E-9);
+      Assertions.assertEquals(8.25, box[1].y - box[0].y, 1.0E-9);
+   }
+
+   @Test
+   void cataloguedFurnitureAlsoWinsOverLiveGeometry() {
+      Coord2d[] live = new Coord2d[]{
+         Coord2d.of(-12, -12), Coord2d.of(12, -12), Coord2d.of(12, 12), Coord2d.of(-12, 12)
+      };
+      CollisionGeom g = MovementScene.furnitureGeometry(
+         "gfx/terobjs/barrel", Coord2d.of(0, 0), 0,
+         Collections.singletonList(live), Collections.emptyList());
+      Assertions.assertEquals(CollisionGeom.FALLBACK, g.source);
+      Coord2d[] box = InteractionAdapter.aabbBox(g.polygons);
+      Assertions.assertEquals(8.25, box[1].x - box[0].x, 1.0E-9);
+      Assertions.assertEquals(8.25, box[1].y - box[0].y, 1.0E-9);
+   }
+
+   @Test
+   void uncataloguedObjectStillUsesLiveGeometry() {
+      Coord2d[] live = new Coord2d[]{
+         Coord2d.of(0, 0), Coord2d.of(12, 0), Coord2d.of(12, 12), Coord2d.of(0, 12)
+      };
+      CollisionGeom g = MovementScene.catalogBackedGeometry(
+         "gfx/terobjs/unknown-new-object", Coord2d.of(20, 30), 0,
+         Collections.singletonList(live), Collections.emptyList());
+      Assertions.assertEquals(CollisionGeom.OBST, g.source);
+      Assertions.assertSame(live, g.polygons.get(0));
+   }
+
+   @Test
+   void nurglingFallbackCatalogCoversCommonMissingObjects() {
+      Assertions.assertEquals(110, NurglingFallbacks.size());
+      Assertions.assertEquals(Coord2d.of(13.0, 13.0), NurglingFallbacks.half("gfx/terobjs/kiln"));
+      Assertions.assertEquals(Coord2d.of(11.0, 11.0), NurglingFallbacks.half("gfx/terobjs/oven"));
+      Assertions.assertEquals(Coord2d.of(5.5, 8.25), NurglingFallbacks.half("gfx/terobjs/crate"));
+      Assertions.assertEquals(Coord2d.of(21.0, 8.25), NurglingFallbacks.half("gfx/terobjs/vehicle/rowboat"));
+      Assertions.assertEquals(Coord2d.of(13.75, 8.25), NurglingFallbacks.half("gfx/kritter/bear/bear"));
+      Assertions.assertEquals(Coord2d.of(8.25, 8.25), NurglingFallbacks.half("gfx/terobjs/trees/oakstump"));
+      Assertions.assertEquals(Coord2d.of(8.25, 8.25), NurglingFallbacks.half("gfx/terobjs/trees/larchstump[7]"));
+      Assertions.assertEquals(Coord2d.of(11.0, 2.75), NurglingFallbacks.half("gfx/terobjs/trees/pinelog"));
+      Assertions.assertNull(NurglingFallbacks.half("gfx/terobjs/unknown-new-object"));
+   }
+
+   @Test
+   void treeLogUsesCatalogGeometryBeforeLiveGeometry() {
+      Coord2d[] live = new Coord2d[]{
+         Coord2d.of(-6, -10), Coord2d.of(6, -10), Coord2d.of(6, 10), Coord2d.of(-6, 10)
+      };
+      CollisionGeom g = MovementScene.catalogBackedGeometry(
+         "gfx/terobjs/trees/pinelog", Coord2d.of(20, 30), 0,
+         Collections.singletonList(live), Collections.emptyList());
+      Assertions.assertEquals(CollisionGeom.FALLBACK, g.source);
+      Coord2d[] box = InteractionAdapter.aabbBox(g.polygons);
+      Assertions.assertEquals(22.0, box[1].x - box[0].x, 1.0E-9);
+      Assertions.assertEquals(5.5, box[1].y - box[0].y, 1.0E-9);
+   }
+
+   @Test
+   void treeStumpUsesCatalogGeometryWhenLiveGeometryIsMissing() {
+      CollisionGeom g = MovementScene.catalogBackedGeometry(
+         "gfx/terobjs/trees/oakstump", Coord2d.of(20, 30), 0,
+         java.util.Collections.emptyList(), java.util.Collections.emptyList());
+      Assertions.assertEquals(CollisionGeom.FALLBACK, g.source);
+      Assertions.assertEquals(1, g.polygons.size());
+      Coord2d[] box = InteractionAdapter.aabbBox(g.polygons);
+      Assertions.assertEquals(16.5, box[1].x - box[0].x, 1.0E-9);
+      Assertions.assertEquals(16.5, box[1].y - box[0].y, 1.0E-9);
+   }
    private static final double CELL = 2.75;
    private static final String CUPBOARD = "gfx/terobjs/cupboard";
    private static final String PALISADE = "gfx/terobjs/arch/palisadeseg";
@@ -33,7 +179,7 @@ public class PathfinderFixtureTest {
    }
 
    private static boolean rasterFurniture(boolean[] blocked, Coord2d origin, int w, int h, Coord2d center) {
-      return PrototypePathfinder.rasterObstacle(
+      return MovementScene.rasterObstacle(
          blocked, origin, w, h, center, false, "gfx/terobjs/cupboard", List.<Coord2d[]>of(box10(center.x, center.y)), 1.0, Collections.emptyList()
       );
    }
@@ -43,7 +189,7 @@ public class PathfinderFixtureTest {
    }
 
    private static void rasterWall(boolean[] blocked, Coord2d origin, int w, int h, boolean inflate, Coord2d[] wallPoly) {
-      PrototypePathfinder.rasterObstacle(
+      MovementScene.rasterObstacle(
          blocked,
          origin,
          w,
@@ -58,12 +204,12 @@ public class PathfinderFixtureTest {
    }
 
    private static Coord cellAt(Coord2d origin, Coord2d p) {
-      return PrototypePathfinder.worldCell(origin, p);
+      return MovementScene.worldCell(origin, p);
    }
 
    @Test
    void packedCupboardsUseObstacleOnlyAndAreNeverInflated() {
-      Coord2d origin = PrototypePathfinder.alignedOrigin(-22.0, -11.0);
+      Coord2d origin = MovementScene.alignedOrigin(-22.0, -11.0);
       int w = 20;
       int h = 12;
       boolean[] solid = new boolean[w * h];
@@ -78,15 +224,15 @@ public class PathfinderFixtureTest {
       double oldPrepad = 2.45;
 
       for (Coord2d at : new Coord2d[]{Coord2d.of(0.0, 0.0), Coord2d.of(11.0, 0.0)}) {
-         PrototypePathfinder.rasterPolygon(prepadded, origin, w, h, box10(at.x, at.y), oldPrepad);
+         MovementScene.rasterPolygon(prepadded, origin, w, h, box10(at.x, at.y), oldPrepad);
       }
 
-      PrototypePathfinder.dilate(prepadded, w, h, 1);
+      MovementScene.dilate(prepadded, w, h, 1);
       Assertions.assertTrue(prepadded[aisle.y * w + aisle.x], "the removed furniturePrepad sealed this aisle row");
       boolean[] dilated = Arrays.copyOf(solid, solid.length);
 
       for (Coord2d at : new Coord2d[]{Coord2d.of(0.0, 0.0), Coord2d.of(11.0, 0.0)}) {
-         PrototypePathfinder.rasterObstacle(dilated, origin, w, h, at, true, "gfx/terobjs/cupboard", List.<Coord2d[]>of(box10(at.x, at.y)), 1.0, diamondBody());
+         MovementScene.rasterObstacle(dilated, origin, w, h, at, true, "gfx/terobjs/cupboard", List.<Coord2d[]>of(box10(at.x, at.y)), 1.0, diamondBody());
       }
 
       Assertions.assertArrayEquals(solid, dilated, "packed furniture is never Minkowski-inflated");
@@ -96,16 +242,16 @@ public class PathfinderFixtureTest {
 
    @Test
    void chairsAndChestsAreNeverBodyInflated() {
-      Coord2d origin = PrototypePathfinder.alignedOrigin(-22.0, -11.0);
+      Coord2d origin = MovementScene.alignedOrigin(-22.0, -11.0);
       int w = 20;
       int h = 12;
       Coord2d at = Coord2d.of(0.0, 0.0);
       boolean[] solid = new boolean[w * h];
-      PrototypePathfinder.rasterObstacle(
+      MovementScene.rasterObstacle(
          solid, origin, w, h, at, false, "gfx/terobjs/chair", List.<Coord2d[]>of(box10(at.x, at.y)), 1.0, Collections.emptyList()
       );
       boolean[] dilated = Arrays.copyOf(solid, solid.length);
-      PrototypePathfinder.rasterObstacle(
+      MovementScene.rasterObstacle(
          dilated, origin, w, h, at, true, "gfx/terobjs/chest", List.<Coord2d[]>of(box10(at.x, at.y)), 1.0, diamondBody()
       );
       Assertions.assertArrayEquals(solid, dilated, "household furniture is never Minkowski-inflated");
@@ -113,7 +259,7 @@ public class PathfinderFixtureTest {
 
    @Test
    void idlePlayerStanding032TilesFromACupboardIsNotSolid() {
-      Coord2d origin = PrototypePathfinder.alignedOrigin(-22.0, -22.0);
+      Coord2d origin = MovementScene.alignedOrigin(-22.0, -22.0);
       int w = 24;
       int h = 24;
       boolean[] solid = new boolean[w * h];
@@ -126,7 +272,7 @@ public class PathfinderFixtureTest {
 
    @Test
    void oneTileCorridorFitsTheBodyAtItsCenterButNotAtTheHug() {
-      Coord2d origin = PrototypePathfinder.alignedOrigin(-20.0, -20.0);
+      Coord2d origin = MovementScene.alignedOrigin(-20.0, -20.0);
       int w = 20;
       int h = 10;
       Coord2d[] left = wall(0.0, 1.0);
@@ -157,7 +303,7 @@ public class PathfinderFixtureTest {
       }
 
       Coord from = Coord.of(0, 4);
-      Coord snapped = PrototypePathfinder.nearestFree(blocked, w, h, Coord.of(5, 4), from);
+      Coord snapped = MovementScene.nearestFree(blocked, w, h, Coord.of(5, 4), from);
       Assertions.assertNotNull(snapped);
       Assertions.assertTrue(snapped.x < 5, "snap must land on the player's side of the wall, not through it");
       Assertions.assertFalse(blocked[snapped.y * w + snapped.x]);
@@ -172,18 +318,18 @@ public class PathfinderFixtureTest {
 
    @Test
    void unknownLoadingGeometryBlocksInsteadOfBeingTraversable() {
-      Coord2d origin = PrototypePathfinder.alignedOrigin(-11.0, -11.0);
+      Coord2d origin = MovementScene.alignedOrigin(-11.0, -11.0);
       int w = 12;
       int h = 12;
       boolean[] solid = new boolean[w * h];
-      PrototypePathfinder.rasterObstacle(solid, origin, w, h, Coord2d.of(0.0, 0.0), false, "gfx/terobjs/cupboard", null, 11.0, Collections.emptyList());
+      MovementScene.rasterObstacle(solid, origin, w, h, Coord2d.of(0.0, 0.0), false, "gfx/terobjs/cupboard", null, 11.0, Collections.emptyList());
       Coord at = cellAt(origin, Coord2d.of(0.0, 0.0));
       Assertions.assertTrue(solid[at.y * w + at.x], "unknown geometry must be blocked, not traversable");
       boolean[] dilated = Arrays.copyOf(solid, solid.length);
-      PrototypePathfinder.rasterObstacle(dilated, origin, w, h, Coord2d.of(0.0, 0.0), true, "gfx/terobjs/cupboard", null, 11.0, diamondBody());
+      MovementScene.rasterObstacle(dilated, origin, w, h, Coord2d.of(0.0, 0.0), true, "gfx/terobjs/cupboard", null, 11.0, diamondBody());
       Assertions.assertArrayEquals(solid, dilated, "unknown furniture is never inflated");
       boolean[] empty = new boolean[w * h];
-      PrototypePathfinder.rasterObstacle(
+      MovementScene.rasterObstacle(
          empty, origin, w, h, Coord2d.of(5.5, 5.5), false, "gfx/terobjs/chest", Collections.emptyList(), 6.6, Collections.emptyList()
       );
       Coord e = cellAt(origin, Coord2d.of(5.5, 5.5));
@@ -192,11 +338,11 @@ public class PathfinderFixtureTest {
 
    @Test
    void negOnlyFurnitureIsPlacementNotMovement() {
-      Coord2d origin = PrototypePathfinder.alignedOrigin(-11.0, -11.0);
+      Coord2d origin = MovementScene.alignedOrigin(-11.0, -11.0);
       int w = 12;
       int h = 12;
       boolean[] blocked = new boolean[w * h];
-      boolean rastered = PrototypePathfinder.rasterObstacle(
+      boolean rastered = MovementScene.rasterObstacle(
          blocked, origin, w, h, Coord2d.of(0.0, 0.0), false, "gfx/terobjs/cupboard", Collections.emptyList(), 1.0, Collections.emptyList()
       );
       Assertions.assertFalse(rastered, "Neg-only furniture contributes no occupancy");
@@ -206,7 +352,7 @@ public class PathfinderFixtureTest {
 
    @Test
    void obstacleLayerIsMovementNegIsPlacement() {
-      Coord2d origin = PrototypePathfinder.alignedOrigin(-11.0, -11.0);
+      Coord2d origin = MovementScene.alignedOrigin(-11.0, -11.0);
       int w = 12;
       int h = 12;
       List<Coord2d[]> neg = List.<Coord2d[]>of(box10(0.0, 0.0));
@@ -215,13 +361,13 @@ public class PathfinderFixtureTest {
       Assertions.assertEquals(1, movement.size());
       Assertions.assertSame(obst.get(0), movement.get(0));
       boolean[] blocked = new boolean[w * h];
-      PrototypePathfinder.rasterObstacle(blocked, origin, w, h, Coord2d.of(0.0, 0.0), false, "gfx/terobjs/chest", movement, 6.6, Collections.emptyList());
+      MovementScene.rasterObstacle(blocked, origin, w, h, Coord2d.of(0.0, 0.0), false, "gfx/terobjs/chest", movement, 6.6, Collections.emptyList());
       Coord core = cellAt(origin, Coord2d.of(0.0, 0.0));
       Assertions.assertTrue(blocked[core.y * w + core.x], "the Obstacle box is movement-solid");
       Coord insideNeg = cellAt(origin, Coord2d.of(4.0, 0.0));
       Assertions.assertFalse(blocked[insideNeg.y * w + insideNeg.x], "the Neg box is placement only and must not block walking");
       boolean[] negOnly = new boolean[w * h];
-      PrototypePathfinder.rasterObstacle(
+      MovementScene.rasterObstacle(
          negOnly,
          origin,
          w,
@@ -239,7 +385,7 @@ public class PathfinderFixtureTest {
 
    @Test
    void narrowValidAisleStaysOpenUnlessClearanceIsAppliedTwice() {
-      Coord2d origin = PrototypePathfinder.alignedOrigin(-22.0, -11.0);
+      Coord2d origin = MovementScene.alignedOrigin(-22.0, -11.0);
       int w = 24;
       int h = 12;
       boolean[] solid = new boolean[w * h];
@@ -248,21 +394,21 @@ public class PathfinderFixtureTest {
       Coord aisle = cellAt(origin, Coord2d.of(5.5, 9.0));
       Assertions.assertFalse(solid[aisle.y * w + aisle.x], "narrow valid cupboard aisle stays walkable");
       boolean[] dilated = Arrays.copyOf(solid, solid.length);
-      PrototypePathfinder.rasterObstacle(
+      MovementScene.rasterObstacle(
          dilated, origin, w, h, Coord2d.of(0.0, 0.0), true, CUPBOARD, List.<Coord2d[]>of(box10(0.0, 0.0)), 1.0, diamondBody()
       );
-      PrototypePathfinder.rasterObstacle(
+      MovementScene.rasterObstacle(
          dilated, origin, w, h, Coord2d.of(11.0, 0.0), true, CUPBOARD, List.<Coord2d[]>of(box10(11.0, 0.0)), 1.0, diamondBody()
       );
       Assertions.assertArrayEquals(solid, dilated, "player Minkowski must not run again on furniture");
       boolean[] twice = Arrays.copyOf(solid, solid.length);
-      PrototypePathfinder.dilate(twice, w, h, 1);
+      MovementScene.dilate(twice, w, h, 1);
       Assertions.assertTrue(twice[aisle.y * w + aisle.x], "applying occupancy dilation on top of exact furniture seals the aisle");
    }
 
    @Test
    void genuinelyTooNarrowAisleIsBlocked() {
-      Coord2d origin = PrototypePathfinder.alignedOrigin(-22.0, -11.0);
+      Coord2d origin = MovementScene.alignedOrigin(-22.0, -11.0);
       int w = 20;
       int h = 12;
       boolean[] solid = new boolean[w * h];

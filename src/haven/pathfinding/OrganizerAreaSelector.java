@@ -19,7 +19,7 @@ import java.util.List;
 public final class OrganizerAreaSelector {
    /** Number of clicks needed to define the rectangle (two opposite corners). */
    public static final int CLICK_COUNT = 2;
-   /** Number of explicit vertices used by Critical Routes. */
+   /** Number of explicit vertices used by organizer area selection. */
    public static final int VERTEX_COUNT = 4;
 
    public enum State { EMPTY, IN_PROGRESS, COMPLETE }

@@ -66,6 +66,7 @@ public class ProspectingWnd extends WindowX {
     
     private void fx(Dowse fx) {
 	slot = ui.gui.map.drawadd(fx);
+	thunder.rustroot.RustrootProspectorWnd.onCone(fx.origin, fx.a1, fx.a2, fx.quality, fx.r);
     }
     
     private static void attachEffect() {
@@ -89,6 +90,7 @@ public class ProspectingWnd extends WindowX {
     
     public static void item(WItem item) {
 	if(item != null) {
+	    thunder.rustroot.RustrootProspectorWnd.rememberExtract(item);
 	    QUALITIES.add(item.itemq.get().single());
 	}
     }
@@ -97,6 +99,7 @@ public class ProspectingWnd extends WindowX {
 	Matcher matcher = detect.matcher(text);
 	if(matcher.matches()) {
 	    detected = matcher.group(1);
+	    thunder.rustroot.RustrootProspectorWnd.onDirectResult(pc, detected);
 	} else if(mark != null) {
 	    mark.hide();
 	}
@@ -110,19 +113,24 @@ public class ProspectingWnd extends WindowX {
 	private static final Pipe.Op state = Pipe.Op.compose(VertexColor.instance, Rendered.last, States.Depthtest.none, States.maskdepth, Rendered.postpfx);
 	
 	private final Coord3f c;
+	private final Coord2d origin;
 	private final double a1;
 	private final double a2;
 	private final double r;
+	private final double quality;
 	private final Model model;
 	
 	protected Dowse(Gob gob, double a1, double a2, QualityList.Quality q) {
 	    super(gob, null);
+	    this.origin = gob.rc;
 	    this.c = new Coord3f((float) gob.rc.x, (float) -gob.rc.y, 0.1f);
 	    this.a1 = a1;
 	    this.a2 = a2;
 	    if(q == null) {
+		quality = 10;
 		r = 100;
 	    } else {
+		quality = q.value;
 		r = 110 * (q.value - 10);
 	    }
 	    model = new Model(Model.Mode.TRIANGLE_FAN, new VertexArray(fmt, new VertexArray.Buffer(v2(), DataBuffer.Usage.STREAM)), null);

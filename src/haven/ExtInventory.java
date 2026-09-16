@@ -45,6 +45,7 @@ public class ExtInventory extends Widget {
     private boolean needUpdate = false;
     private double waitUpdate = 0;
     private boolean once = true;
+    private boolean windowControlsReady = false;
     private WindowX wnd;
     private final ICheckBox chb_show = new ICheckBox("gfx/hud/btn-extlist", "", "-d", "-h");
     private final ICheckBox chb_repeat = new ICheckBox("gfx/hud/btn-repeat", "", "-d", "-h");
@@ -175,32 +176,39 @@ public class ExtInventory extends Widget {
     protected void added() {
 	wnd = null;//just in case
 	Window tmp;
-	//do not try to add if we are in the contents window
-	if(!(parent instanceof GItem.ContentsWindow)
-	    //or in the item
-	    && !(parent instanceof GItem)
+	if(!(parent instanceof GItem)
 	    //or if we have no window parent,
 	    && (tmp = getparent(Window.class)) != null
 	    //or it is not WindowX for some reason
 	    && tmp instanceof WindowX) {
-	    
 	    wnd = (WindowX) tmp;
-	    disabled = disabled || needDisableExtraInventory(wnd.caption());
-	    boolean vis = !disabled && wnd.cfg.getValue(CFG_SHOW, false);
-	    showInv = wnd.cfg.getValue(CFG_INV, true);
-	    if(!disabled) {
-		chb_show.a = vis;
-		wnd.addtwdg(chb_show);
-		if(!WindowDetector.isWindowType(wnd, InventorySorter.EXCLUDE)) {
-		    wnd.addtwdg(btn_sort);
-		    wnd.addtwdg(btn_stack);
-		    wnd.addtwdg(btn_unstack);
-		}
-		grouping.sel = Grouping.valueOf(wnd.cfg.getValue(CFG_GROUP, Grouping.NONE.name()));
-		needUpdate = true;
-	    }
 	}
 	hideExtension();
+    }
+
+    private void setupWindowControls() {
+	/* ContentsWindow is constructed around us before it is attached, so its
+	 * persisted configuration is not available from added(). Defer setup
+	 * until the window has completed that lifecycle step. */
+	if(windowControlsReady || (wnd == null) || (wnd.cfg == null) || (ui == null))
+	    return;
+	windowControlsReady = true;
+	disabled = disabled || needDisableExtraInventory(wnd.caption());
+	boolean vis = !disabled && wnd.cfg.getValue(CFG_SHOW, false);
+	showInv = wnd.cfg.getValue(CFG_INV, true);
+	if(!disabled) {
+	    chb_show.a = vis;
+	    wnd.addtwdg(chb_show);
+	    if(!WindowDetector.isWindowType(wnd, InventorySorter.EXCLUDE)) {
+		wnd.addtwdg(btn_sort);
+		wnd.addtwdg(btn_stack);
+		wnd.addtwdg(btn_unstack);
+	    }
+	    if(wnd instanceof GItem.ContentsWindow)
+		inv.enableDrops();
+	    grouping.sel = Grouping.valueOf(wnd.cfg.getValue(CFG_GROUP, Grouping.NONE.name()));
+	    needUpdate = true;
+	}
     }
     
     private void setVisibility(boolean v) {
@@ -312,6 +320,7 @@ public class ExtInventory extends Widget {
     
     @Override
     public void tick(double dt) {
+	setupWindowControls();
 	if(waitUpdate > 0) {waitUpdate -= dt;}
 	if(needUpdate && extension.visible && waitUpdate <= 0) {
 	    needUpdate = false;

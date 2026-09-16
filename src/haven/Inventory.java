@@ -327,6 +327,8 @@ public class Inventory extends Widget implements DTarget {
     }
     
     public void enableDrops() {
+	if(dropsCallback != null)
+	    return;
 	Window wnd = getparent(Window.class);
 	if(wnd != null) {
 	    canDropItems = true;

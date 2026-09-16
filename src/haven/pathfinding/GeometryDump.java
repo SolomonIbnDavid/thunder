@@ -20,8 +20,8 @@ final class GeometryDump {
 
    static JSONObject dump(
       GameUI gui,
-      PrototypePathfinder.Scene scene,
-      PrototypePathfinder.GobGeom target,
+      MovementScene.Scene scene,
+      MovementScene.GobGeom target,
       InteractionGoals.Result pose
    ) {
       JSONObject o = new JSONObject();
@@ -31,11 +31,11 @@ final class GeometryDump {
       }
       o.put("player_body", polys(scene == null ? null : scene.playerBody));
       o.put("player_body_size", size(scene == null ? null : scene.playerBody));
-      List<PrototypePathfinder.GobGeom> gobs = collect(gui, scene, target);
+      List<MovementScene.GobGeom> gobs = collect(gui, scene, target);
       JSONArray desks = new JSONArray();
       JSONArray stairs = new JSONArray();
       for (int i = 0; i < gobs.size(); i++) {
-         PrototypePathfinder.GobGeom g = gobs.get(i);
+         MovementScene.GobGeom g = gobs.get(i);
          if (g == null || g.resid == null) {
             continue;
          }
@@ -55,6 +55,8 @@ final class GeometryDump {
       o.put("solid_count", scene == null || scene.solids == null ? 0 : scene.solids.size());
       o.put("solid_cells", solidCells(scene, target));
       if (pose != null) {
+         o.put("face_centers_only", pose.spec != null && pose.spec.faceCentersOnly);
+         o.put("preferred_sides", pose.spec == null ? 0 : pose.spec.preferredSides);
          o.put("reason", pose.reason);
          o.put("dominant_reject", pose.ok() ? JSONObject.NULL : pose.dominantReject());
          o.put("reject_counts", counts(pose));
@@ -73,19 +75,19 @@ final class GeometryDump {
    }
 
    static boolean isStudyDesk(String resid) {
-      String name = PrototypePathfinder.baseResid(resid);
+      String name = MovementScene.baseResid(resid);
       return name != null && (name.equals("gfx/terobjs/studydesk") || name.equals("gfx/terobjs/studydesk-big"));
    }
 
    static boolean isStairs(String resid) {
-      String name = PrototypePathfinder.baseResid(resid);
+      String name = MovementScene.baseResid(resid);
       return name != null && (name.contains("downstairs") || name.contains("upstairs") || name.contains("cellarstairs"));
    }
 
-   private static List<PrototypePathfinder.GobGeom> collect(
-      GameUI gui, PrototypePathfinder.Scene scene, PrototypePathfinder.GobGeom target
+   private static List<MovementScene.GobGeom> collect(
+      GameUI gui, MovementScene.Scene scene, MovementScene.GobGeom target
    ) {
-      List<PrototypePathfinder.GobGeom> out = new ArrayList<PrototypePathfinder.GobGeom>();
+      List<MovementScene.GobGeom> out = new ArrayList<MovementScene.GobGeom>();
       if (gui != null && gui.ui != null && gui.ui.sess != null && gui.map != null) {
          Gob player = gui.map.player();
          synchronized (gui.ui.sess.glob.oc) {
@@ -99,7 +101,7 @@ final class GeometryDump {
                try {
                   String resid = gob.resid() == null ? "" : gob.resid();
                   if (isStudyDesk(resid) || isStairs(resid) || (target != null && gob.id == target.id)) {
-                     out.add(PrototypePathfinder.gobGeom(player, gob));
+                     out.add(MovementScene.gobGeom(player, gob));
                   }
                } catch (Loading ignored) {
                }
@@ -111,7 +113,7 @@ final class GeometryDump {
       return out;
    }
 
-   private static JSONObject deskEntry(PrototypePathfinder.GobGeom g) {
+   private static JSONObject deskEntry(MovementScene.GobGeom g) {
       JSONObject o = gobBase(g);
       o.put("obst", polys(g.obst));
       o.put("placement", polys(g.placement));
@@ -128,7 +130,7 @@ final class GeometryDump {
       return o;
    }
 
-   private static JSONObject stairsEntry(PrototypePathfinder.GobGeom g) {
+   private static JSONObject stairsEntry(MovementScene.GobGeom g) {
       JSONObject o = gobBase(g);
       o.put("obst", polys(g.obst));
       o.put("movement", polys(g.movement));
@@ -137,7 +139,7 @@ final class GeometryDump {
       return o;
    }
 
-   private static JSONObject gobBase(PrototypePathfinder.GobGeom g) {
+   private static JSONObject gobBase(MovementScene.GobGeom g) {
       JSONObject o = new JSONObject();
       o.put("id", g.id);
       o.put("resid", g.resid == null ? "" : g.resid);
@@ -146,7 +148,7 @@ final class GeometryDump {
       return o;
    }
 
-   private static JSONArray solidCells(PrototypePathfinder.Scene scene, PrototypePathfinder.GobGeom target) {
+   private static JSONArray solidCells(MovementScene.Scene scene, MovementScene.GobGeom target) {
       JSONArray out = new JSONArray();
       if (scene == null || scene.occupancy == null) {
          return out;
@@ -216,7 +218,7 @@ final class GeometryDump {
       return a;
    }
 
-   private static JSONArray nearbySolids(PrototypePathfinder.Scene scene, PrototypePathfinder.GobGeom target) {
+   private static JSONArray nearbySolids(MovementScene.Scene scene, MovementScene.GobGeom target) {
       JSONArray a = new JSONArray();
       if (scene == null || scene.solids == null) {
          return a;

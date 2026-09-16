@@ -90,19 +90,12 @@ public final class PathfinderDebug implements Feature {
          for (int y = focus.y - 26; y <= focus.y + 26; y++) {
             for (int x = focus.x - 26; x <= focus.x + 26; x++) {
                if (x >= 0 && y >= 0 && x < occ.w && y < occ.h) {
-                  byte v = occ.at(x, y);
                   boolean path = occ.onPath(x, y);
-                  if (v != 0 || path) {
-                     Color col = SOLID;
-                     if (v == 2) {
-                        col = DILATED;
-                     } else if (v == 3) {
-                        col = CARVED;
-                     } else if (v == 0) {
-                        col = ASTAR;
-                     }
-
-                     quad(g, mv, occ, x, y, col);
+                  if (path) {
+                     // Object collision is shown by the actual Gob hitbox.
+                     // Do not paint the old purple/orange occupancy tiles;
+                     // they are no longer the source of route legality.
+                     quad(g, mv, occ, x, y, ASTAR);
                   }
                }
             }
@@ -170,7 +163,7 @@ public final class PathfinderDebug implements Feature {
       if (mv != null) {
          Gob me = mv.player();
          if (me != null && me.rc != null) {
-            List<Coord2d[]> body = PrototypePathfinder.playerBodyOrigin(me);
+            List<Coord2d[]> body = MovementScene.playerBodyOrigin(me);
             g.chcolor(BODY);
             if (body != null && !body.isEmpty()) {
                for (Coord2d[] poly : body) {
@@ -381,7 +374,7 @@ public final class PathfinderDebug implements Feature {
          g.atext(diag, new Coord(12, y), 0.0, 0.0);
          y += 14;
          g.chcolor(TEXT);
-         g.atext("grid #solid  +inflated  o carve   cyan=walk  green=body  orange=want  cupboard #id W=walk V=via", new Coord(12, y), 0.0, 0.0);
+         g.atext("grid cyan=route only  object collision=drawn hitboxes  orange=want  cupboard #id W=walk V=via", new Coord(12, y), 0.0, 0.0);
          y += 14;
          String replan = PathfinderLog.lastReplanReason();
          g.atext(
@@ -653,19 +646,6 @@ public final class PathfinderDebug implements Feature {
 
          for (int i = from; i < recent.size(); i++) {
             JSONObject o = recent.get(i);
-            if (o.has("kind") && !o.has("waypoint_count")) {
-               // SurfaceController exec entries: these carry the replan/stream
-               // reasons (corner-clip, blocked segment, recovery) needed in a
-               // stuck dump.
-               out.printf(
-                  "  exec %s  reason=%s  outcome=%s%s%n",
-                  o.optString("kind"),
-                  o.optString("reason"),
-                  o.optString("outcome", "-"),
-                  o.optBoolean("blacklist") ? "  blacklist" : ""
-               );
-               continue;
-            }
             out.printf(
                "  %s%s  %s  clip=%s  wp=%d  nodes=%d  r=%.1f dil=%d%s%n",
                o.optBoolean("probe") ? "probe " : "",

@@ -3,9 +3,6 @@ package haven.pathfinding;
 import haven.Coord;
 import haven.Coord2d;
 import haven.nav.InteractionSpec;
-import haven.nav.NavDecision;
-import haven.nav.NavObservation;
-import haven.nav.NavOutcome;
 import haven.nav.NavPlanStatus;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -15,6 +12,39 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 public class InteractionGoalsTest {
+   @Test
+   public void stablePortsProduceAtMostOneCandidatePerSide() {
+      OccupancyGrid occ = open(21, 21);
+      InteractionSpec ordinary = new InteractionSpec(
+         "log", occ.world(10, 10), Coord2d.of(11.0, 2.75), InteractionSpec.ALL_SIDES,
+         0.5, 16.5, 0, null, "", null, "fallback", false, 0, true
+      );
+      List<Coord2d> ports = InteractionGoals.samplePoses(ordinary, occ);
+      Assertions.assertEquals(4, ports.size());
+      java.util.Set<Integer> sides = new java.util.HashSet<Integer>();
+      for (Coord2d port : ports) sides.add(InteractionGoals.sideOf(ordinary.origin, port));
+      Assertions.assertEquals(4, sides.size());
+   }
+
+   @Test
+   public void stablePortsKeepAllFourSidesForARotatedFootprint() {
+      OccupancyGrid occ = open(21, 21);
+      Coord2d origin = occ.world(10, 10);
+      List<Coord2d[]> diamond = Collections.singletonList(new Coord2d[]{
+         origin.add(0.0, -8.0), origin.add(8.0, 0.0),
+         origin.add(0.0, 8.0), origin.add(-8.0, 0.0)
+      });
+      InteractionSpec ordinary = new InteractionSpec(
+         "rotated", origin, Coord2d.of(8.0, 8.0), InteractionSpec.ALL_SIDES,
+         0.5, 16.5, 0, null, "", diamond, "live", false, 0, true
+      );
+      List<Coord2d> ports = InteractionGoals.samplePoses(ordinary, occ);
+      java.util.Set<Integer> sides = new java.util.HashSet<Integer>();
+      for (Coord2d port : ports) sides.add(InteractionGoals.sideOf(origin, port));
+      Assertions.assertEquals(4, ports.size());
+      Assertions.assertEquals(4, sides.size());
+   }
+
    private static OccupancyGrid open(int w, int h) {
       return OccupancyGrid.capture(
          Coord2d.of(0.0, 0.0), w, h, 2.75, new boolean[w * h], new boolean[w * h], new boolean[w * h], Coord.of(0, 0), Coord.of(w - 1, 0), Coord.of(w - 1, 0), Collections.emptyList()
@@ -37,10 +67,6 @@ public class InteractionGoalsTest {
 
    private static InteractionSpec spec(Coord2d origin, int sides, double min, double max, int clearance, Double facing) {
       return new InteractionSpec("t1", origin, Coord2d.of(1.375, 1.375), sides, min, max, clearance, facing, "target_gone");
-   }
-
-   private static NavObservation obs(long t, Coord2d p, boolean moving) {
-      return new NavObservation(t, p, moving, false, 0L, false, null, null);
    }
 
    @Test
@@ -136,6 +162,62 @@ public class InteractionGoalsTest {
       InteractionGoals.Result b = InteractionGoals.select(from, s, occ);
       Assertions.assertTrue(a.ok());
       Assertions.assertEquals(a.selected.cell, b.selected.cell);
+   }
+
+   @Test
+   void exactGeometryUsesRouteCostWithinACloseStandBand() {
+      InteractionGoals.Candidate farFace = new InteractionGoals.Candidate(
+         Coord.of(12, 4), Coord2d.of(33.0, 11.0), InteractionSpec.SIDE_E, 0.5, 4, true, 40.0, null, null
+      );
+      InteractionGoals.Candidate nearFace = new InteractionGoals.Candidate(
+         Coord.of(8, 4), Coord2d.of(22.0, 11.0), InteractionSpec.SIDE_W, 1.0, 4, true, 8.0, null, null
+      );
+      Assertions.assertTrue(
+         InteractionGoals.compareReachable(nearFace, farFace, true, 0.5) < 0,
+         "a marginally looser near-face stand must beat an expensive orbit to the far face"
+      );
+   }
+
+   @Test
+   void exactGeometryDoesNotChooseAConvenientButDistantStand() {
+      InteractionGoals.Candidate close = new InteractionGoals.Candidate(
+         Coord.of(10, 3), Coord2d.of(27.5, 8.25), InteractionSpec.SIDE_N, 0.5, 2, true, 30.0, null, null
+      );
+      InteractionGoals.Candidate distant = new InteractionGoals.Candidate(
+         Coord.of(15, 4), Coord2d.of(41.25, 11.0), InteractionSpec.SIDE_E, 10.0, 8, true, 2.0, null, null
+      );
+      Assertions.assertTrue(
+         InteractionGoals.compareReachable(close, distant, true, 0.5) < 0,
+         "route cost must not turn the interaction range into a far-away stopping pose"
+      );
+   }
+
+   @Test
+   void nearestRouteWinsWithoutSoftClearancePenalty() {
+      OccupancyGrid occ = solids(10, 9, new Coord[]{Coord.of(2, 1)}, false);
+      Coord2d from = occ.world(0, 2);
+      Coord near = Coord.of(3, 2);
+      Coord far = Coord.of(0, 6);
+      double[] weighted = LocalPlanner.occupancyCosts(from, occ);
+      double[] lengths = LocalPlanner.occupancyRouteLengths(from, occ);
+      double nearLength = lengths[near.y * occ.w + near.x];
+      double farLength = lengths[far.y * occ.w + far.x];
+
+      Assertions.assertTrue(nearLength < farLength,
+         "the near candidate must have the shorter legal route");
+      Assertions.assertTrue(weighted[near.y * occ.w + near.x] > weighted[far.y * occ.w + far.x],
+         "the old soft-clearance score would have selected the farther candidate");
+
+      InteractionGoals.Candidate nearCandidate = new InteractionGoals.Candidate(
+         near, occ.world(near.x, near.y), InteractionSpec.SIDE_E, 0.5, 1, true, nearLength, null, null
+      );
+      InteractionGoals.Candidate farCandidate = new InteractionGoals.Candidate(
+         far, occ.world(far.x, far.y), InteractionSpec.SIDE_S, 0.5, 8, true, farLength, null, null
+      );
+      Assertions.assertTrue(
+         InteractionGoals.compareReachable(nearCandidate, farCandidate, true, 0.5) < 0,
+         "a legal near side must beat a farther side even when the farther side has more open space"
+      );
    }
 
    @Test
@@ -264,32 +346,4 @@ public class InteractionGoalsTest {
       Assertions.assertNotEquals(picked, second.selected.cell);
    }
 
-   @Test
-   void interactionArrivalIsInteractNotReached() {
-      OccupancyGrid occ = open(16, 8);
-      Coord2d pose = occ.world(12, 4);
-      List<Coord2d> route = Arrays.asList(occ.world(1, 4), pose);
-      SurfaceController ctl = SurfaceController.forInteraction(pose, route, NavPlanStatus.REACHED, 2.475, 0.6875, 800L, 20000L, 3000L, null);
-      SurfaceController.Tick moving = ctl.step(obs(0L, occ.world(1, 4), true), occ);
-      Assertions.assertEquals(NavDecision.Kind.SEND_MOVEMENT, moving.decision.kind);
-      Assertions.assertNotEquals(NavDecision.Kind.INTERACT, moving.decision.kind);
-      SurfaceController.Tick arrived = ctl.step(obs(500L, pose, false), occ);
-      Assertions.assertEquals(NavDecision.Kind.INTERACT, arrived.decision.kind);
-      Assertions.assertEquals(SurfaceStream.Reason.INTERACT, arrived.reason);
-      Assertions.assertNotEquals(NavDecision.Kind.TERMINATE, arrived.decision.kind);
-      Assertions.assertNotEquals(NavOutcome.REACHED, arrived.decision.outcome);
-      SurfaceController.Tick wait = ctl.step(obs(550L, pose, false), occ);
-      Assertions.assertEquals(NavDecision.Kind.WAIT, wait.decision.kind);
-   }
-
-   @Test
-   void pointGoalStillTerminatesReached() {
-      OccupancyGrid occ = open(16, 8);
-      Coord2d pose = occ.world(12, 4);
-      List<Coord2d> route = Arrays.asList(occ.world(1, 4), pose);
-      SurfaceController ctl = SurfaceController.of(pose, route, NavPlanStatus.REACHED, 2.475, 0.6875, 800L, 20000L, 3000L);
-      SurfaceController.Tick arrived = ctl.step(obs(0L, pose, false), occ);
-      Assertions.assertEquals(NavDecision.Kind.TERMINATE, arrived.decision.kind);
-      Assertions.assertEquals(NavOutcome.REACHED, arrived.decision.outcome);
-   }
 }

@@ -3,8 +3,6 @@ package haven.pathfinding;
 import haven.Coord;
 import haven.Coord2d;
 import haven.nav.InteractionSpec;
-import haven.nav.NavDecision;
-import haven.nav.NavObservation;
 import haven.nav.NavPlan;
 import haven.nav.NavPlanStatus;
 import java.util.ArrayList;
@@ -123,6 +121,14 @@ public class ApproachGoalsTest {
    }
 
    private static InteractionSpec spec(String id, Coord2d[] poly) {
+      return spec(id, poly, false);
+   }
+
+   private static InteractionSpec spec(String id, Coord2d[] poly, boolean faceCentersOnly) {
+      return spec(id, poly, faceCentersOnly, 0);
+   }
+
+   private static InteractionSpec spec(String id, Coord2d[] poly, boolean faceCentersOnly, int preferredSides) {
       List<Coord2d[]> polys = new ArrayList<Coord2d[]>();
       polys.add(poly);
       double minx = poly[0].x;
@@ -131,7 +137,10 @@ public class ApproachGoalsTest {
       double maxy = poly[2].y;
       Coord2d origin = Coord2d.of((minx + maxx) * 0.5, (miny + maxy) * 0.5);
       Coord2d half = Coord2d.of((maxx - minx) * 0.5, (maxy - miny) * 0.5);
-      return new InteractionSpec(id, origin, half, InteractionSpec.ALL_SIDES, 0.5, 16.5, 0, null, "", polys, CollisionGeom.OBST);
+      return new InteractionSpec(
+         id, origin, half, InteractionSpec.ALL_SIDES, 0.5, 16.5, 0, null, "", polys, CollisionGeom.OBST,
+         faceCentersOnly, preferredSides
+      );
    }
 
    private static InteractionGoals.Geometry geom(Coord2d[][] solids) {
@@ -173,11 +182,84 @@ public class ApproachGoalsTest {
          Assertions.assertFalse(routeHits(r.pose.plan.smoothedRoute, cupboard(i)));
          List<Coord2d> route = r.pose.plan.smoothedRoute;
          if (route != null && route.size() >= 2 && occ.at(occ.cellOf(r.pose.selected.world).x, occ.cellOf(r.pose.selected.world).y) != OccupancyGrid.FREE) {
-            Assertions.assertTrue(route.get(route.size() - 2).dist(r.pose.selected.world) <= SurfaceStream.LAST_HOP + 1.0E-6);
+            Assertions.assertTrue(route.get(route.size() - 2).dist(r.pose.selected.world) <= InteractionGoals.LAST_HOP + 1.0E-6);
          }
          Assertions.assertEquals(OccupancyGrid.SOLID, occ.at(occ.cellOf(spec.origin).x, occ.cellOf(spec.origin).y));
       }
       Assertions.assertEquals(before, OccupancyGrid.encode(occ), "targets stay solid");
+   }
+
+   @Test
+   void packedDryingRackRowUsesStableFaceCentersAcrossEveryRack() {
+      Coord2d[] backWall = rect(15.0, 0.0, 125.0, 25.0);
+      Coord2d[][] racks = new Coord2d[6][];
+      for (int i = 0; i < racks.length; i++) {
+         double cx = 65.0 + i * 6.0;
+         racks[i] = rect(cx - 3.4375, 30.0, cx + 3.4375, 52.0);
+      }
+      Coord2d[][] solids = new Coord2d[racks.length + 1][];
+      solids[0] = backWall;
+      System.arraycopy(racks, 0, solids, 1, racks.length);
+      OccupancyGrid occ = rasterExact(solids);
+      InteractionGoals.Geometry g = new InteractionGoals.Geometry(Arrays.asList(solids), Collections.singletonList(rect(-4.2, -4.2, 4.2, 4.2)));
+
+      Coord2d from = Coord2d.of(110.0, 41.0);
+      for (int i = racks.length - 1; i >= 0; i--) {
+         InteractionSpec target = spec(
+            "dframe-" + i, racks[i], true, InteractionSpec.SIDE_N | InteractionSpec.SIDE_S
+         );
+         ApproachGoals.Result r = ApproachGoals.plan(from, target, occ, g);
+         Assertions.assertEquals(
+            ApproachGoals.Status.POSE_OK,
+            r.status,
+            "rack " + i + " " + (r.pose == null ? "" : r.pose.dominantReject() + " " + r.pose.rejectCounts)
+         );
+         Coord2d stand = r.pose.selected.world;
+         Assertions.assertFalse(InteractionGoals.overlapsFootprint(stand, target), "rack " + i + " center is never a destination");
+         Assertions.assertTrue(InteractionGoals.losClear(stand, target, occ, g), "rack " + i + " has a clear interaction line");
+         Assertions.assertTrue(InteractionGoals.routePolygonClear(r.pose.plan.smoothedRoute, target, g), "rack " + i + " route fits the player body");
+         Assertions.assertTrue(stand.y > 52.0, "rack " + i + " must use the common open aisle regardless of start angle " + stand);
+         Assertions.assertTrue(
+            Math.abs(stand.x - target.origin.x) < 1.0E-6 || Math.abs(stand.y - target.origin.y) < 1.0E-6,
+            "Nurgling-style approach stays on a face centerline " + stand
+         );
+         from = stand;
+      }
+   }
+
+   @Test
+   void packedRackEndPoseCanExitIntoTheSharedAisle() {
+      Coord2d[] backWall = rect(15.0, 0.0, 125.0, 25.0);
+      Coord2d[][] racks = new Coord2d[6][];
+      for (int i = 0; i < racks.length; i++) {
+         double cx = 65.0 + i * 6.0;
+         racks[i] = rect(cx - 3.4375, 30.0, cx + 3.4375, 52.0);
+      }
+      Coord2d[][] solids = new Coord2d[racks.length + 1][];
+      solids[0] = backWall;
+      System.arraycopy(racks, 0, solids, 1, racks.length);
+      List<Coord2d[]> body = Collections.singletonList(new Coord2d[]{
+         Coord2d.of(4.232898001855574, -0.28735780114766385),
+         Coord2d.of(-0.28735780114766385, -4.232898001855574),
+         Coord2d.of(-4.232898001855574, 0.28735780114766385),
+         Coord2d.of(0.28735780114766385, 4.232898001855574)
+      });
+      OccupancyGrid occ = rasterExact(solids);
+      InteractionGoals.Geometry geom = new InteractionGoals.Geometry(Arrays.asList(solids), body);
+
+      // Exact shape and 4.125u side stand from the live failure. It is a
+      // server-reachable pose at the end rack, but lies inside that rack's
+      // conservative body-inflated boundary when the next leg begins.
+      Coord2d endPose = Coord2d.of(102.5625, 41.0);
+      InteractionSpec nextRack = spec("dframe-next", racks[4], true);
+      ApproachGoals.Result next = ApproachGoals.plan(endPose, nextRack, occ, geom);
+      Assertions.assertEquals(ApproachGoals.Status.POSE_OK, next.status);
+      Assertions.assertTrue(next.pose.plan.smoothedRoute.size() >= 2,
+         "a legal row-end pose must have an executable route into the shared aisle");
+        Assertions.assertTrue(next.pose.plan.smoothedRoute.get(0).dist(endPose) <= LocalPlanner.CELL,
+                "the exit route should begin within one planning cell of the selected end pose");
+      Assertions.assertEquals(next.pose.selected.world,
+         next.pose.plan.smoothedRoute.get(next.pose.plan.smoothedRoute.size() - 1));
    }
 
    @Test
@@ -377,20 +459,14 @@ public class ApproachGoalsTest {
    }
 
    @Test
-   void arrivingAtThePoseIsAStopSignalNotAGameClick() {
+   void approachPlanningStopsAtTheSelectedPose() {
       Coord2d[][] solids = new Coord2d[][]{wall(), cupboard(1)};
       OccupancyGrid occ = raster(solids);
       InteractionSpec spec = spec("cup", cupboard(1));
       ApproachGoals.Result r = ApproachGoals.plan(Coord2d.of(45.5, 55.0), spec, occ, geom(solids));
       Assertions.assertTrue(r.ok());
-      SurfaceController ctl = SurfaceController.forInteraction(
-         r.pose.selected.world, r.pose.plan.smoothedRoute, r.pose.plan.status, 2.475, 0.6875, 800L, 20000L, 3000L, spec
-      );
-      NavObservation moving = new NavObservation(0L, Coord2d.of(45.5, 55.0), true, false, 0L, false, null, null);
-      SurfaceController.Tick first = ctl.step(moving, occ);
-      Assertions.assertNotEquals(NavDecision.Kind.INTERACT, first.decision.kind);
-      NavObservation arrived = new NavObservation(4000L, r.pose.selected.world, false, false, 0L, false, null, null);
-      SurfaceController.Tick stop = ctl.step(arrived, occ);
-      Assertions.assertEquals(NavDecision.Kind.INTERACT, stop.decision.kind, "stream stop; the client must not turn this into rclick");
+      List<Coord2d> route = r.pose.plan.smoothedRoute;
+      Assertions.assertEquals(r.pose.selected.world, route.get(route.size() - 1));
+      Assertions.assertFalse(InteractionGoals.overlapsFootprint(r.pose.selected.world, spec));
    }
 }

@@ -37,17 +37,17 @@ public final class InteractionTarget {
       this.resolvedById = resolvedById;
    }
 
-   public static InteractionTarget of(PrototypePathfinder.GobGeom g, String kind, String expectedResult, String surface) {
+   public static InteractionTarget of(MovementScene.GobGeom g, String kind, String expectedResult, String surface) {
       if (g == null) {
          return null;
       }
       return new InteractionTarget(
-         g.id, PrototypePathfinder.baseResid(g.resid), g.rc, kind, kindClass(g), expectedResult, surface == null ? "" : surface, true
+         g.id, MovementScene.baseResid(g.resid), g.rc, kind, kindClass(g), expectedResult, surface == null ? "" : surface, true
       );
    }
 
    /** Refresh the observed position and surface without changing identity. */
-   public InteractionTarget refreshed(PrototypePathfinder.GobGeom live, String surface, boolean byId) {
+   public InteractionTarget refreshed(MovementScene.GobGeom live, String surface, boolean byId) {
       return new InteractionTarget(this.gobId, this.resid, live != null ? live.rc : this.lastRc, this.kind,
          this.kindClass, this.expectedResult, surface == null ? this.surface : surface, byId);
    }
@@ -58,14 +58,14 @@ public final class InteractionTarget {
     * identity (same resource, same interaction classification, approximate
     * location). Never returns an arbitrary nearby object of another kind.
     */
-   public PrototypePathfinder.GobGeom resolveIn(PrototypePathfinder.Scene scene) {
+   public MovementScene.GobGeom resolveIn(MovementScene.Scene scene) {
       if (scene == null || scene.gobs == null) {
          return null;
       }
-      PrototypePathfinder.GobGeom byId = null;
-      PrototypePathfinder.GobGeom byFallback = null;
+      MovementScene.GobGeom byId = null;
+      MovementScene.GobGeom byFallback = null;
       for (int i = 0; i < scene.gobs.size(); i++) {
-         PrototypePathfinder.GobGeom g = scene.gobs.get(i);
+         MovementScene.GobGeom g = scene.gobs.get(i);
          if (g == null || g.rc == null) {
             continue;
          }
@@ -87,13 +87,13 @@ public final class InteractionTarget {
     * Re-resolve in a broader scan (targets outside the observed scene list).
     * Same rules as {@link #resolveIn}: ID first, then stable fallback.
     */
-   public PrototypePathfinder.GobGeom resolveIn(List<PrototypePathfinder.GobGeom> gobs) {
+   public MovementScene.GobGeom resolveIn(List<MovementScene.GobGeom> gobs) {
       if (gobs == null) {
          return null;
       }
-      PrototypePathfinder.GobGeom byFallback = null;
+      MovementScene.GobGeom byFallback = null;
       for (int i = 0; i < gobs.size(); i++) {
-         PrototypePathfinder.GobGeom g = gobs.get(i);
+         MovementScene.GobGeom g = gobs.get(i);
          if (g == null || g.rc == null) {
             continue;
          }
@@ -108,11 +108,11 @@ public final class InteractionTarget {
    }
 
    /** Same resource and interaction classification — reloads keep this stable. */
-   public boolean sameIdentity(PrototypePathfinder.GobGeom g) {
+   public boolean sameIdentity(MovementScene.GobGeom g) {
       if (g == null) {
          return false;
       }
-      if (this.resid == null || !this.resid.equals(PrototypePathfinder.baseResid(g.resid))) {
+      if (this.resid == null || !this.resid.equals(MovementScene.baseResid(g.resid))) {
          return false;
       }
       return this.kindClass.equals(kindClass(g));
@@ -123,15 +123,15 @@ public final class InteractionTarget {
     * unchanged. A changed gob ID alone is allowed (map reload) as long as the
     * stable identity matches at the same location.
     */
-   public boolean compatibleWith(PrototypePathfinder.GobGeom g) {
+   public boolean compatibleWith(MovementScene.GobGeom g) {
       return g != null && sameIdentity(g);
    }
 
-   public boolean moved(PrototypePathfinder.GobGeom live) {
+   public boolean moved(MovementScene.GobGeom live) {
       return live == null || live.rc == null || this.lastRc == null || live.rc.dist(this.lastRc) > RESOLVE_RADIUS;
    }
 
-   static String kindClass(PrototypePathfinder.GobGeom g) {
+   static String kindClass(MovementScene.GobGeom g) {
       if (g == null) {
          return "object";
       }

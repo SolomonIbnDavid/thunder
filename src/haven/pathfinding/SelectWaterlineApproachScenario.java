@@ -12,7 +12,6 @@ import haven.MapFile;
 import haven.Moving;
 import haven.UI;
 import haven.Utils;
-import haven.NamedPlaceResolver.Place;
 import java.io.IOException;
 import java.io.Writer;
 import java.nio.file.Files;
@@ -52,9 +51,9 @@ final class SelectWaterlineApproachScenario implements PfTestRunner.Scenario {
             if (run.cancelled) {
                throw new PfTestRunner.Cancelled();
             } else {
-               PrototypePathfinder.Scene scene;
+               MovementScene.Scene scene;
                synchronized (ui) {
-                  scene = PrototypePathfinder.observe(gui);
+                  scene = MovementScene.observe(gui);
                }
 
                TransitionApproachSelector.Selection sel = TransitionApproachSelector.waterlineApproach(scene);

@@ -102,8 +102,11 @@ public class SkelSprite extends Sprite implements Sprite.CUpd, EquipTarget, Spri
     }
     public Collection<Location.Chain> getloc() {
 	Collection<Location.Chain> ret = new ArrayList<>(slots.size());
-	for(RenderTree.Slot slot : slots)
-	    ret.add(slot.state().get(Homo3D.loc));
+	for(RenderTree.Slot slot : slots) {
+	    Location.Chain loc = slot.state().get(Homo3D.loc);
+	    if(loc != null)
+		ret.add(loc);
+	}
 	return(ret);
     }
     public double getv() {

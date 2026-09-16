@@ -3,6 +3,7 @@ package auto;
 import haven.*;
 import me.ender.ClientUtils;
 import me.ender.ItemHelpers;
+import haven.pathfinding.WorldObjectRegistry;
 
 import java.util.*;
 import java.util.function.Predicate;
@@ -18,12 +19,20 @@ import me.ender.ItemHelpers;
 
 public class Actions {
     public static void fuelGob(GameUI gui, String name, String fuel, int count) {
-	List<ITarget> targets = getNearest(gui, name, 1, 33);
+	Gob player = gui == null || gui.map == null ? null : gui.map.player();
+	WorldObjectRegistry.Snapshot world = WorldObjectRegistry.snapshot(gui, player, 33);
+	List<ITarget> targets = world.objects.stream()
+	    .filter(e -> e.category == WorldObjectRegistry.Category.SMELTER)
+	    .filter(e -> e.resource.contains(name))
+	    .sorted(Comparator.comparingDouble(e -> player == null ? 0 : player.rc.dist(e.position)))
+	    .limit(1)
+	    .map(e -> (ITarget)new GobTarget(e.gob))
+	    .collect(Collectors.toList());
 	
 	if(!targets.isEmpty()) {
 	    Bot.process(targets).actions(fuelWith(gui, fuel, count)).start(gui.ui);
 	} else {
-	    gui.error("Cannot find target to add fuel to");
+	    gui.error("Cannot find target to add fuel to" + (world.unresolved > 0 ? " (" + world.unresolved + " nearby object(s) still loading)" : ""));
 	}
     }
     
@@ -41,9 +50,25 @@ public class Actions {
 	    .collect(Collectors.toList());
 	
 	Bot.process(targets).actions(
-	    ITarget::rclick_shift,
-	    (target, bot) -> Targets.gob(target).waitRemoval()
+	    (target, bot) -> {
+		if(!pickupTarget(target, bot, 15000L)) bot.cancel("Auto-pick target did not disappear.");
+	    }
 	).start(gui.ui);
+    }
+
+    /** The native Auto-pick Stuff operation without starting a second Bot.
+     * Long-running automations can share the proven shift-click behavior while
+     * retaining ownership of the current task. */
+    public static boolean pickupTarget(ITarget target, Bot bot, long timeoutMs) throws InterruptedException {
+	if(target == null || bot == null) return false;
+	if(target.disposed()) return true;
+	target.rclick_shift(bot);
+	long deadline = System.currentTimeMillis() + Math.max(0L, timeoutMs);
+	while(!target.disposed() && System.currentTimeMillis() < deadline) {
+	    bot.checkCancelled();
+	    Thread.sleep(50L);
+	}
+	return target.disposed();
     }
     
     public static void pickup(GameUI gui) {

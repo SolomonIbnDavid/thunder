@@ -51,7 +51,7 @@ public class InteractionVerifierTest {
 
    @Test
    void houseDoorRevalidationUsesDoorOriginNotHullRc() {
-      PrototypePathfinder.GobGeom g = new PrototypePathfinder.GobGeom();
+      MovementScene.GobGeom g = new MovementScene.GobGeom();
       g.id = 9L;
       g.resid = "gfx/terobjs/arch/stonemansion";
       g.rc = Coord2d.of(0.0, 0.0);

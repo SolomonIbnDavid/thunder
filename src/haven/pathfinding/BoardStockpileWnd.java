@@ -16,7 +16,7 @@ import java.nio.file.Paths;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-/** Minimal Navigation Lab board-stockpile panel; planning stays worker-side. */
+/** Minimal Thunder board-stockpile panel; planning stays worker-side. */
 public final class BoardStockpileWnd extends Hidewnd {
     private static final int W = UI.scale(300);
     private static BoardStockpileWnd current;

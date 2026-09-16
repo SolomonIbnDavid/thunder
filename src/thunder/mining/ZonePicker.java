@@ -5,6 +5,7 @@ import haven.Coord;
 import haven.MCache;
 import haven.MapView;
 import haven.Material;
+import haven.UI;
 import haven.render.BaseColor;
 import haven.render.States;
 
@@ -33,6 +34,12 @@ public class ZonePicker implements MapView.Grabber {
         ROLE_RGB.put(MiningZoneStore.ROLE_STOCKPILE, new Integer[]{255, 160, 0});   // orange
         ROLE_RGB.put(MiningZoneStore.ROLE_WATER,     new Integer[]{0, 160, 255});   // blue
         ROLE_RGB.put(MiningZoneStore.ROLE_FOOD,      new Integer[]{0, 220, 100});   // green
+    }
+
+    /** Registers a per-role highlight color for a non-mining feature (e.g. the Fish
+     *  Spit-Roast Bot) without coupling this class to that feature's package. */
+    public static synchronized void registerRoleColor(String role, Integer[] rgb) {
+        ROLE_RGB.put(role, rgb);
     }
     private static final Integer[] DEFAULT_RGB = {255, 255, 255};
 
@@ -94,6 +101,7 @@ public class ZonePicker implements MapView.Grabber {
     private final Consumer<Area> onPicked;
     private Coord downTile;
     private ZoneVisual preview;
+    private UI.Grab mouseGrab;
 
     private ZonePicker(MapView map, Integer[] previewRgb, Consumer<Area> onPicked) {
         this.map = map;
@@ -121,6 +129,7 @@ public class ZonePicker implements MapView.Grabber {
     public static synchronized void cancel() {
         if(active != null) {
             active.xl.mv = false;
+            active.releaseMouseGrab();
             active.map.release(active.xl);
             if(active.preview != null) {active.preview.destroy();}
             active = null;
@@ -132,6 +141,11 @@ public class ZonePicker implements MapView.Grabber {
         downTile = mc.div(MCache.tilesz2);
         preview = new ZoneVisual(map, previewRgb, areaFor(downTile, downTile));
         xl.mv = true; // GrabXL only forwards mmousemove while this is set (see Selector)
+        // Keep receiving the release even when a large drag ends over the setup
+        // window or another widget. Without this, the old saved zone remains in
+        // place and can look like a newly selected 1x1 area at runtime.
+        releaseMouseGrab();
+        mouseGrab = map.ui.grabmouse(map);
         return true;
     }
 
@@ -142,6 +156,7 @@ public class ZonePicker implements MapView.Grabber {
 
     public boolean mmouseup(Coord mc, int button) {
         xl.mv = false;
+        releaseMouseGrab();
         if(downTile == null) {return true;}
         Area area = areaFor(downTile, mc.div(MCache.tilesz2));
 
@@ -159,10 +174,17 @@ public class ZonePicker implements MapView.Grabber {
 
     public boolean mmousewheel(Coord mc, int amount) {return false;}
 
-    private static Area areaFor(Coord a, Coord b) {
+    static Area areaFor(Coord a, Coord b) {
         Coord ul = Coord.of(Math.min(a.x, b.x), Math.min(a.y, b.y));
         Coord br = Coord.of(Math.max(a.x, b.x) + 1, Math.max(a.y, b.y) + 1);
         return new Area(ul, br);
+    }
+
+    private void releaseMouseGrab() {
+        if(mouseGrab != null) {
+            mouseGrab.remove();
+            mouseGrab = null;
+        }
     }
 
     /** Shows (or repositions) a persistent colored highlight for a designated zone. */

@@ -12,7 +12,6 @@ import haven.MapFile;
 import haven.Moving;
 import haven.UI;
 import haven.Utils;
-import haven.NamedPlaceResolver.Place;
 import java.io.IOException;
 import java.io.Writer;
 import java.nio.file.Files;
@@ -82,9 +81,9 @@ final class MoveToAutoOpenGroundScenario implements PfTestRunner.Scenario {
          } else if (run.cancelled) {
             throw new PfTestRunner.Cancelled();
          } else {
-            PrototypePathfinder.Scene scene;
+            MovementScene.Scene scene;
             synchronized (ui) {
-               scene = PrototypePathfinder.observe(gui);
+               scene = MovementScene.observe(gui);
             }
 
             NavigationTestSpotSelector.Selection sel = NavigationTestSpotSelector.openGround(scene);
@@ -95,9 +94,9 @@ final class MoveToAutoOpenGroundScenario implements PfTestRunner.Scenario {
                throw new PfTestRunner.Cancelled();
             } else {
                Coord2d target = sel.targetWorld;
-               PrototypePathfinder.Scene fresh;
+               MovementScene.Scene fresh;
                synchronized (ui) {
-                  fresh = PrototypePathfinder.observe(gui);
+                  fresh = MovementScene.observe(gui);
                }
 
                JSONObject reval = revalidationCheck(fresh, target, 44.0);
@@ -124,7 +123,7 @@ final class MoveToAutoOpenGroundScenario implements PfTestRunner.Scenario {
    }
 
    static MoveToAutoOpenGroundScenario.MoveResult liveMove(GameUI gui, Coord2d target, Bot bot) {
-      PrototypePathfinder.Plan plan = PrototypePathfinder.planAny(gui, Collections.singletonList(target), true);
+      MovementScene.Plan plan = MovementScene.planAny(gui, Collections.singletonList(target), true);
       return walkPlan(gui, plan, target, bot, 60000L, 60000L);
    }
 
@@ -143,12 +142,12 @@ final class MoveToAutoOpenGroundScenario implements PfTestRunner.Scenario {
          if (at != null && dest != null && at.dist(dest) <= 3.0) {
             return null;
          }
-         PrototypePathfinder.Plan plan = PrototypePathfinder.planAny(gui, Collections.singletonList(dest), true);
-         if (plan == null || plan.waypoints == null || plan.waypoints.size() < 2 || plan.status == PrototypePathfinder.Plan.Status.FAILED) {
+         MovementScene.Plan plan = MovementScene.planAny(gui, Collections.singletonList(dest), true);
+         if (plan == null || plan.waypoints == null || plan.waypoints.size() < 2 || plan.status == MovementScene.Plan.Status.FAILED) {
             Thread.sleep(200L);
-            plan = PrototypePathfinder.planAny(gui, Collections.singletonList(dest), true);
+            plan = MovementScene.planAny(gui, Collections.singletonList(dest), true);
          }
-         if (plan == null || plan.waypoints == null || plan.waypoints.size() < 2 || plan.status == PrototypePathfinder.Plan.Status.FAILED) {
+         if (plan == null || plan.waypoints == null || plan.waypoints.size() < 2 || plan.status == MovementScene.Plan.Status.FAILED) {
             return "no route around obstacles" + (plan == null ? "" : " (" + plan.status + ")");
          }
          long hopBudget = Math.min(25000L, deadline - System.currentTimeMillis());
@@ -183,24 +182,23 @@ final class MoveToAutoOpenGroundScenario implements PfTestRunner.Scenario {
    }
 
    /** One jammed polyline is a replan, not a route abort. */
-   static boolean retryAfterWalk(WaypointWalker.Result walk) {
-      return walk == WaypointWalker.Result.STUCK
-         || walk == WaypointWalker.Result.TIMEOUT
-         || walk == WaypointWalker.Result.SHORT_STOP;
+   static boolean retryAfterWalk(ConfirmedRouteRunner.Status walk) {
+      return walk == ConfirmedRouteRunner.Status.BLOCKED
+         || walk == ConfirmedRouteRunner.Status.TIMEOUT;
    }
 
    /**
     * A stand behind a desk is often occupancy-SNAPPED to the nearest free cell.
     * Arriving there (within a tile and a half) is reaching the stand, not a stall.
     */
-   static boolean closeEnough(PrototypePathfinder.Plan plan, Coord2d now, Coord2d dest) {
+   static boolean closeEnough(MovementScene.Plan plan, Coord2d now, Coord2d dest) {
       if (now == null || dest == null) {
          return false;
       }
       if (now.dist(dest) <= 8.0) {
          return true;
       }
-      if (plan == null || plan.status != PrototypePathfinder.Plan.Status.SNAPPED || plan.waypoints == null || plan.waypoints.isEmpty()) {
+      if (plan == null || plan.status != MovementScene.Plan.Status.SNAPPED || plan.waypoints == null || plan.waypoints.isEmpty()) {
          return false;
       }
       Coord2d end = plan.waypoints.get(plan.waypoints.size() - 1);
@@ -208,31 +206,23 @@ final class MoveToAutoOpenGroundScenario implements PfTestRunner.Scenario {
    }
 
    static MoveToAutoOpenGroundScenario.MoveResult walkPlan(
-      GameUI gui, PrototypePathfinder.Plan plan, Coord2d fallbackPos, Bot bot, long waypointTimeoutMs, long walkBudgetMs
+      GameUI gui, MovementScene.Plan plan, Coord2d fallbackPos, Bot bot, long waypointTimeoutMs, long walkBudgetMs
    ) {
       long t0 = System.currentTimeMillis();
       Coord2d before = PfTestHarness.observePos(gui);
       if (plan != null && plan.waypoints.size() >= 2) {
-         WaypointWalker.Params params = new WaypointWalker.Params(2.475, 0.6875, 800L, waypointTimeoutMs, 3000L);
+         ConfirmedRouteRunner.Params params = new ConfirmedRouteRunner.Params(
+            2.475, 0.6875, 800L, waypointTimeoutMs, 3000L, 220.0, 2);
 
          try {
-            WaypointWalker.Result r;
-            List<GatePassage.Crossing> crossings = GatePassage.observedCrossings(gui, plan.waypoints);
-            if (crossings.isEmpty()) {
-               r = WaypointWalker.execute(
-                  WaypointWalker.liveEnv(gui), bot, plan.waypoints, 0, walkBudgetMs, params, NamedPlaceNavigator.NOOP,
-                  haven.nav.NavPlanStatus.valueOf(plan.status.name()), fallbackPos
-               );
-            } else {
-               // The route crosses a pass-through gate: walk with open/pass/close.
-               r = GatePassage.resultFor(GatePassage.walk(gui, bot, plan.waypoints, walkBudgetMs, NamedPlaceNavigator.NOOP));
-            }
+            ConfirmedRouteRunner.Result run = ConfirmedRouteRunner.execute(
+               gui, bot, plan.waypoints, fallbackPos, walkBudgetMs, params);
             Coord2d after = PfTestHarness.observePos(gui);
             return new MoveToAutoOpenGroundScenario.MoveResult(
                plan.status,
                plan.expanded,
                plan.obstacles,
-               r,
+               run.status,
                null,
                after != null ? after : (before != null ? before : fallbackPos),
                PfTestHarness.elapsed(t0)
@@ -251,7 +241,7 @@ final class MoveToAutoOpenGroundScenario implements PfTestRunner.Scenario {
             );
          }
       } else {
-         PrototypePathfinder.Plan.Status st = plan == null ? PrototypePathfinder.Plan.Status.FAILED : plan.status;
+         MovementScene.Plan.Status st = plan == null ? MovementScene.Plan.Status.FAILED : plan.status;
          int expanded = plan == null ? 0 : plan.expanded;
          int obstacles = plan == null ? 0 : plan.obstacles;
          return new MoveToAutoOpenGroundScenario.MoveResult(
@@ -264,7 +254,7 @@ final class MoveToAutoOpenGroundScenario implements PfTestRunner.Scenario {
       return PfTestHarness.autoMovePreflightChecks("move_to_auto_open_ground", inGame, playerPresent, mapfileAvailable, playerIdle, botBusy);
    }
 
-   static JSONObject revalidationCheck(PrototypePathfinder.Scene fresh, Coord2d target, double maxDist) {
+   static JSONObject revalidationCheck(MovementScene.Scene fresh, Coord2d target, double maxDist) {
       if (fresh == null || fresh.player == null) {
          return PfTestRunner.check("target_revalidated", false, "player gob not observable at revalidation (no-move)");
       } else if (fresh.moving) {
@@ -317,14 +307,14 @@ final class MoveToAutoOpenGroundScenario implements PfTestRunner.Scenario {
          switch (mv.walk) {
             case ARRIVED:
                return PfTestRunner.check("walk_completed", true, "walker verified arrival at every waypoint (" + mv.elapsedMs + "ms)");
-            case REJECTED:
-               return PfTestRunner.check("walk_completed", false, "walker REJECTED: click never accepted / vehicle state changed");
-            case SHORT_STOP:
-               return PfTestRunner.check("walk_completed", false, "walker SHORT_STOP: stopped short of a waypoint");
-            case STUCK:
-               return PfTestRunner.check("walk_completed", false, "walker STUCK: recovery exhausted");
+            case BLOCKED:
+               return PfTestRunner.check("walk_completed", false, "confirmed route BLOCKED: stopped short of a corner");
             case TIMEOUT:
                return PfTestRunner.check("walk_completed", false, "walker TIMEOUT: walk budget exhausted (60000ms)");
+            case MOBILITY_CHANGED:
+               return PfTestRunner.check("walk_completed", false, "confirmed route stopped because mobility changed");
+            case PLAYER_GONE:
+               return PfTestRunner.check("walk_completed", false, "confirmed route could not observe the player");
             default:
                throw new AssertionError(mv.walk);
          }
@@ -344,7 +334,7 @@ final class MoveToAutoOpenGroundScenario implements PfTestRunner.Scenario {
          }
       }
 
-      boolean walkVerified = mv != null && mv.walk == WaypointWalker.Result.ARRIVED;
+      boolean walkVerified = mv != null && mv.walk == ConfirmedRouteRunner.Status.ARRIVED;
       return arrivalCheck(walkVerified, present, idle, at, target);
    }
 
@@ -394,7 +384,7 @@ final class MoveToAutoOpenGroundScenario implements PfTestRunner.Scenario {
          note = "hard wall-clock deadline exceeded (120000ms); movement interrupted";
       } else if (mv != null && mv.cancelledDetail != null) {
          note = "movement cancelled (detail: " + mv.cancelledDetail + ")";
-      } else if (mv != null && mv.walk != WaypointWalker.Result.ARRIVED) {
+      } else if (mv != null && mv.walk != ConfirmedRouteRunner.Status.ARRIVED) {
          note = "movement did not verify arrival at the selected target";
       }
 
@@ -407,7 +397,7 @@ final class MoveToAutoOpenGroundScenario implements PfTestRunner.Scenario {
    ) {
       JSONObject f = new JSONObject();
       f.put("moved", mv != null && (mv.walk != null || mv.cancelledDetail != null));
-      f.put("arrived", mv != null && mv.walk == WaypointWalker.Result.ARRIVED);
+      f.put("arrived", mv != null && mv.walk == ConfirmedRouteRunner.Status.ARRIVED);
       f.put("profile", NavigationTestSpotSelector.Profile.OPEN_GROUND.name());
       f.put("status", status == null ? "NOT_STARTED" : status);
       if (sel != null) {
@@ -455,19 +445,19 @@ final class MoveToAutoOpenGroundScenario implements PfTestRunner.Scenario {
    }
 
    static final class MoveResult {
-      final PrototypePathfinder.Plan.Status planStatus;
+      final MovementScene.Plan.Status planStatus;
       final int expanded;
       final int obstacles;
-      final WaypointWalker.Result walk;
+      final ConfirmedRouteRunner.Status walk;
       final String cancelledDetail;
       final Coord2d endPos;
       final long elapsedMs;
 
       MoveResult(
-         PrototypePathfinder.Plan.Status planStatus,
+         MovementScene.Plan.Status planStatus,
          int expanded,
          int obstacles,
-         WaypointWalker.Result walk,
+         ConfirmedRouteRunner.Status walk,
          String cancelledDetail,
          Coord2d endPos,
          long elapsedMs

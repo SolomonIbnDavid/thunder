@@ -3,9 +3,6 @@ package haven.pathfinding;
 import haven.Coord;
 import haven.Coord2d;
 import haven.nav.InteractionSpec;
-import haven.nav.NavDecision;
-import haven.nav.NavObservation;
-import haven.nav.NavOutcome;
 import haven.nav.NavPlanStatus;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -222,16 +219,9 @@ public class IndoorStairsApproachTest {
       InteractionGoals.Result r = InteractionGoals.select(playerSouth(), spec, occ);
       Assertions.assertTrue(r.ok(), r.reason);
       List<Coord2d> route = r.plan.smoothedRoute;
-      SurfaceController ctl = SurfaceController.forInteraction(
-         r.selected.world, route, r.plan.status, 2.475, 0.6875, 800L, 20000L, 3000L, spec
-      );
-      NavObservation moving = new NavObservation(0L, playerSouth(), true, false, 0L, false, null, null);
-      SurfaceController.Tick first = ctl.step(moving, occ);
-      Assertions.assertNotEquals(NavDecision.Kind.INTERACT, first.decision.kind);
-      Assertions.assertNotEquals(NavOutcome.REACHED, first.decision.outcome);
-      NavObservation arrived = new NavObservation(4000L, r.selected.world, false, false, 0L, false, null, null);
-      SurfaceController.Tick click = ctl.step(arrived, occ);
-      Assertions.assertEquals(NavDecision.Kind.INTERACT, click.decision.kind);
+      Assertions.assertTrue(route.size() >= 2);
+      Assertions.assertEquals(r.selected.world, route.get(route.size() - 1));
+      Assertions.assertFalse(InteractionGoals.overlapsFootprint(r.selected.world, spec));
    }
 
    private static Coord2d[] authDesk() {
@@ -371,16 +361,8 @@ public class IndoorStairsApproachTest {
       InteractionSpec spec = stairsSpec();
       InteractionGoals.Result r = InteractionGoals.select(playerSouth(), spec, occ, authGeom());
       Assertions.assertTrue(r.ok(), r.reason);
-      SurfaceController ctl = SurfaceController.forInteraction(
-         r.selected.world, r.plan.smoothedRoute, r.plan.status, 2.475, 0.6875, 800L, 20000L, 3000L, spec
-      );
-      ctl.setExactGeometry(authSolids(), playerDiamond());
-      NavObservation moving = new NavObservation(0L, playerSouth(), true, false, 0L, false, null, null);
-      SurfaceController.Tick first = ctl.step(moving, occ);
-      Assertions.assertNotEquals(NavDecision.Kind.INTERACT, first.decision.kind);
-      NavObservation arrived = new NavObservation(4000L, r.selected.world, false, false, 0L, false, null, null);
-      SurfaceController.Tick click = ctl.step(arrived, occ);
-      Assertions.assertEquals(NavDecision.Kind.INTERACT, click.decision.kind);
+      Assertions.assertEquals(r.selected.world, r.plan.smoothedRoute.get(r.plan.smoothedRoute.size() - 1));
+      Assertions.assertTrue(InteractionGoals.poseFits(r.selected.world, spec, occ, authGeom()));
    }
 
    private static boolean routeGoesEast(List<Coord2d> route) {
@@ -437,7 +419,7 @@ public class IndoorStairsApproachTest {
       Coord2d approach = InteractionGoals.nearestGridApproach(playerSouth(), pose, occ);
       Assertions.assertNotNull(approach, "need a FREE cell next to the sealed hug");
       Assertions.assertEquals(OccupancyGrid.FREE, occ.at(occ.cellOf(approach).x, occ.cellOf(approach).y));
-      Assertions.assertTrue(approach.dist(pose) <= SurfaceStream.LAST_HOP + 1.0E-6, "approach=" + approach + " pose=" + pose);
+      Assertions.assertTrue(approach.dist(pose) <= InteractionGoals.LAST_HOP + 1.0E-6, "approach=" + approach + " pose=" + pose);
    }
 
    private static List<Coord2d[]> livePlayer() {

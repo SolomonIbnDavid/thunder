@@ -24,6 +24,7 @@ public class WindowDetector {
     public static final String WND_FINERY_FORGE = "Finery Forge";
     public static final String WND_STACK_FURNACE = "Stack furnace";
     public static final String WND_CHANGE_NAME = "Change Name";
+    public static final String WND_BAIT = thunder.FishingBiteList.CAPTION;
     
     private static final Object lock = new Object();
     private static final Set<Window> toDetect = new HashSet<>();
@@ -81,6 +82,8 @@ public class WindowDetector {
     private static void recognize(Window window) {
 	if(isWindowType(window, WND_TABLE)) {
 	    extendTableWindow(window);
+	} else if(isWindowType(window, WND_BAIT)) {
+	    thunder.FishingHelper.attach(window);
 	} else {
 	    AnimalFarm.processCattleInfo(window);
 	}

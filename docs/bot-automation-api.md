@@ -78,16 +78,19 @@ pattern.
   `thunder/cookbook/EatingHelperWnd.java` (`autoTargetStat` vs `selectedStat`,
   `startAutoRound`)
 
-- **Walking to a gob** (not a tile): default arrival radius (`tilesz*0.6`) is
-  tile-sized; a gob's collision keeps you further out, so `arrived` never
-  fires. Use `MapHelper.GOB_ARRIVE_RADIUS` (`tilesz*1.5`) via the 4-arg
-  `walkTo(gui, target, timeoutMs, arriveRadius)`.
+- **New bot movement goes through `BotMovement`**: bots choose the destination
+  and task; `BotMovement.moveTo`, `moveToAny`, `approach`, and
+  `followKnownRoute` own local planning and confirmed execution. Inspect the
+  typed result instead of collapsing `NO_ROUTE`, `BLOCKED`, `TARGET_GONE`,
+  `GEOMETRY_UNAVAILABLE`, and `TIMEOUT` into one boolean. Do not add new direct
+  bot dependencies on old Pathfinder internals or `MapHelper.walkTo`. →
+  `haven/pathfinding/BotMovement.java`, `docs/pathfinder-reliability.md`
 
-- **Before any interact/placement after walking**: wait for `Moving` GAttrib
-  to clear (`player.getattr(Moving.class) == null`) — server-authoritative,
-  not `walkTo`'s local distance guess. Firing immediately after "arrived" can
-  be silently dropped server-side mid-stride. → `MiningBot.waitForMovementSettled`
-  (same idiom as `thunder.MilkingAssist`)
+- **Before any interact/placement after custom movement**: wait for `Moving`
+  GAttrib to clear (`player.getattr(Moving.class) == null`). A successful
+  `BotMovement` result already guarantees an authoritative stop; manual or
+  legacy movement does not. Firing mid-stride can be silently dropped
+  server-side. → `ConfirmedRouteRunner`, `MiningBot.waitForMovementSettled`
 
 - **Energy scale**: `IMeter.meter(0)` is 0.0–1.0. The tooltip % is that value
   × 10000 (display quirk, not a different stat) — "20%" on the bar = `0.20`.

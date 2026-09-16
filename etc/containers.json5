@@ -39,6 +39,24 @@
     empty: [1, 2],
     full: [65, 66]
   },
+  // Basket fullness pose indices are not stable/confirmed. Presence here is
+  // still enough to grant GobTag.CONTAINER; empty/full sub-tags stay unset.
+  "gfx/terobjs/wbasket": {
+    empty: [],
+    full: []
+  },
+  "gfx/terobjs/birchbasket": {
+    empty: [],
+    full: []
+  },
+  "gfx/terobjs/leatherbasket": {
+    empty: [],
+    full: []
+  },
+  "gfx/terobjs/thatchbasket": {
+    empty: [],
+    full: []
+  },
   "gfx/terobjs/stockpile-metal": {
     // Only presence in this file matters for GobTag.CONTAINER tagging (see
     // GobTag.java's ContainerInfo.get(name).ifPresent(...) -- just being present

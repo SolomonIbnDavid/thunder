@@ -44,4 +44,11 @@ public class ObjectFootprintsTest {
       Assertions.assertEquals(2, fp.bboxW());
       Assertions.assertEquals(2, fp.bboxH());
    }
+
+   @Test
+   void cataloguedObjectUsesNurglingFootprintBeforeResourceGeometry() {
+      LayoutFootprint fp = ObjectFootprints.footprintFor("gfx/terobjs/crate");
+      Assertions.assertEquals(1, fp.bboxW());
+      Assertions.assertEquals(2, fp.bboxH());
+   }
 }

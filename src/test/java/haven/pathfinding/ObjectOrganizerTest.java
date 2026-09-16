@@ -2,6 +2,8 @@ package haven.pathfinding;
 
 import haven.Coord;
 import haven.Coord2d;
+import haven.Area;
+import haven.MCache;
 import haven.layout.LayoutFootprint;
 import haven.layout.LayoutPlacement;
 import haven.layout.LayoutPlanResult;
@@ -52,5 +54,31 @@ public class ObjectOrganizerTest {
          LayoutFootprint.rect(1, 1, true), occ, ORIGIN, areaMax, Coord2d.of(60.0, 60.0), 2, PITCH);
       Assertions.assertEquals(viaFp.status, viaRes.status);
       Assertions.assertEquals(viaFp.placements.size(), viaRes.placements.size());
+   }
+
+   @Test
+   void exactResourcePlanUsesPhysicalUnitsAndFrontFirstOrdering() {
+      Area area = new Area(Coord.z, Coord.of(4, 3));
+      ObjectOrganizer.ExactPlan plan = ObjectOrganizer.planExact(
+         "gfx/terobjs/trees/oaklog", area, Coord2d.of(-100.0, 16.5),
+         3, 0.0, Collections.emptyList());
+
+      Assertions.assertEquals(3, plan.placements.size(), plan.reason);
+      Assertions.assertEquals("nurgling-model+observed", plan.geometrySource);
+      Assertions.assertEquals(ObjectSpatialProfiles.DEFAULT_PLACEMENT_GAP, plan.gap, 1e-9);
+      Assertions.assertEquals(plan.placements.get(0).anchor.x,
+         plan.placements.get(1).anchor.x, 1e-9);
+      for(ObjectOrganizer.ExactPlacement placement : plan.placements)
+         Assertions.assertTrue(placement.shape.inside(area, MCache.tilesz, 0.0));
+   }
+
+   @Test
+   void exactResourcePlanRefusesUnknownPhysicalGeometry() {
+      ObjectOrganizer.ExactPlan plan = ObjectOrganizer.planExact(
+         "gfx/terobjs/example-without-placement-profile",
+         new Area(Coord.z, Coord.of(3, 3)), Coord2d.z, 1, 0.0,
+         Collections.emptyList());
+      Assertions.assertTrue(plan.placements.isEmpty());
+      Assertions.assertEquals("physical placement geometry unavailable", plan.reason);
    }
 }

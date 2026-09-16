@@ -8,11 +8,9 @@ import haven.Coord2d;
 import haven.GameUI;
 import haven.Gob;
 import haven.HackThread;
-import haven.MapFile;
 import haven.Moving;
 import haven.UI;
 import haven.Utils;
-import haven.NamedPlaceResolver.Place;
 import java.io.IOException;
 import java.io.Writer;
 import java.nio.file.Files;
@@ -53,8 +51,6 @@ final class NavigationTestSpotScenario implements PfTestRunner.Scenario {
             return "select_open_ground";
          case LOCAL_OBSTACLE_OR_CORRIDOR:
             return "select_obstacle_corridor";
-         case KNOWN_MAP_LONG_LEG:
-            return "select_known_long_leg";
          default:
             throw new AssertionError(this.profile);
       }
@@ -72,9 +68,7 @@ final class NavigationTestSpotScenario implements PfTestRunner.Scenario {
             if (run.cancelled) {
                throw new PfTestRunner.Cancelled();
             } else {
-               return this.profile == NavigationTestSpotSelector.Profile.KNOWN_MAP_LONG_LEG
-                  ? this.executeLongLeg(run, ui, gui, checks)
-                  : this.executeLocal(run, ui, gui, checks);
+               return this.executeLocal(run, ui, gui, checks);
             }
          } else {
             checks.add(PfTestRunner.check("in_game", false, "client is not in game (" + this.name() + " requires in-game state)"));
@@ -86,9 +80,9 @@ final class NavigationTestSpotScenario implements PfTestRunner.Scenario {
    }
 
    private JSONObject executeLocal(PfTestRunner.Run run, UI ui, GameUI gui, List<JSONObject> checks) throws Exception {
-      PrototypePathfinder.Scene scene;
+      MovementScene.Scene scene;
       synchronized (ui) {
-         scene = PrototypePathfinder.observe(gui);
+         scene = MovementScene.observe(gui);
       }
 
       NavigationTestSpotSelector.Selection sel = this.profile == NavigationTestSpotSelector.Profile.OPEN_GROUND
@@ -99,61 +93,6 @@ final class NavigationTestSpotScenario implements PfTestRunner.Scenario {
       } else {
          checks.add(selectionCheck(sel));
          return body(checks, factsJson(this.profile, sel, reportTile(sel, null), null), sel.refused() ? "no spot selected: " + sel.refusal : null);
-      }
-   }
-
-   private JSONObject executeLongLeg(PfTestRunner.Run run, UI ui, GameUI gui, List<JSONObject> checks) throws Exception {
-      MapFile file;
-      synchronized (ui) {
-         file = gui.mapfile == null ? null : gui.mapfile.file;
-      }
-
-      checks.add(
-         PfTestRunner.check(
-            "mapfile_available",
-            file != null,
-            file != null ? "map file present (persisted coarse tiles)" : "no map file in game state (select_known_long_leg needs persisted coarse tiles)"
-         )
-      );
-      if (file == null) {
-         return body(
-            checks, refusalFacts(this.profile, "NO_SOURCE", "no map file in game state; selection not attempted"), "no map file: selection not attempted"
-         );
-      } else {
-         NamedPlaceNavigator.Location loc;
-         synchronized (ui) {
-            loc = NamedPlaceNavigator.liveState(gui).current();
-         }
-
-         if (loc == null) {
-            checks.add(PfTestRunner.check("session_state", false, "session location unavailable (no map file view/segment/player)"));
-            return body(
-               checks,
-               refusalFacts(this.profile, "NO_SOURCE", "session location unavailable; selection not attempted"),
-               "session location unavailable: selection not attempted"
-            );
-         } else {
-            checks.add(PfTestRunner.check("session_state", true, String.format("segment %x, start tile %s", loc.seg, loc.tile)));
-            if (run.cancelled) {
-               throw new PfTestRunner.Cancelled();
-            } else {
-               Area bounds = selectBounds(loc.tile);
-               MapFileTileSource src = MapFileTileSource.of(file, loc.seg, bounds);
-               NavigationTestSpotSelector.Selection sel = NavigationTestSpotSelector.knownMapLongLeg(
-                  src, loc.seg, loc.tile.sub(bounds.ul), 12.0, 24.0, 40000, 2000000
-               );
-               if (run.cancelled) {
-                  throw new PfTestRunner.Cancelled();
-               } else {
-                  checks.add(selectionCheck(sel));
-                  return body(
-                     checks,
-                     factsJson(this.profile, sel, reportTile(sel, bounds), sel.selected() ? loc.seg : null),
-                     sel.refused() ? "no spot selected: " + sel.refusal : null
-                  );
-               }
-            }
-         }
       }
    }
 

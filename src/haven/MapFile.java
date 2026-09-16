@@ -813,7 +813,18 @@ public class MapFile {
 	public BufferedImage olrender(Coord off, String tag) {
 	    WritableRaster buf = PUtils.imgraster(cmaps);
 	    for(Overlay ol : ols) {
-		MCache.ResOverlay olid = ol.olid.get().flayer(MCache.ResOverlay.class);
+		MCache.ResOverlay olid;
+		try {
+		    olid = ol.olid.get().flayer(MCache.ResOverlay.class);
+		} catch(Loading l) {
+		    throw(l);
+		} catch(RuntimeException e) {
+		    /* If an overlay's resource cannot be loaded (e.g. a
+		     * missing map-overlay resource), skip that overlay
+		     * rather than letting the exception kill map
+		     * rendering. */
+		    continue;
+		}
 		if(!olid.tags().contains(tag))
 		    continue;
 		Color col = olcol(olid);

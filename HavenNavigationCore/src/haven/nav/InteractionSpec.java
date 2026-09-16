@@ -27,6 +27,17 @@ public final class InteractionSpec {
    public final String expectedResult;
    public final List<Coord2d[]> polygons;
    public final String geometrySource;
+   /** Restrict approach sampling to the centerline of each footprint face.
+    * Useful for tightly packed repeated fixtures where corner/edge poses are
+    * technically clear but are not stable interaction positions. */
+   public final boolean faceCentersOnly;
+   /** Soft preference among otherwise legal sides. If none of these sides is
+    * reachable, every allowed side remains available as a fallback. */
+   public final int preferredSides;
+   /** At most one deterministic face-center port per cardinal side. Intended
+    * for ordinary bot interactions; transitions retain their specialized
+    * candidate generation. */
+   public final boolean stablePortsOnly;
 
    public InteractionSpec(
       String targetId,
@@ -39,7 +50,7 @@ public final class InteractionSpec {
       Double facing,
       String expectedResult
    ) {
-      this(targetId, origin, half, allowedSides, minDist, maxDist, requiredClearance, facing, expectedResult, null, "");
+      this(targetId, origin, half, allowedSides, minDist, maxDist, requiredClearance, facing, expectedResult, null, "", false, 0, false);
    }
 
    public InteractionSpec(
@@ -54,6 +65,64 @@ public final class InteractionSpec {
       String expectedResult,
       List<Coord2d[]> polygons,
       String geometrySource
+   ) {
+      this(targetId, origin, half, allowedSides, minDist, maxDist, requiredClearance, facing, expectedResult, polygons, geometrySource, false, 0, false);
+   }
+
+   public InteractionSpec(
+      String targetId,
+      Coord2d origin,
+      Coord2d half,
+      int allowedSides,
+      double minDist,
+      double maxDist,
+      int requiredClearance,
+      Double facing,
+      String expectedResult,
+      List<Coord2d[]> polygons,
+      String geometrySource,
+      boolean faceCentersOnly
+   ) {
+      this(
+         targetId, origin, half, allowedSides, minDist, maxDist, requiredClearance, facing, expectedResult,
+         polygons, geometrySource, faceCentersOnly, 0, false
+      );
+   }
+
+   public InteractionSpec(
+      String targetId,
+      Coord2d origin,
+      Coord2d half,
+      int allowedSides,
+      double minDist,
+      double maxDist,
+      int requiredClearance,
+      Double facing,
+      String expectedResult,
+      List<Coord2d[]> polygons,
+      String geometrySource,
+      boolean faceCentersOnly,
+      int preferredSides
+   ) {
+      this(targetId, origin, half, allowedSides, minDist, maxDist, requiredClearance, facing,
+         expectedResult, polygons, geometrySource, faceCentersOnly, preferredSides, false);
+   }
+
+   public InteractionSpec(
+      String targetId,
+      Coord2d origin,
+      Coord2d half,
+      int allowedSides,
+      double minDist,
+      double maxDist,
+      int requiredClearance,
+      Double facing,
+      String expectedResult,
+      List<Coord2d[]> polygons,
+      String geometrySource,
+      boolean faceCentersOnly,
+      int preferredSides,
+      boolean stablePortsOnly
    ) {
       if (origin == null) {
          throw new IllegalArgumentException("origin");
@@ -72,6 +141,18 @@ public final class InteractionSpec {
       this.expectedResult = expectedResult == null ? "" : expectedResult;
       this.polygons = copyPolys(polygons);
       this.geometrySource = geometrySource == null ? "" : geometrySource;
+      this.faceCentersOnly = faceCentersOnly;
+      this.preferredSides = preferredSides & allowedSides;
+      this.stablePortsOnly = stablePortsOnly;
+   }
+
+   public InteractionSpec withStablePorts() {
+      if (this.stablePortsOnly) return this;
+      return new InteractionSpec(
+         this.targetId, this.origin, this.half, this.allowedSides, this.minDist, this.maxDist,
+         this.requiredClearance, this.facing, this.expectedResult, this.polygons,
+         this.geometrySource, this.faceCentersOnly, this.preferredSides, true
+      );
    }
 
    public List<Coord2d[]> footprintPolygons() {

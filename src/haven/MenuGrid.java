@@ -678,6 +678,13 @@ public class MenuGrid extends Widget implements KeyBinding.Bindable {
 	} else {
 	    r.pag.anew = r.pag.tnew = 0;
 	    me.ender.LegacyBGM.onPaginaUse(r.res != null ? r.res.name : null);
+	    try {
+		if("Fish".equalsIgnoreCase(r.originalName()) && ui != null && ui.gui != null) {
+		    ui.gui.fishingHelper.armCast();
+		}
+	    } catch(RuntimeException ignored) {
+		/* Back/next and themed menu controls are not action resources. */
+	    }
 	    r.use(iact);
 	    if(reset)
 		change(null);
@@ -708,7 +715,7 @@ public class MenuGrid extends Widget implements KeyBinding.Bindable {
 		dragging = null;
 	    } else if(pressed != null) {
 		if(pressed == h)
-		    use(h, new Interaction(1, ui.modflags()), false);
+		    use(h, new Interaction(1, ui.modflags()), shouldResetAfterUse(ui.modflags()));
 		pressed = null;
 	    }
 	    grab.remove();
@@ -797,12 +804,16 @@ public class MenuGrid extends Widget implements KeyBinding.Bindable {
 	    }
 	}
 	if(pag != null) {
-	    use(pag, new Interaction(), (ev.mods & KeyMatch.S) == 0);
+	    use(pag, new Interaction(), shouldResetAfterUse(ev.mods));
 	    if(this.cur != null)
 		showkeys = true;
 	    return(true);
 	}
 	return(super.globtype(ev));
+    }
+
+    static boolean shouldResetAfterUse(int mods) {
+	return((mods & KeyMatch.S) == 0);
     }
     
     private void selectCraft(Pagina r) {
@@ -908,6 +919,7 @@ public class MenuGrid extends Widget implements KeyBinding.Bindable {
 	makeLocal("paginae/add/toggles/autodrink", CFG.AUTO_DRINK_ENABLED);
 	makeLocal("paginae/add/refill_drinks", Action.ACT_REFILL_DRINKS);
 	makeLocal("paginae/add/quest_help", Action.OPEN_QUEST_HELP);
+	makeLocal("paginae/add/fishing_helper", Action.OPEN_FISHING_HELPER);
 	makeLocal("paginae/add/inspect", Action.TOGGLE_INSPECT);
 	makeLocal("paginae/add/track", Action.TRACK_OBJECT);
 	makeLocal("paginae/add/measure", TileMeasure::paginaAction, TileMeasure::isActive);
@@ -915,6 +927,11 @@ public class MenuGrid extends Widget implements KeyBinding.Bindable {
 	makeLocal("paginae/add/fsmelter9", Action.FUEL_SMELTER_9);
 	makeLocal("paginae/add/fsmelter12", Action.FUEL_SMELTER_12);
 	makeLocal("paginae/add/foven4", Action.FUEL_OVEN_4);
+	makeLocal("paginae/add/fish-spitroast", Action.FISH_SPIT_ROAST);
+	makeLocal("paginae/add/log-cutter", Action.LOG_CUTTER);
+	makeLocal("paginae/add/clear-cut", Action.CLEAR_CUT);
+	makeLocal("paginae/add/directional-forager", Action.DIRECTIONAL_FORAGER);
+	makeLocal("paginae/add/river-musseler", Action.RIVER_MUSSELER);
 	makeLocal("paginae/add/auto/aggro_one", Action.AGGRO_ONE_PVE);
 	makeLocal("paginae/add/auto/aggro_one_pvp", Action.AGGRO_ONE_PVP);
 	makeLocal("paginae/add/auto/aggro_all", Action.AGGRO_ALL);

@@ -721,8 +721,11 @@ public class ModSprite extends Sprite implements Sprite.CUpd, EquipTarget {
 	}
 	public Collection<Location.Chain> getloc() {
 	    Collection<Location.Chain> ret = new ArrayList<>(spr.slots.size());
-	    for(RenderTree.Slot slot : spr.slots)
-		ret.add(slot.state().get(Homo3D.loc));
+	    for(RenderTree.Slot slot : spr.slots) {
+		Location.Chain loc = slot.state().get(Homo3D.loc);
+		if(loc != null)
+		    ret.add(loc);
+	    }
 	    return(ret);
 	}
 	public double getv() {

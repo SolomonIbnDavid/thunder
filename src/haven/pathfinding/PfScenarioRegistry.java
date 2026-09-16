@@ -16,20 +16,11 @@ final class PfScenarioRegistry {
    static {
       register(new ObserveScenario());
       register(new BasementCabinetIdentifyScenario());
-      register(new MoveToMarkerScenario());
       register(new MoveToAutoOpenGroundScenario());
       register(new MoveToAutoObstacleCorridorScenario());
-      register(new MoveToAutoKnownLongLegScenario());
-      register(new MoveToAutoCaveTransitionApproachScenario());
-      register(new CrossCellarDoorScenario());
-      register(new CrossCellarStairsScenario());
-      register(new CrossMineholeScenario());
       register(new NavigationTestSpotScenario(NavigationTestSpotSelector.Profile.OPEN_GROUND));
       register(new NavigationTestSpotScenario(NavigationTestSpotSelector.Profile.LOCAL_OBSTACLE_OR_CORRIDOR));
-      register(new NavigationTestSpotScenario(NavigationTestSpotSelector.Profile.KNOWN_MAP_LONG_LEG));
       register(new SelectBoulderApproachScenario());
-      register(new SelectCaveTransitionApproachScenario());
-      register(new SelectDoorGateApproachScenario());
       register(new SelectWaterlineApproachScenario());
       for (SurfaceTravelScenario.Kind k : SurfaceTravelScenario.Kind.values()) {
          register(new SurfaceTravelScenario(k));
@@ -37,13 +28,6 @@ final class PfScenarioRegistry {
       for (InteractScenario.Kind k : InteractScenario.Kind.values()) {
          register(new InteractScenario(k));
       }
-      for (TransitionScenario.Kind k : TransitionScenario.Kind.values()) {
-         register(new TransitionScenario(k));
-      }
-      for (CriticalRouteScenario.Kind k : CriticalRouteScenario.Kind.values()) {
-         register(new CriticalRouteScenario(k));
-      }
-      register(new RecordedRouteScenario());
    }
 
    private PfScenarioRegistry() {

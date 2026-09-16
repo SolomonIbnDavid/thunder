@@ -10,7 +10,7 @@ import java.util.Map;
 
 public class WidgetCfg {
     private static final Gson gson;
-    private static final String CONFIG_JSON = "windows.json";
+    private static final String CONFIG_JSON = configFile();
     public static final Map<String, WidgetCfg> CFG;
     
     public Coord c, sz;
@@ -22,13 +22,26 @@ public class WidgetCfg {
 	try {
 	    Type type = new TypeToken<Map<String, WidgetCfg>>() {
 	    }.getType();
-	    tmp = gson.fromJson(Config.loadFile(CONFIG_JSON), type);
+	    /* Each multibox profile needs its own window layout. Otherwise two
+	     * running clients repeatedly overwrite windows.json with stale copies
+	     * of one another's chat, minimap, and inventory positions. On the first
+	     * hosted launch, inherit the existing standalone layout. */
+	    String source = Config.getFile(CONFIG_JSON).isFile() ? CONFIG_JSON : "windows.json";
+	    tmp = gson.fromJson(Config.loadFile(source), type);
 	} catch (Exception ignored) {
 	}
 	if(tmp == null) {
 	    tmp = new HashMap<>();
 	}
 	CFG = tmp;
+    }
+
+    private static String configFile() {
+	String profile = System.getenv("HAVEN_MULTIBOX_PROFILE");
+	if(profile == null || profile.trim().isEmpty())
+	    return "windows.json";
+	profile = profile.replaceAll("[^A-Za-z0-9_-]", "_");
+	return "windows-" + profile + ".json";
     }
     
     public WidgetCfg() {}

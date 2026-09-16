@@ -1,0 +1,3 @@
+#PAGINA LAYER
+#String text
+Casting-rod helper: overlays bite vs land % on the bait list, warns if land is not 100% or the lure is gone, and can flag session peaks with the moon phase. Does not auto-cast, walk, or swap tackle.

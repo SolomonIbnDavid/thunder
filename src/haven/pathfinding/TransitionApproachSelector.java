@@ -23,12 +23,12 @@ public final class TransitionApproachSelector {
    );
 
    public static boolean isBoulderResid(String resid) {
-      String name = PrototypePathfinder.baseResid(resid);
+      String name = MovementScene.baseResid(resid);
       return name != null && name.equals("gfx/terobjs/boulder");
    }
 
    public static TransitionApproachSelector.TransitionKind caveTransitionKind(String resid) {
-      String name = PrototypePathfinder.baseResid(resid);
+      String name = MovementScene.baseResid(resid);
       if (name == null) {
          return null;
       } else {
@@ -54,7 +54,7 @@ public final class TransitionApproachSelector {
    }
 
    public static TransitionApproachSelector.DoorGateKind doorGateKind(String resid) {
-      String name = PrototypePathfinder.baseResid(resid);
+      String name = MovementScene.baseResid(resid);
       if (name == null) {
          return null;
       } else {
@@ -90,7 +90,7 @@ public final class TransitionApproachSelector {
    }
 
    public static boolean isGateResid(String resid) {
-      String name = PrototypePathfinder.baseResid(resid);
+      String name = MovementScene.baseResid(resid);
       if (name == null) {
          return false;
       } else {
@@ -125,48 +125,48 @@ public final class TransitionApproachSelector {
    private TransitionApproachSelector() {
    }
 
-   public static TransitionApproachSelector.Selection boulderApproach(PrototypePathfinder.Scene scene) {
+   public static TransitionApproachSelector.Selection boulderApproach(MovementScene.Scene scene) {
       return select(scene, TransitionApproachSelector.TransitionProfile.BOULDER, TransitionApproachSelector.ApproachRange.boulder(), 100000);
    }
 
    public static TransitionApproachSelector.Selection boulderApproach(
-      PrototypePathfinder.Scene scene, TransitionApproachSelector.ApproachRange range, int maxExpanded
+      MovementScene.Scene scene, TransitionApproachSelector.ApproachRange range, int maxExpanded
    ) {
       return select(scene, TransitionApproachSelector.TransitionProfile.BOULDER, range, maxExpanded);
    }
 
-   public static TransitionApproachSelector.Selection caveTransitionApproach(PrototypePathfinder.Scene scene) {
+   public static TransitionApproachSelector.Selection caveTransitionApproach(MovementScene.Scene scene) {
       return select(scene, TransitionApproachSelector.TransitionProfile.CAVE_TRANSITION, TransitionApproachSelector.ApproachRange.caveTransition(), 100000);
    }
 
    public static TransitionApproachSelector.Selection caveTransitionApproach(
-      PrototypePathfinder.Scene scene, TransitionApproachSelector.ApproachRange range, int maxExpanded
+      MovementScene.Scene scene, TransitionApproachSelector.ApproachRange range, int maxExpanded
    ) {
       return select(scene, TransitionApproachSelector.TransitionProfile.CAVE_TRANSITION, range, maxExpanded);
    }
 
-   public static TransitionApproachSelector.Selection doorGateApproach(PrototypePathfinder.Scene scene) {
+   public static TransitionApproachSelector.Selection doorGateApproach(MovementScene.Scene scene) {
       return select(scene, TransitionApproachSelector.TransitionProfile.DOOR_GATE, TransitionApproachSelector.ApproachRange.doorGate(), 100000);
    }
 
    public static TransitionApproachSelector.Selection doorGateApproach(
-      PrototypePathfinder.Scene scene, TransitionApproachSelector.ApproachRange range, int maxExpanded
+      MovementScene.Scene scene, TransitionApproachSelector.ApproachRange range, int maxExpanded
    ) {
       return select(scene, TransitionApproachSelector.TransitionProfile.DOOR_GATE, range, maxExpanded);
    }
 
-   public static TransitionApproachSelector.Selection waterlineApproach(PrototypePathfinder.Scene scene) {
+   public static TransitionApproachSelector.Selection waterlineApproach(MovementScene.Scene scene) {
       return select(scene, TransitionApproachSelector.TransitionProfile.WATERLINE, TransitionApproachSelector.ApproachRange.waterline(), 100000);
    }
 
    public static TransitionApproachSelector.Selection waterlineApproach(
-      PrototypePathfinder.Scene scene, TransitionApproachSelector.ApproachRange range, int maxExpanded
+      MovementScene.Scene scene, TransitionApproachSelector.ApproachRange range, int maxExpanded
    ) {
       return select(scene, TransitionApproachSelector.TransitionProfile.WATERLINE, range, maxExpanded);
    }
 
    public static TransitionApproachSelector.Selection select(
-      PrototypePathfinder.Scene scene, TransitionApproachSelector.TransitionProfile profile, TransitionApproachSelector.ApproachRange range, int maxExpanded
+      MovementScene.Scene scene, TransitionApproachSelector.TransitionProfile profile, TransitionApproachSelector.ApproachRange range, int maxExpanded
    ) {
       Objects.requireNonNull(profile, "profile");
       if (!profile.supported) {
@@ -245,27 +245,27 @@ public final class TransitionApproachSelector {
    }
 
    private static TransitionApproachSelector.Selection boulderCore(
-      PrototypePathfinder.Scene scene, TransitionApproachSelector.ApproachRange range, Coord start, int maxExpanded
+      MovementScene.Scene scene, TransitionApproachSelector.ApproachRange range, Coord start, int maxExpanded
    ) {
       return fixtureCore(scene, TransitionApproachSelector.TransitionProfile.BOULDER, boulderGobs(scene), range, start, maxExpanded);
    }
 
    private static TransitionApproachSelector.Selection caveTransitionCore(
-      PrototypePathfinder.Scene scene, TransitionApproachSelector.ApproachRange range, Coord start, int maxExpanded
+      MovementScene.Scene scene, TransitionApproachSelector.ApproachRange range, Coord start, int maxExpanded
    ) {
       return fixtureCore(scene, TransitionApproachSelector.TransitionProfile.CAVE_TRANSITION, caveTransitionGobs(scene), range, start, maxExpanded);
    }
 
    private static TransitionApproachSelector.Selection doorGateCore(
-      PrototypePathfinder.Scene scene, TransitionApproachSelector.ApproachRange range, Coord start, int maxExpanded
+      MovementScene.Scene scene, TransitionApproachSelector.ApproachRange range, Coord start, int maxExpanded
    ) {
       return fixtureCore(scene, TransitionApproachSelector.TransitionProfile.DOOR_GATE, doorGateGobs(scene), range, start, maxExpanded);
    }
 
    private static TransitionApproachSelector.Selection fixtureCore(
-      PrototypePathfinder.Scene scene,
+      MovementScene.Scene scene,
       TransitionApproachSelector.TransitionProfile profile,
-      List<PrototypePathfinder.GobGeom> fixtures,
+      List<MovementScene.GobGeom> fixtures,
       TransitionApproachSelector.ApproachRange range,
       Coord start,
       int maxExpanded
@@ -283,7 +283,7 @@ public final class TransitionApproachSelector {
          int inside = 0;
          int visitor = 0;
 
-         for (PrototypePathfinder.GobGeom b : fixtures) {
+         for (MovementScene.GobGeom b : fixtures) {
             if (b != null && b.rc != null) {
                if (!hasFootprintGeometry(b)) {
                   unknown++;
@@ -355,7 +355,7 @@ public final class TransitionApproachSelector {
       int inBand = 0;
       int reachable = 0;
 
-      for (PrototypePathfinder.GobGeom bx : fixtures) {
+      for (MovementScene.GobGeom bx : fixtures) {
          if (bx != null && bx.rc != null) {
             TransitionApproachSelector.TransitionKind kind = profile == TransitionApproachSelector.TransitionProfile.CAVE_TRANSITION
                ? caveTransitionKind(bx.resid)
@@ -520,7 +520,7 @@ public final class TransitionApproachSelector {
    }
 
    private static TransitionApproachSelector.Selection waterlineCore(
-      PrototypePathfinder.Scene scene, TransitionApproachSelector.ApproachRange range, Coord start, int maxExpanded
+      MovementScene.Scene scene, TransitionApproachSelector.ApproachRange range, Coord start, int maxExpanded
    ) {
       int w = scene.w;
       int h = scene.h;
@@ -800,7 +800,7 @@ public final class TransitionApproachSelector {
       );
    }
 
-   private static boolean isBodyBlocked(PrototypePathfinder.Scene scene, int idx) {
+   private static boolean isBodyBlocked(MovementScene.Scene scene, int idx) {
       byte[] occ = scene.occupancy.occ;
       if (idx >= 0 && idx < occ.length) {
          byte v = occ[idx];
@@ -810,53 +810,53 @@ public final class TransitionApproachSelector {
       }
    }
 
-   private static Coord2d cellCenter(PrototypePathfinder.Scene scene, int x, int y) {
+   private static Coord2d cellCenter(MovementScene.Scene scene, int x, int y) {
       return Coord2d.of(scene.origin.x + ((double)x + 0.5) * scene.cell, scene.origin.y + ((double)y + 0.5) * scene.cell);
    }
 
-   static List<PrototypePathfinder.GobGeom> boulderGobs(PrototypePathfinder.Scene scene) {
-      List<PrototypePathfinder.GobGeom> out = new ArrayList<>();
+   static List<MovementScene.GobGeom> boulderGobs(MovementScene.Scene scene) {
+      List<MovementScene.GobGeom> out = new ArrayList<>();
       if (scene != null && scene.gobs != null) {
-         for (PrototypePathfinder.GobGeom g : scene.gobs) {
+         for (MovementScene.GobGeom g : scene.gobs) {
             if (g != null && g.boulder && g.rc != null) {
                out.add(g);
             }
          }
       }
 
-      out.sort(Comparator.<PrototypePathfinder.GobGeom>comparingDouble(gx -> gx.rc.x).thenComparingDouble(gx -> gx.rc.y));
+      out.sort(Comparator.<MovementScene.GobGeom>comparingDouble(gx -> gx.rc.x).thenComparingDouble(gx -> gx.rc.y));
       return out;
    }
 
-   static List<PrototypePathfinder.GobGeom> caveTransitionGobs(PrototypePathfinder.Scene scene) {
-      List<PrototypePathfinder.GobGeom> out = new ArrayList<>();
+   static List<MovementScene.GobGeom> caveTransitionGobs(MovementScene.Scene scene) {
+      List<MovementScene.GobGeom> out = new ArrayList<>();
       if (scene != null && scene.gobs != null) {
-         for (PrototypePathfinder.GobGeom g : scene.gobs) {
+         for (MovementScene.GobGeom g : scene.gobs) {
             if (g != null && g.caveTransition && g.rc != null) {
                out.add(g);
             }
          }
       }
 
-      out.sort(Comparator.<PrototypePathfinder.GobGeom>comparingDouble(gx -> gx.rc.x).thenComparingDouble(gx -> gx.rc.y));
+      out.sort(Comparator.<MovementScene.GobGeom>comparingDouble(gx -> gx.rc.x).thenComparingDouble(gx -> gx.rc.y));
       return out;
    }
 
-   static List<PrototypePathfinder.GobGeom> doorGateGobs(PrototypePathfinder.Scene scene) {
-      List<PrototypePathfinder.GobGeom> out = new ArrayList<>();
+   static List<MovementScene.GobGeom> doorGateGobs(MovementScene.Scene scene) {
+      List<MovementScene.GobGeom> out = new ArrayList<>();
       if (scene != null && scene.gobs != null) {
-         for (PrototypePathfinder.GobGeom g : scene.gobs) {
+         for (MovementScene.GobGeom g : scene.gobs) {
             if (g != null && g.doorGate && g.rc != null) {
                out.add(g);
             }
          }
       }
 
-      out.sort(Comparator.<PrototypePathfinder.GobGeom>comparingDouble(gx -> gx.rc.x).thenComparingDouble(gx -> gx.rc.y));
+      out.sort(Comparator.<MovementScene.GobGeom>comparingDouble(gx -> gx.rc.x).thenComparingDouble(gx -> gx.rc.y));
       return out;
    }
 
-   static boolean hasFootprintGeometry(PrototypePathfinder.GobGeom b) {
+   static boolean hasFootprintGeometry(MovementScene.GobGeom b) {
       if (b != null && b.hitbox != null) {
          for (Coord2d[] poly : b.hitbox) {
             if (poly != null) {
@@ -889,7 +889,7 @@ public final class TransitionApproachSelector {
       }
    }
 
-   static double[] footprintBox(PrototypePathfinder.GobGeom b) {
+   static double[] footprintBox(MovementScene.GobGeom b) {
       double minx = Double.POSITIVE_INFINITY;
       double miny = Double.POSITIVE_INFINITY;
       double maxx = Double.NEGATIVE_INFINITY;

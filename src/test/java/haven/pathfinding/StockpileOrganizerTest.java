@@ -6,6 +6,18 @@ import org.junit.jupiter.api.Test;
 public class StockpileOrganizerTest {
 
    @Test
+   void blockPileUsesObservedOneTileFootprintForTileCenteredPlacement() {
+      Assertions.assertEquals(1, StockpileOrganizer.stockpileFootprint("gfx/terobjs/stockpile-wblock").bboxW());
+      Assertions.assertEquals(1, StockpileOrganizer.stockpileFootprint("gfx/terobjs/stockpile-wblock").bboxH());
+   }
+
+   @Test
+   void boardPileKeepsItsTwoByTwoGridAlignedFootprint() {
+      Assertions.assertEquals(2, StockpileOrganizer.stockpileFootprint("gfx/terobjs/stockpile-board").bboxW());
+      Assertions.assertEquals(2, StockpileOrganizer.stockpileFootprint("gfx/terobjs/stockpile-board").bboxH());
+   }
+
+   @Test
    void plankVariantsMapToBoardPile() {
       Assertions.assertEquals("gfx/terobjs/stockpile-board",
          StockpileOrganizer.stockpileResource("gfx/invobjs/board-pine"));

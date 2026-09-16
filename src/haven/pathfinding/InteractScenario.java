@@ -89,11 +89,11 @@ final class InteractScenario implements PfTestRunner.Scenario {
          JSONObject facts = new JSONObject().put("refusal", "NO_GAME").put("selected", false).put("kind", this.kind.name());
          return PfTestHarness.body(checks, "not in game", facts);
       }
-      PrototypePathfinder.Scene scene;
+      MovementScene.Scene scene;
       synchronized (ui) {
-         scene = PrototypePathfinder.observe(gui);
+         scene = MovementScene.observe(gui);
       }
-      PrototypePathfinder.GobGeom gob = pick(scene);
+      MovementScene.GobGeom gob = pick(scene);
       if (gob == null) {
          gob = distantFixture(gui, scene);
       }
@@ -160,9 +160,9 @@ final class InteractScenario implements PfTestRunner.Scenario {
             if (attempt > 0) {
                retry = "revalidate_replan";
                synchronized (ui) {
-                  scene = PrototypePathfinder.observe(gui);
+                  scene = MovementScene.observe(gui);
                }
-               PrototypePathfinder.GobGeom live = target.resolveIn(scene);
+               MovementScene.GobGeom live = target.resolveIn(scene);
                if (live == null) {
                   outcome = "TARGET_DISAPPEARED";
                   break;
@@ -193,27 +193,18 @@ final class InteractScenario implements PfTestRunner.Scenario {
                route.add(scene.player);
                route.add(pose.selected.world);
             }
-            WaypointWalker.Result walk = WaypointWalker.execute(
-               WaypointWalker.liveEnv(gui),
-               bot,
-               route,
-               attempt,
-               WALK_BUDGET_MS,
-               WaypointWalker.Params.DEFAULT,
-               NamedPlaceNavigator.NOOP,
-               pose.plan.status,
-               pose.selected.world,
-               spec
-            );
-            arrived = walk == WaypointWalker.Result.READY_TO_INTERACT;
+            ConfirmedRouteRunner.Result walk = ConfirmedRouteRunner.execute(
+               gui, bot, route, pose.selected.world, WALK_BUDGET_MS,
+               ConfirmedRouteRunner.Params.LAND);
+            arrived = walk.arrived();
             if (!arrived) {
                outcome = "FINAL_POSE_UNREACHABLE";
                continue;
             }
             synchronized (ui) {
-               scene = PrototypePathfinder.observe(gui);
+               scene = MovementScene.observe(gui);
             }
-            PrototypePathfinder.GobGeom live = target.resolveIn(scene);
+            MovementScene.GobGeom live = target.resolveIn(scene);
             Coord2d pos = scene.player;
             boolean stillIdle = !scene.moving;
             if (!InteractionVerifier.mayInteract(InteractionVerifier.arrivedConfirmed(stillIdle, pos, pose.selected.world, POSE_EPS))) {
@@ -294,7 +285,7 @@ final class InteractScenario implements PfTestRunner.Scenario {
       return PfTestHarness.body(checks, confirmed ? "interaction confirmed" : outcome, facts);
    }
 
-   private InteractionSpec spec(PrototypePathfinder.GobGeom g, Coord2d near) {
+   private InteractionSpec spec(MovementScene.GobGeom g, Coord2d near) {
       return InteractionAdapter.fromGob(
          g, InteractionSpec.ALL_SIDES, this.kind.minDist, this.kind.maxDist, this.kind.clearance, null, this.kind.expected, near
       );
@@ -334,7 +325,7 @@ final class InteractScenario implements PfTestRunner.Scenario {
     * Broader fixture scan for interaction targets outside the observed scene
     * list (e.g. a distant container). Same kind rules; nearest match wins.
     */
-   private PrototypePathfinder.GobGeom distantFixture(GameUI gui, PrototypePathfinder.Scene scene) {
+   private MovementScene.GobGeom distantFixture(GameUI gui, MovementScene.Scene scene) {
       if (gui == null || gui.ui == null || gui.ui.sess == null || gui.map == null) {
          return null;
       }
@@ -342,7 +333,7 @@ final class InteractScenario implements PfTestRunner.Scenario {
       if (player == null || player.rc == null) {
          return null;
       }
-      PrototypePathfinder.GobGeom best = null;
+      MovementScene.GobGeom best = null;
       synchronized (gui.ui.sess.glob.oc) {
          for (Gob gob : gui.ui.sess.glob.oc) {
             if (gob == null || gob == player || gob.virtual || gob.id < 0L || gob.rc == null) {
@@ -355,7 +346,7 @@ final class InteractScenario implements PfTestRunner.Scenario {
                if (gob.resid() == null) {
                   continue;
                }
-               PrototypePathfinder.GobGeom g = PrototypePathfinder.gobGeom(player, gob);
+               MovementScene.GobGeom g = MovementScene.gobGeom(player, gob);
                if (g != null && matches(g, scene) && (best == null || g.gobDist < best.gobDist)) {
                   best = g;
                }
@@ -366,17 +357,17 @@ final class InteractScenario implements PfTestRunner.Scenario {
       return best;
    }
 
-   private boolean narrowFixture(PrototypePathfinder.Scene scene, PrototypePathfinder.GobGeom gob) {
+   private boolean narrowFixture(MovementScene.Scene scene, MovementScene.GobGeom gob) {
       return looksNarrow(scene.occupancy, gob);
    }
 
-   private PrototypePathfinder.GobGeom pick(PrototypePathfinder.Scene scene) {
+   private MovementScene.GobGeom pick(MovementScene.Scene scene) {
       if (scene == null || scene.gobs == null) {
          return null;
       }
-      PrototypePathfinder.GobGeom best = null;
+      MovementScene.GobGeom best = null;
       for (int i = 0; i < scene.gobs.size(); i++) {
-         PrototypePathfinder.GobGeom g = scene.gobs.get(i);
+         MovementScene.GobGeom g = scene.gobs.get(i);
          if (!matches(g, scene)) {
             continue;
          }
@@ -387,7 +378,7 @@ final class InteractScenario implements PfTestRunner.Scenario {
       return best;
    }
 
-   private boolean matches(PrototypePathfinder.GobGeom g, PrototypePathfinder.Scene scene) {
+   private boolean matches(MovementScene.GobGeom g, MovementScene.Scene scene) {
       if (g == null) {
          return false;
       }
@@ -412,21 +403,21 @@ final class InteractScenario implements PfTestRunner.Scenario {
    }
 
    static boolean isForage(String resid) {
-      String name = PrototypePathfinder.baseResid(resid);
+      String name = MovementScene.baseResid(resid);
       return name != null && (name.contains("/herbs/") || name.contains("/forage"));
    }
 
    static boolean isTree(String resid) {
-      String name = PrototypePathfinder.baseResid(resid);
+      String name = MovementScene.baseResid(resid);
       return name != null && (name.contains("/trees/") || name.contains("/bushes/"));
    }
 
    static boolean isCrop(String resid) {
-      String name = PrototypePathfinder.baseResid(resid);
+      String name = MovementScene.baseResid(resid);
       return name != null && (name.contains("/plants/") || name.contains("/field"));
    }
 
-   static boolean looksNarrow(OccupancyGrid occ, PrototypePathfinder.GobGeom g) {
+   static boolean looksNarrow(OccupancyGrid occ, MovementScene.GobGeom g) {
       if (occ == null || g == null || g.rc == null) {
          return false;
       }
@@ -456,12 +447,12 @@ final class InteractScenario implements PfTestRunner.Scenario {
       return sides.size() <= 2;
    }
 
-   static PrototypePathfinder.GobGeom find(PrototypePathfinder.Scene scene, long id) {
+   static MovementScene.GobGeom find(MovementScene.Scene scene, long id) {
       if (scene == null || scene.gobs == null) {
          return null;
       }
       for (int i = 0; i < scene.gobs.size(); i++) {
-         PrototypePathfinder.GobGeom g = scene.gobs.get(i);
+         MovementScene.GobGeom g = scene.gobs.get(i);
          if (g != null && g.id == id) {
             return g;
          }
@@ -578,6 +569,8 @@ final class InteractScenario implements PfTestRunner.Scenario {
          o.put("min_dist", spec.minDist);
          o.put("max_dist", spec.maxDist);
          o.put("allowed_sides", spec.allowedSides);
+         o.put("face_centers_only", spec.faceCentersOnly);
+         o.put("preferred_sides", spec.preferredSides);
          o.put("required_clearance", spec.requiredClearance);
          o.put("expected_result", spec.expectedResult);
          if (spec.facing != null) {

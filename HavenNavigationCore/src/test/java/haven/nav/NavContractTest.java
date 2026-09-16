@@ -14,11 +14,8 @@ import org.junit.jupiter.api.Test;
 
 public class NavContractTest {
    @Test
-   void goalKindsAndPlanStatusesExist() {
-      Assertions.assertEquals(5, NavGoal.Kind.values().length);
+   void localPlanStatusesExist() {
       Assertions.assertEquals(5, NavPlanStatus.values().length);
-      Assertions.assertEquals(10, NavOutcome.values().length);
-      Assertions.assertEquals(6, NavDecision.Kind.values().length);
    }
 
    @Test

@@ -2506,26 +2506,14 @@ public class MapView extends PView implements DTarget, Console.Directory, Widget
 	// thing I'm hovering"). Tile-align is unaffected.
 	boolean abutNearSide = "directional".equals(pickedBy);
 
-	double dxWorld = 0, dyWorld = 0;
-	if(tileMode) {
-	    // Align: placer's edge on `axis` side meets the tile's same-side edge (placer stays inside the tile).
-	    if(axis[0] == -1)      dxWorld = targetWorld[0] - placerWorld[0];
-	    else if(axis[0] ==  1) dxWorld = targetWorld[2] - placerWorld[2];
-	    else if(axis[1] == -1) dyWorld = targetWorld[1] - placerWorld[1];
-	    else                   dyWorld = targetWorld[3] - placerWorld[3];
-	} else if(abutNearSide) {
-	    // Slide-and-stop: placer's leading edge (in axis direction) meets target's facing edge.
-	    if(axis[0] == -1)      dxWorld = (targetWorld[2] + extraGap) - placerWorld[0];
-	    else if(axis[0] ==  1) dxWorld = (targetWorld[0] - extraGap) - placerWorld[2];
-	    else if(axis[1] == -1) dyWorld = (targetWorld[3] + extraGap) - placerWorld[1];
-	    else                   dyWorld = (targetWorld[1] - extraGap) - placerWorld[3];
-	} else {
-	    // Footprint mode: placer ends up on the `axis` side of the target, flush.
-	    if(axis[0] == -1)      dxWorld = (targetWorld[0] - extraGap) - placerWorld[2];
-	    else if(axis[0] ==  1) dxWorld = (targetWorld[2] + extraGap) - placerWorld[0];
-	    else if(axis[1] == -1) dyWorld = (targetWorld[1] - extraGap) - placerWorld[3];
-	    else                   dyWorld = (targetWorld[3] + extraGap) - placerWorld[1];
-	}
+	WorldFootprint.Bounds placerBounds = new WorldFootprint.Bounds(
+		placerWorld[0], placerWorld[1], placerWorld[2], placerWorld[3]);
+	WorldFootprint.Bounds targetBounds = new WorldFootprint.Bounds(
+		targetWorld[0], targetWorld[1], targetWorld[2], targetWorld[3]);
+	Coord2d translation = WorldFootprint.abutTranslation(
+		placerBounds, targetBounds, axis[0], axis[1], extraGap, tileMode, abutNearSide);
+	if(translation == null) { snapLog("abort: invalid abutment axis"); return; }
+	double dxWorld = translation.x, dyWorld = translation.y;
 	Coord2d newRc = placing.rc.add(dxWorld, dyWorld);
 	double[] newPlacerWorld = {
 	    placerWorld[0] + dxWorld, placerWorld[1] + dyWorld,
@@ -2629,7 +2617,7 @@ public class MapView extends PView implements DTarget, Console.Directory, Widget
     // 0.1 world units is below 1 screen pixel at typical zoom -- invisible but enough to clear
     // the check. Tile-align mode doesn't use this (it deliberately puts the placer inside the
     // tile, no abut involved).
-    private static final double ABUT_GAP = 0.1;
+    private static final double ABUT_GAP = WorldFootprint.DEFAULT_ABUT_GAP;
 
     // Walls/arches need a larger gap. Empirically the server rejects cupboard-against-wall
     // at 0.1 even though the visible/declared obstacle boundaries don't overlap; the wall
@@ -2649,33 +2637,7 @@ public class MapView extends PView implements DTarget, Console.Directory, Widget
     // sprite the server attached). When the main res resolves to zero polypoints, walk
     // overlays and use the first whose resource has a footprint.
     private static Resource snapMeshRes(Gob g) {
-	Resource res;
-	try { res = g.getres(); } catch(Loading ignored) { return null; }
-	if(res == null) return null;
-	Resource resolved = snapMeshRes(g, res);
-	if(polyPointCount(resolved) > 0) return resolved;
-	// Plob path 1: ui/gobcp's Sprite (Gobcopy class) holds a reference to the source Gob
-	// being mirrored. Found via reflection because Gobcopy is loaded from server-sent
-	// resource bytecode -- we can't import the class. Use the source gob's resource.
-	if(g instanceof Plob && ((Plob) g).drawable instanceof ResDrawable) {
-	    Sprite spr = ((ResDrawable) ((Plob) g).drawable).spr;
-	    Gob source = findEmbeddedGob(spr);
-	    if(source != null && source != g) {
-		Resource sourceRes = snapMeshRes(source);
-		if(polyPointCount(sourceRes) > 0) return sourceRes;
-	    }
-	}
-	// Plob path 2: walk overlays for one with a footprint. Catches placers whose
-	// placement message attaches the actual mesh as an overlay.
-	List<Gob.Overlay> snapshot;
-	synchronized(g.ols) { snapshot = new ArrayList<>(g.ols); }
-	for(Gob.Overlay ol : snapshot) {
-	    Resource olRes = overlayRes(ol);
-	    if(olRes == null) continue;
-	    Resource olResolved = snapMeshRes(g, olRes);
-	    if(polyPointCount(olResolved) > 0) return olResolved;
-	}
-	return resolved;
+	return(WorldFootprint.meshResource(g));
     }
 
     // Reflectively find the first non-null `Gob`-typed field on a Sprite (walking superclass
@@ -2713,18 +2675,7 @@ public class MapView extends PView implements DTarget, Console.Directory, Widget
     }
 
     private static Resource snapMeshRes(Gob g, Resource res) {
-	Resource fixed = Hitbox.fix(g, res);
-	if(fixed == null) return null;
-	Collection<RenderLink.Res> links = fixed.layers(RenderLink.Res.class);
-	if(links != null) {
-	    for(RenderLink.Res link : links) {
-		if(link.l instanceof RenderLink.MeshMat) {
-		    try { return ((RenderLink.MeshMat) link.l).mesh.get(); }
-		    catch(Loading ignored) { return null; }
-		}
-	    }
-	}
-	return fixed;
+	return(WorldFootprint.meshResource(g, res));
     }
 
     // Find the terobj gob whose footprint AABB (in world space) contains `mc`. Phantom
@@ -2757,20 +2708,8 @@ public class MapView extends PView implements DTarget, Console.Directory, Widget
     // Same source data as `screenAabbForGob` but kept in world coords so we can test
     // mc-containment without a screen projection round-trip.
     private static double[] worldFootprintAabb(Gob g, Resource res) {
-	Coord2d[] pts = polyPointsForRes(res);
-	if(pts == null || pts.length == 0) return null;
-	double cs = Math.cos(g.a), sn = Math.sin(g.a);
-	double minX = Double.POSITIVE_INFINITY, minY = Double.POSITIVE_INFINITY;
-	double maxX = Double.NEGATIVE_INFINITY, maxY = Double.NEGATIVE_INFINITY;
-	for(Coord2d p : pts) {
-	    double wx = g.rc.x + p.x * cs - p.y * sn;
-	    double wy = g.rc.y + p.x * sn + p.y * cs;
-	    if(wx < minX) minX = wx;
-	    if(wx > maxX) maxX = wx;
-	    if(wy < minY) minY = wy;
-	    if(wy > maxY) maxY = wy;
-	}
-	return new double[] { minX, minY, maxX, maxY };
+	WorldFootprint.Bounds bounds = WorldFootprint.bounds(g, res);
+	return(bounds == null ? null : bounds.array());
     }
 
     private static double[] worldFootprintAabb(Gob g) {
@@ -2893,17 +2832,7 @@ public class MapView extends PView implements DTarget, Console.Directory, Widget
     // footprint -- the resolved resource has no usable collision geometry and we're snapping
     // against an arbitrary placeholder.
     private static int polyPointCount(Resource res) {
-	if(res == null) return -1;
-	int n = 0;
-	Collection<Resource.Obstacle> obsts = res.layers(Resource.Obstacle.class);
-	if(obsts != null) {
-	    for(Resource.Obstacle o : obsts) {
-		for(Coord2d[] poly : o.p) n += poly.length;
-	    }
-	}
-	Collection<Resource.Neg> negs = res.layers(Resource.Neg.class);
-	if(negs != null) n += negs.size() * 4;
-	return n;
+	return(WorldFootprint.pointCount(res));
     }
 
     // Screen AABB of a gob for snap purposes: projection of its obst+neg polygon, using the
@@ -2948,33 +2877,7 @@ public class MapView extends PView implements DTarget, Console.Directory, Widget
     // it's rendering the visible hitbox; we have a different goal. Y is negated to match
     // the gob render transform's local-y mirroring.
     private static Coord2d[] polyPointsForRes(Resource res) {
-	List<Coord2d> pts = new ArrayList<>();
-	Collection<Resource.Obstacle> obsts = res.layers(Resource.Obstacle.class);
-	if(obsts != null) {
-	    for(Resource.Obstacle o : obsts) {
-		for(Coord2d[] poly : o.p)
-		    for(Coord2d c : poly)
-			pts.add(Coord2d.of(c.x, -c.y));
-	    }
-	}
-	Collection<Resource.Neg> negs = res.layers(Resource.Neg.class);
-	if(negs != null) {
-	    for(Resource.Neg n : negs) {
-		pts.add(Coord2d.of(n.ac.x, -n.ac.y));
-		pts.add(Coord2d.of(n.bc.x, -n.ac.y));
-		pts.add(Coord2d.of(n.bc.x, -n.bc.y));
-		pts.add(Coord2d.of(n.ac.x, -n.bc.y));
-	    }
-	}
-	if(pts.isEmpty()) {
-	    // Fallback: a 0.2-tile-square box around origin so the snap still functions.
-	    double r = tilesz.x * 0.1;
-	    pts.add(Coord2d.of(-r, -r));
-	    pts.add(Coord2d.of( r, -r));
-	    pts.add(Coord2d.of( r,  r));
-	    pts.add(Coord2d.of(-r,  r));
-	}
-	return pts.toArray(new Coord2d[0]);
+	return(WorldFootprint.localPoints(res));
     }
 
     // Convert a desired screen-space displacement (dSX, dSY) near world point w into a world delta.
@@ -3135,6 +3038,9 @@ public class MapView extends PView implements DTarget, Console.Directory, Widget
 	    // ordinary walk clicks.
 	    if(button == 1) {
 		TileQuality.markPendingForClick(mc, ui.gui);
+	    }
+	    if((button == 1 || button == 3) && ui != null && ui.gui != null) {
+		ui.gui.fishingHelper.noteMapClick(mc);
 	    }
 	    wdgmsg("click", args);
 	}
@@ -3360,6 +3266,38 @@ public class MapView extends PView implements DTarget, Console.Directory, Widget
 	Debug.log.printf("[minebot-discovery] BOT warp+commit %s%n", lastWarpCommitDebug);
 	Debug.log.flush();
 	wdgmsg("place", plob.rc.floor(posres), (int) Math.round(plob.a * 32768 / Math.PI), button, modflags);
+	ui.gui.pathQueue.start(plob.rc);
+	return true;
+    }
+
+    /**
+     * Fine-placement counterpart for lifted objects and exact organizers.
+     * It updates the live ghost's own position and angle before committing, and
+     * sends Shift so the server validates the same fine-placement mode a player
+     * used for the recorded 0.125-gap log row.
+     */
+    public boolean warpAndCommitPlacementExact(Coord2d worldPos, double angleRadians,
+                                               int button, int modflags) {
+	Loader.Future<Plob> p = this.placing;
+	if((p == null) || !p.done() || worldPos == null) return false;
+	Plob plob;
+	try {plob = p.get();} catch(RuntimeException e) {return false;}
+	if(plob == null) return false;
+	int fineFlags = modflags | UI.MOD_SHIFT;
+	plob.forceFine = true;
+	// Keep the ghost's normal adjust path in sync, then apply the requested free
+	// angle explicitly; StdPlace.adjust otherwise derives a cardinal angle from
+	// the player's current position.
+	plob.adjust.adjust(plob, worldPos.floor(posres), worldPos, fineFlags);
+	plob.move(worldPos, Utils.cangle(angleRadians));
+	plob.lastmc = worldPos.floor(posres);
+	lastWarpCommitDebug = String.format(
+	    "exact target=%s rc=%s angle=%s(fixed=%d) button=%d modflags=%d res=%s",
+	    worldPos, plob.rc, plob.a, (int)Math.round(plob.a * 32768 / Math.PI), button, fineFlags,
+	    plob.getres() != null ? plob.getres().name : "?");
+	Debug.log.printf("[placement] BOT exact warp+commit %s%n", lastWarpCommitDebug);
+	Debug.log.flush();
+	wdgmsg("place", plob.rc.floor(posres), (int)Math.round(plob.a * 32768 / Math.PI), button, fineFlags);
 	ui.gui.pathQueue.start(plob.rc);
 	return true;
     }

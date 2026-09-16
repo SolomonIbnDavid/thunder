@@ -19,9 +19,9 @@ import haven.Window;
 import haven.AccountList.Account;
 import haven.Config.Variable;
 import haven.pathfinding.PfTestRunner;
-import haven.pathfinding.PrototypePathfinder;
+import haven.pathfinding.MovementScene;
 import haven.pathfinding.PfTestRunner.Run;
-import haven.pathfinding.PrototypePathfinder.Scene;
+import haven.pathfinding.MovementScene.Scene;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -286,7 +286,7 @@ public final class DevControl {
 
             if (occupancy && gui != null) {
                try {
-                  Scene scene = PrototypePathfinder.observe(gui);
+                  Scene scene = MovementScene.observe(gui);
                   boolean solid = false;
                   if (scene != null && scene.occupancy != null && me != null && me.rc != null) {
                      Coord c = scene.occupancy.cellOf(me.rc);

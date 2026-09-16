@@ -1,8 +1,8 @@
 # New-bot setup prompt (template)
 
-Not auto-loaded — copy the block below, fill the brackets, paste as your first
-message when starting a new bot-building session. It gives Claude Code enough
-to read the right files and do the upfront design/plan work unprompted.
+`AGENTS.md` now points agents at the permanent playbook automatically. This
+template remains useful when opening a focused new bot-building session: copy
+the block below, fill the brackets, and paste it as the first message.
 
 ## Template
 
@@ -16,29 +16,34 @@ Interactions involved: [containers? specific gobs/resids if known? placement?
 UI: [does it need a setup window with fields, or is a console command enough?]
 
 Before writing anything:
-1. Read docs/bot-automation-api.md — mandatory gotchas for this client
+1. Read AGENTS.md and docs/bot-development-playbook.md completely. Use its
+   simplicity-first phases, evidence order, test gates, and live-run gates.
+2. Read docs/bot-automation-api.md — mandatory gotchas for this client
    (container right-click vs itemact, FlowerMenu's real attach point, gob
-   arrival radius, Defer thread starvation, diagnostic logging pattern).
-2. Read src/auto/MiningBot.java + src/auto/MiningMaterials.java as the
-   reference implementation for a full live-loop bot (zone-based fetch,
-   resupply logic, diagnostic file logging, safety cap, cancellation).
-3. Skim src/auto/Bot.java, MapHelper.java, InvHelper.java, GobHelper.java,
-   PositionHelper.java, BotUtil.java for existing helpers before writing new
-   ones — don't reimplement walkTo/inventory predicates/flower selection.
-4. If the bot needs a setup window, use src/thunder/mining/MiningBotSetupWnd.java
-   as the layout pattern (fields + Start/Stop, console command wiring in
-   GameUI.java's cmdmap). If it needs a map-zone selection, reuse
+   movement results, Defer thread starvation, diagnostic logging pattern).
+3. If movement is involved, read docs/pathfinder-reliability.md and use only
+   BotMovement.moveTo, moveToAny, approach, or followKnownRoute from bot code.
+4. Pick the closest working reference by behavior. Use MiningBot and
+   MiningMaterials for resupply/container-heavy work; ClearCutBot for a full
+   area loop; CheeseTrayFiller's Env shape for a pure decision algorithm.
+5. Skim src/auto/Bot.java, Equip.java, InvHelper.java, GobHelper.java,
+   PositionHelper.java, and BotUtil.java for existing helpers before writing
+   new ones. Read WItem/GItem/Inventory/FlowerMenu for the real client message
+   instead of guessing click semantics.
+6. If the bot needs a setup window, use src/thunder/clearcut/ClearCutSetupWnd.java
+   as the layout pattern. For an action-menu entry, follow src/haven/Action.java,
+   MenuGrid.makeLocal, and resources/src/local/paginae/add/. If it needs a
+   map-zone selection, reuse
    src/thunder/mining/ZonePicker.java + MiningZoneStore.java as-is rather than
    building a new picker.
 
-I can't run the game — you can't either. Testing is: you build it with
-diagnostic file logging from the start (same pattern as MiningBot's
-openDiagLog/diag), I run it live and report back what happened (with logs),
-you iterate. Don't guess at a fix without a log or my description of what I
-observed. Ask one clarifying question if genuinely blocked; otherwise make the
-reasonable call and keep going.
+I will run the game. Build diagnostic file logging into the first version; use
+my live observation plus the latest log/snapshot to identify the owning layer,
+then make one narrow fix. Do not guess, broaden the architecture, or copy a
+second pathfinder to fix an unexplained symptom.
 
-Give me a short plan before implementing.
+Before implementation, give me the one-sentence loop, explicit non-goals, and
+the first live acceptance run.
 ```
 
 ## Why each piece is there
@@ -58,11 +63,10 @@ Give me a short plan before implementing.
   logic itself is unit-testable without the live game. Use that shape if the
   "what to do next" decision is the hard part; use MiningBot's shape if
   walking/container/placement sequencing is the hard part.
-- **"I can't run the game"** — this client has no test harness for live
-  interactions; every mechanism in the gotchas doc was found by shipping a
-  diagnostic build, having the user run it, and reading back a log or a
-  description. State this up front so the session defaults to
-  build-in-logging-first instead of guessing fixes blind.
+- **The user runs the game** — automated tests cannot reproduce every live
+  interaction. Ship a diagnostic build, have the user run the smallest
+  representative case, then read the resulting log or snapshot before making
+  a narrow fix.
 - **Plan before implementing** — matches how MiningBot itself was built:
   agree on the shape (what state it tracks, what triggers a resupply/retry,
   what the setup window exposes) before writing the interaction code.

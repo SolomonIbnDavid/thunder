@@ -84,9 +84,11 @@ public final class GridAStar {
                         && nx < w
                         && ny < h
                         && !grid.blocked(nx, ny)
+                        && grid.allowsStep(x, y, nx, ny)
                         && (
                            DX[d] == 0
                               || DY[d] == 0
+                              || !grid.strictCorners()
                               || !grid.blocked(x + DX[d], y) && !grid.blocked(x, y + DY[d]) && !besideObstacle(grid, x, y) && !besideObstacle(grid, nx, ny)
                         )) {
                         int next = id(nx, ny, w);
@@ -146,7 +148,10 @@ public final class GridAStar {
             if (nx < 0 || ny < 0 || nx >= w || ny >= h || grid.blocked(nx, ny)) {
                continue;
             }
-            if (DX[d] != 0 && DY[d] != 0
+            if (!grid.allowsStep(x, y, nx, ny)) {
+               continue;
+            }
+            if (grid.strictCorners() && DX[d] != 0 && DY[d] != 0
                && (grid.blocked(x + DX[d], y) || grid.blocked(x, y + DY[d])
                   || besideObstacle(grid, x, y) || besideObstacle(grid, nx, ny))) {
                continue;
@@ -229,6 +234,17 @@ public final class GridAStar {
       int height();
 
       boolean blocked(int var1, int var2);
+
+      /** Continuous edge validation. Cell-only grids keep the legacy default. */
+      default boolean allowsStep(int x, int y, int nx, int ny) {
+         return true;
+      }
+
+      /** Legacy occupancy needs conservative diagonal corner rules. Exact
+       * geometry grids validate the complete movement segment instead. */
+      default boolean strictCorners() {
+         return true;
+      }
 
       default double cost(int x, int y) {
          return 1.0;

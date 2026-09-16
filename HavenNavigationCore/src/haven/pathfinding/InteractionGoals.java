@@ -5,6 +5,7 @@ import haven.Coord2d;
 import haven.nav.InteractionSpec;
 import haven.nav.NavPlan;
 import haven.nav.NavPlanStatus;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -27,10 +28,15 @@ public final class InteractionGoals {
    private static final int MAX_SWEPT_CANDIDATES = 8;
    /** A free stand farther than this from the closest free stand is not flushed to the target. */
    private static final double OCCUPANCY_STAND_SLACK = LocalPlanner.CELL * 0.5;
+   /** Prefer the shortest legal route among similarly close stands, without turning the
+    * interaction's maximum range into permission to stop far from the target. */
+   private static final double ROUTE_COST_STAND_SLACK = LocalPlanner.CELL;
    /** Walkable occupancy cells within this Chebyshev radius may last-hop onto a SOLID pose. */
    static final int APPROACH_PAD = 3;
+   static final double LAST_HOP = LocalPlanner.CELL * 3.0;
    private static final double FACE_CONE = Math.PI / 4.0;
    private static final double[] EDGE_T = new double[] {0.0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0};
+   private static final double[] FACE_CENTER_T = new double[] {0.5};
 
    private InteractionGoals() {
    }
@@ -140,7 +146,7 @@ public final class InteractionGoals {
       if (originCell == null) {
          return fail(spec, NO_POSE);
       }
-      int[] clr = SurfaceStream.clearance(occ);
+      int[] clr = clearance(occ);
       List<Coord2d> seeds = samplePoses(spec, occ);
       List<Candidate> raw = new ArrayList<Candidate>();
       for (int i = 0; i < seeds.size(); i++) {
@@ -186,7 +192,10 @@ public final class InteractionGoals {
             return Integer.compare(a.cell.y, b.cell.y);
          }
       });
-      double[] costs = LocalPlanner.occupancyCosts(from, occ);
+      // Pick the nearest reachable side by actual route length. Clearance is
+      // already enforced as a legality constraint above; its soft planning
+      // penalty must not make a substantially longer approach win.
+      double[] costs = LocalPlanner.occupancyRouteLengths(from, occ);
       List<Candidate> reachable = new ArrayList<Candidate>();
       for (int i = 0; i < legal.size(); i++) {
          Candidate c = legal.get(i);
@@ -212,35 +221,18 @@ public final class InteractionGoals {
          return new Result(spec, null, considered, NavPlan.failed(0, NO_POSE), NO_POSE);
       }
       final boolean exact = geom != null && geom.enabled();
+      double closestReachable = Double.POSITIVE_INFINITY;
+      boolean preferredReachable = false;
+      for (int i = 0; i < reachable.size(); i++) {
+         closestReachable = Math.min(closestReachable, reachable.get(i).dist);
+         preferredReachable |= preferred(spec, reachable.get(i));
+      }
+      final double closest = closestReachable;
+      final int preferredSides = preferredReachable ? spec.preferredSides : 0;
       Collections.sort(reachable, new Comparator<Candidate>() {
          @Override
          public int compare(Candidate a, Candidate b) {
-            int c;
-            if (exact) {
-               c = Double.compare(a.dist, b.dist);
-               if (c != 0) {
-                  return c;
-               }
-               c = Double.compare(a.routeCost, b.routeCost);
-               if (c != 0) {
-                  return c;
-               }
-            }
-            c = Integer.compare(b.clearance, a.clearance);
-            if (c != 0) {
-               return c;
-            }
-            if (!exact) {
-               c = Double.compare(a.routeCost, b.routeCost);
-               if (c != 0) {
-                  return c;
-               }
-            }
-            c = Integer.compare(a.cell.x, b.cell.x);
-            if (c != 0) {
-               return c;
-            }
-            return Integer.compare(a.cell.y, b.cell.y);
+            return compareReachable(a, b, exact, closest, preferredSides);
          }
       });
       Candidate best = null;
@@ -264,6 +256,46 @@ public final class InteractionGoals {
       return new Result(spec, best, considered, withSelected(best.plan, best.world), "");
    }
 
+   static int compareReachable(Candidate a, Candidate b, boolean exact, double closest) {
+      return compareReachable(a, b, exact, closest, 0);
+   }
+
+   static int compareReachable(Candidate a, Candidate b, boolean exact, double closest, int preferredSides) {
+      if (preferredSides != 0) {
+         boolean ap = (preferredSides & a.side) != 0;
+         boolean bp = (preferredSides & b.side) != 0;
+         if (ap != bp) {
+            return ap ? -1 : 1;
+         }
+      }
+      if (exact) {
+         boolean aClose = a.dist <= closest + ROUTE_COST_STAND_SLACK;
+         boolean bClose = b.dist <= closest + ROUTE_COST_STAND_SLACK;
+         if (aClose != bClose) {
+            return aClose ? -1 : 1;
+         }
+      }
+      // Among comparably close legal stands, route length wins. A tiny distance
+      // advantage on the far face should not make the player orbit the object.
+      int c = Double.compare(a.routeCost, b.routeCost);
+      if (c != 0) {
+         return c;
+      }
+      c = Integer.compare(b.clearance, a.clearance);
+      if (c != 0) {
+         return c;
+      }
+      c = Double.compare(a.dist, b.dist);
+      if (c != 0) {
+         return c;
+      }
+      c = Integer.compare(a.cell.x, b.cell.x);
+      if (c != 0) {
+         return c;
+      }
+      return Integer.compare(a.cell.y, b.cell.y);
+   }
+
    /**
     * Approach stands in the aisle. If a reachable occupancy-FREE pose exists,
     * use the highest-clearance one instead of last-hopping onto furniture.
@@ -273,12 +305,25 @@ public final class InteractionGoals {
          return pose;
       }
       double closest = Double.POSITIVE_INFINITY;
+      boolean preferredAvailable = false;
+      if (pose.spec != null && pose.spec.preferredSides != 0) {
+         for (int i = 0; i < pose.considered.size(); i++) {
+            Candidate c = pose.considered.get(i);
+            if (c != null && c.reachable && c.reject == null && c.world != null && occupancyWalkable(occ, c.world) && preferred(pose.spec, c)) {
+               preferredAvailable = true;
+               break;
+            }
+         }
+      }
       for (int i = 0; i < pose.considered.size(); i++) {
          Candidate c = pose.considered.get(i);
          if (c == null || !c.reachable || c.reject != null || c.world == null) {
             continue;
          }
          if (!occupancyWalkable(occ, c.world)) {
+            continue;
+         }
+         if (preferredAvailable && !preferred(pose.spec, c)) {
             continue;
          }
          if (c.dist < closest) {
@@ -292,6 +337,9 @@ public final class InteractionGoals {
             continue;
          }
          if (!occupancyWalkable(occ, c.world)) {
+            continue;
+         }
+         if (preferredAvailable && !preferred(pose.spec, c)) {
             continue;
          }
          if (c.dist > closest + OCCUPANCY_STAND_SLACK) {
@@ -351,6 +399,11 @@ public final class InteractionGoals {
       Collections.sort(alts, new Comparator<Candidate>() {
          @Override
          public int compare(Candidate a, Candidate b) {
+            boolean ap = preferred(pose.spec, a);
+            boolean bp = preferred(pose.spec, b);
+            if (ap != bp) {
+               return ap ? -1 : 1;
+            }
             boolean aw = occupancyWalkable(occ, a.world);
             boolean bw = occupancyWalkable(occ, b.world);
             if (aw != bw) {
@@ -374,6 +427,10 @@ public final class InteractionGoals {
          return new Result(pose.spec, null, pose.considered, NavPlan.failed(0, "unreachable"), "unreachable");
       }
       return pose;
+   }
+
+   private static boolean preferred(InteractionSpec spec, Candidate c) {
+      return spec != null && c != null && spec.preferredSides != 0 && (spec.preferredSides & c.side) != 0;
    }
 
    private static List<Coord2d> planRoute(Result pose) {
@@ -666,9 +723,13 @@ public final class InteractionGoals {
    }
 
    static List<Coord2d> samplePoses(InteractionSpec spec, OccupancyGrid occ) {
+      if (spec.stablePortsOnly) {
+         return sampleStablePorts(spec, occ);
+      }
       List<Coord2d> out = new ArrayList<Coord2d>();
       List<Coord2d[]> polys = spec.footprintPolygons();
       double standOff = Math.max(spec.minDist, occ.cell * 0.5);
+      double[] edgeSamples = spec.faceCentersOnly ? FACE_CENTER_T : EDGE_T;
       for (int p = 0; p < polys.size(); p++) {
          Coord2d[] poly = polys.get(p);
          if (poly == null || poly.length < 2) {
@@ -682,8 +743,8 @@ public final class InteractionGoals {
                continue;
             }
             Coord2d outward = outward(a, b, poly);
-            for (int t = 0; t < EDGE_T.length; t++) {
-               double u = EDGE_T[t];
+            for (int t = 0; t < edgeSamples.length; t++) {
+               double u = edgeSamples[t];
                Coord2d along = Coord2d.of(a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u);
                out.add(along.add(outward.x * standOff, outward.y * standOff));
                out.add(along.add(outward.x * (standOff + occ.cell * 0.5), outward.y * (standOff + occ.cell * 0.5)));
@@ -691,6 +752,13 @@ public final class InteractionGoals {
                out.add(along.add(outward.x * (standOff + occ.cell * 2.0), outward.y * (standOff + occ.cell * 2.0)));
             }
          }
+      }
+      // Nurgling's hard-mode container path uses only the four cardinal rays
+      // from the target. Face-center sampling is the geometry-aware equivalent:
+      // adjacent packed fixtures eliminate their shared faces, leaving the
+      // stable aisle-facing stand instead of a corner squeeze.
+      if (spec.faceCentersOnly) {
+         return out;
       }
       Coord originCell = occ.cellOf(spec.origin);
       int pad = (int) Math.ceil((Math.max(spec.half.x, spec.half.y) + spec.maxDist) / occ.cell) + 2;
@@ -721,6 +789,95 @@ public final class InteractionGoals {
          }
       }
       return out;
+   }
+
+   /** One deterministic port on each cardinal ray from the target origin. */
+   static List<Coord2d> sampleStablePorts(InteractionSpec spec, OccupancyGrid occ) {
+      List<Coord2d> out = new ArrayList<Coord2d>();
+      if (spec == null || occ == null) return out;
+      double standOff = Math.max(spec.minDist, occ.cell * 0.5);
+      double offset = Math.max(standOff, Math.min(spec.maxDist, standOff + occ.cell * 2.0));
+      addStablePort(out, spec, InteractionSpec.SIDE_N, Coord2d.of(0.0, -1.0), offset);
+      addStablePort(out, spec, InteractionSpec.SIDE_E, Coord2d.of(1.0, 0.0), offset);
+      addStablePort(out, spec, InteractionSpec.SIDE_S, Coord2d.of(0.0, 1.0), offset);
+      addStablePort(out, spec, InteractionSpec.SIDE_W, Coord2d.of(-1.0, 0.0), offset);
+      return out;
+   }
+
+   private static void addStablePort(List<Coord2d> out, InteractionSpec spec,
+                                     int side, Coord2d direction, double offset) {
+      if ((spec.allowedSides & side) == 0) return;
+      Coord2d boundary = axisBoundary(spec, direction);
+      if (boundary != null)
+         out.add(boundary.add(direction.x * offset, direction.y * offset));
+   }
+
+   /** Last polygon crossing on a cardinal ray. Falls back to the AABB face
+    * only when an irregular/multi-part footprint does not cross that ray. */
+   private static Coord2d axisBoundary(InteractionSpec spec, Coord2d direction) {
+      boolean horizontal = direction.x != 0.0;
+      double best = direction.x > 0.0 || direction.y > 0.0
+         ? Double.NEGATIVE_INFINITY : Double.POSITIVE_INFINITY;
+      boolean found = false;
+      List<Coord2d[]> polys = spec.footprintPolygons();
+      for (int p = 0; p < polys.size(); p++) {
+         Coord2d[] poly = polys.get(p);
+         if (poly == null || poly.length < 2) continue;
+         for (int i = 0; i < poly.length; i++) {
+            Coord2d a = poly[i], b = poly[(i + 1) % poly.length];
+            if (a == null || b == null) continue;
+            if (horizontal) {
+               if (!between(spec.origin.y, a.y, b.y)) continue;
+               if (Math.abs(b.y - a.y) < 1.0E-9) {
+                  best = chooseRay(best, a.x, spec.origin.x, direction.x);
+                  best = chooseRay(best, b.x, spec.origin.x, direction.x);
+                  found |= onRay(a.x, spec.origin.x, direction.x) || onRay(b.x, spec.origin.x, direction.x);
+               } else {
+                  double t = (spec.origin.y - a.y) / (b.y - a.y);
+                  if (t < -1.0E-9 || t > 1.0 + 1.0E-9) continue;
+                  double x = a.x + (b.x - a.x) * t;
+                  if (onRay(x, spec.origin.x, direction.x)) {
+                     best = chooseRay(best, x, spec.origin.x, direction.x);
+                     found = true;
+                  }
+               }
+            } else {
+               if (!between(spec.origin.x, a.x, b.x)) continue;
+               if (Math.abs(b.x - a.x) < 1.0E-9) {
+                  best = chooseRay(best, a.y, spec.origin.y, direction.y);
+                  best = chooseRay(best, b.y, spec.origin.y, direction.y);
+                  found |= onRay(a.y, spec.origin.y, direction.y) || onRay(b.y, spec.origin.y, direction.y);
+               } else {
+                  double t = (spec.origin.x - a.x) / (b.x - a.x);
+                  if (t < -1.0E-9 || t > 1.0 + 1.0E-9) continue;
+                  double y = a.y + (b.y - a.y) * t;
+                  if (onRay(y, spec.origin.y, direction.y)) {
+                     best = chooseRay(best, y, spec.origin.y, direction.y);
+                     found = true;
+                  }
+               }
+            }
+         }
+      }
+      if (found && Double.isFinite(best))
+         return horizontal ? Coord2d.of(best, spec.origin.y) : Coord2d.of(spec.origin.x, best);
+      if (direction.x > 0.0) return Coord2d.of(spec.maxX(), spec.origin.y);
+      if (direction.x < 0.0) return Coord2d.of(spec.minX(), spec.origin.y);
+      if (direction.y > 0.0) return Coord2d.of(spec.origin.x, spec.maxY());
+      return Coord2d.of(spec.origin.x, spec.minY());
+   }
+
+   private static boolean between(double value, double a, double b) {
+      return value >= Math.min(a, b) - 1.0E-9 && value <= Math.max(a, b) + 1.0E-9;
+   }
+
+   private static boolean onRay(double value, double origin, double direction) {
+      return direction > 0.0 ? value >= origin - 1.0E-9 : value <= origin + 1.0E-9;
+   }
+
+   private static double chooseRay(double best, double value, double origin, double direction) {
+      if (!onRay(value, origin, direction)) return best;
+      return direction > 0.0 ? Math.max(best, value) : Math.min(best, value);
    }
 
    static Coord2d outward(Coord2d a, Coord2d b, Coord2d[] poly) {
@@ -903,7 +1060,7 @@ public final class InteractionGoals {
          return plan;
       }
       if (geom != null && geom.enabled() && pose.dist(approach) > 1.0E-4) {
-         if (approach.dist(pose) > SurfaceStream.LAST_HOP + 1.0E-6) {
+         if (approach.dist(pose) > LAST_HOP + 1.0E-6) {
             return NavPlan.failed(0, "unreachable");
          }
          return appendPose(plan, pose);
@@ -938,7 +1095,7 @@ public final class InteractionGoals {
          }
          if (geom != null && geom.enabled() && !occupancyWalkable(occ, pose) && route.size() >= 2) {
             Coord2d prev = route.get(route.size() - 2);
-            if (prev == null || prev.dist(pose) > SurfaceStream.LAST_HOP + 1.0E-6) {
+            if (prev == null || prev.dist(pose) > LAST_HOP + 1.0E-6) {
                return false;
             }
          }
@@ -992,6 +1149,39 @@ public final class InteractionGoals {
          return Double.POSITIVE_INFINITY;
       }
       return costs[i];
+   }
+
+   private static int[] clearance(OccupancyGrid occ) {
+      int count = occ.w * occ.h;
+      int[] distance = new int[count];
+      Arrays.fill(distance, Integer.MAX_VALUE / 2);
+      ArrayDeque<Integer> open = new ArrayDeque<Integer>();
+      int available = Math.min(count, occ.occ == null ? 0 : occ.occ.length);
+      for (int i = 0; i < count; i++) {
+         if (i < available && occ.occ[i] == OccupancyGrid.SOLID) {
+            distance[i] = 0;
+            open.add(Integer.valueOf(i));
+         }
+      }
+      int[] dx = {1, 1, 0, -1, -1, -1, 0, 1};
+      int[] dy = {0, 1, 1, 1, 0, -1, -1, -1};
+      while (!open.isEmpty()) {
+         int current = open.removeFirst().intValue();
+         int x = current % occ.w;
+         int y = current / occ.w;
+         int nextDistance = distance[current] + 1;
+         for (int direction = 0; direction < dx.length; direction++) {
+            int nx = x + dx[direction];
+            int ny = y + dy[direction];
+            if (nx < 0 || ny < 0 || nx >= occ.w || ny >= occ.h) continue;
+            int next = ny * occ.w + nx;
+            if (nextDistance < distance[next]) {
+               distance[next] = nextDistance;
+               open.add(Integer.valueOf(next));
+            }
+         }
+      }
+      return distance;
    }
 
    private static List<Candidate> compactByCell(List<Candidate> raw) {
@@ -1232,47 +1422,9 @@ public final class InteractionGoals {
    private static boolean segmentWalkable(Coord2d a, Coord2d b, InteractionSpec spec, Geometry geom, boolean leaving) {
       List<Coord2d[]> ignore = spec == null ? null : spec.polygons;
       LocalPlanner.PolyBounds bounds = geom.bounds;
-      if (!leaving && LocalPlanner.bodyHitsAny(a, geom.playerBody, geom.solids, ignore, bounds)) {
-         return false;
-      }
-      if (LocalPlanner.bodyHitsAny(b, geom.playerBody, geom.solids, ignore, bounds)) {
-         return false;
-      }
-      double skip = leaving ? LocalPlanner.bodyExtent(geom.playerBody) + 1.0 : 0.0;
-      for (int s = 1; s < 8; s++) {
-         double t = s / 8.0;
-         Coord2d p = Coord2d.of(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
-         if (skip > 0.0 && p.dist(a) <= skip) {
-            continue;
-         }
-         if (LocalPlanner.bodyHitsAny(p, geom.playerBody, geom.solids, ignore, bounds)) {
-            return false;
-         }
-      }
-      double pad = LocalPlanner.bodyExtent(geom.playerBody);
-      for (int i = 0; i < geom.solids.size(); i++) {
-         Coord2d[] poly = geom.solids.get(i);
-         if (poly == null || poly.length < 2) {
-            continue;
-         }
-         if (ignore != null && LocalPlanner.listed(poly, ignore)) {
-            continue;
-         }
-         if (leaving && LocalPlanner.bodyHits(a, geom.playerBody, poly)) {
-            continue;
-         }
-         if (bounds != null) {
-            if (!bounds.nearSegment(i, a, b, pad)) {
-               continue;
-            }
-         } else if (!LocalPlanner.segmentNearPoly(a, b, poly, pad)) {
-            continue;
-         }
-         if (LocalPlanner.segmentHitsPolygon(a, b, poly, 0.0)) {
-            return false;
-         }
-      }
-      return true;
+      return leaving
+         ? LocalPlanner.sweptClearLeaving(a, b, geom.playerBody, geom.solids, ignore, bounds)
+         : LocalPlanner.sweptClear(a, b, geom.playerBody, geom.solids, ignore, bounds);
    }
 
    static Coord2d firstFailingPoint(List<Coord2d> route, InteractionSpec spec, Geometry geom) {

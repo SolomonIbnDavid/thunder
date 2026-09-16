@@ -5,6 +5,7 @@ public class ChatHudWnd extends Window {
 
     public ChatHudWnd(ChatUI chat) {
 	super(UI.scale(600, 180), "Chat");
+	reqclose(this::close);
 	this.chat = add(chat, Coord.z);
 	resize(UI.scale(600, 180));
     }

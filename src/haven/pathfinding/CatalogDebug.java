@@ -155,7 +155,7 @@ public final class CatalogDebug implements Feature {
       step = i;
       total = n;
       targetId = gob == null ? 0L : gob.id;
-      targetName = gob == null ? "" : PrototypePathfinder.displayName(gob);
+      targetName = gob == null ? "" : PathfinderCommands.displayName(gob);
       walkable = canWalk;
       corner = isCorner;
       viaId = via;
@@ -251,7 +251,7 @@ public final class CatalogDebug implements Feature {
          failedIds.add(targetId);
       }
 
-      String label = WaypointWalker.gateLabel(outcome, lastFail, obs);
+      String label = MovementListeners.gateLabel(outcome, lastFail, obs);
       event("FAIL " + label + "  dist=" + String.format("%.1ft", distTiles()) + "  extender=" + extender);
       CupboardBot.CatalogWnd log = wnd;
       if (log != null) {

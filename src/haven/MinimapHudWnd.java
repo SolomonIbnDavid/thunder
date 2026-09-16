@@ -6,6 +6,7 @@ public class MinimapHudWnd extends Window {
 
     public MinimapHudWnd(GameUI gui, GameUI.CornerMap map) {
 	super(UI.scale(260, 220), "Minimap");
+	reqclose(this::close);
 	this.map = add(map, Coord.z);
 	this.toolbar = add(makeToolbar(gui), Coord.z);
 	resize(UI.scale(260, 220));

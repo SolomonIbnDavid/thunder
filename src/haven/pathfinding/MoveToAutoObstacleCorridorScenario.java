@@ -12,7 +12,6 @@ import haven.MapFile;
 import haven.Moving;
 import haven.UI;
 import haven.Utils;
-import haven.NamedPlaceResolver.Place;
 import java.io.IOException;
 import java.io.Writer;
 import java.nio.file.Files;
@@ -84,9 +83,9 @@ final class MoveToAutoObstacleCorridorScenario implements PfTestRunner.Scenario 
          } else if (run.cancelled) {
             throw new PfTestRunner.Cancelled();
          } else {
-            PrototypePathfinder.Scene scene;
+            MovementScene.Scene scene;
             synchronized (ui) {
-               scene = PrototypePathfinder.observe(gui);
+               scene = MovementScene.observe(gui);
             }
 
             NavigationTestSpotSelector.Selection sel = NavigationTestSpotSelector.localObstacleOrCorridor(scene);
@@ -97,9 +96,9 @@ final class MoveToAutoObstacleCorridorScenario implements PfTestRunner.Scenario 
                throw new PfTestRunner.Cancelled();
             } else {
                Coord2d target = sel.targetWorld;
-               PrototypePathfinder.Scene fresh;
+               MovementScene.Scene fresh;
                synchronized (ui) {
-                  fresh = PrototypePathfinder.observe(gui);
+                  fresh = MovementScene.observe(gui);
                }
 
                JSONObject reval = MoveToAutoOpenGroundScenario.revalidationCheck(fresh, target, 44.0);
@@ -111,7 +110,7 @@ final class MoveToAutoObstacleCorridorScenario implements PfTestRunner.Scenario 
                } else if (run.cancelled) {
                   throw new PfTestRunner.Cancelled();
                } else {
-                  PrototypePathfinder.Plan plan = PrototypePathfinder.planAny(gui, Collections.singletonList(target), true);
+                  MovementScene.Plan plan = MovementScene.planAny(gui, Collections.singletonList(target), true);
                   JSONObject routeReval = routeRevalidationCheck(fresh, plan, target);
                   checks.add(routeReval);
                   if ("fail".equals(routeReval.getString("status"))) {
@@ -138,7 +137,7 @@ final class MoveToAutoObstacleCorridorScenario implements PfTestRunner.Scenario 
       }
    }
 
-   static MoveToAutoOpenGroundScenario.MoveResult liveMove(GameUI gui, PrototypePathfinder.Plan plan, Coord2d target, Bot bot) {
+   static MoveToAutoOpenGroundScenario.MoveResult liveMove(GameUI gui, MovementScene.Plan plan, Coord2d target, Bot bot) {
       return MoveToAutoOpenGroundScenario.walkPlan(gui, plan, target, bot, 60000L, 60000L);
    }
 
@@ -146,12 +145,12 @@ final class MoveToAutoObstacleCorridorScenario implements PfTestRunner.Scenario 
       return PfTestHarness.autoMovePreflightChecks("move_to_auto_obstacle_corridor", inGame, playerPresent, mapfileAvailable, playerIdle, botBusy);
    }
 
-   static JSONObject routeRevalidationCheck(PrototypePathfinder.Scene fresh, PrototypePathfinder.Plan plan, Coord2d target) {
+   static JSONObject routeRevalidationCheck(MovementScene.Scene fresh, MovementScene.Plan plan, Coord2d target) {
       if (fresh == null || fresh.player == null) {
          return PfTestRunner.check("route_revalidated", false, "player gob not observable at route revalidation (no-move)");
       } else if (target == null || plan == null) {
          return PfTestRunner.check("route_revalidated", false, "no live local plan to revalidate (no-move)");
-      } else if (plan.status != PrototypePathfinder.Plan.Status.REACHED) {
+      } else if (plan.status != MovementScene.Plan.Status.REACHED) {
          return PfTestRunner.check("route_revalidated", false, "live local plan " + plan.status + " to the selected target; refusing to move (no-move)");
       } else {
          Coord start = fresh.cellOf(fresh.player);
@@ -217,7 +216,7 @@ final class MoveToAutoObstacleCorridorScenario implements PfTestRunner.Scenario 
 
    static JSONObject cancelledBody(
       NavigationTestSpotSelector.Selection sel,
-      PrototypePathfinder.Plan plan,
+      MovementScene.Plan plan,
       JSONObject routeReval,
       MoveToAutoOpenGroundScenario.MoveResult mv
    ) {
@@ -235,7 +234,7 @@ final class MoveToAutoObstacleCorridorScenario implements PfTestRunner.Scenario 
 
    static JSONObject completedBody(
       NavigationTestSpotSelector.Selection sel,
-      PrototypePathfinder.Plan plan,
+      MovementScene.Plan plan,
       MoveToAutoOpenGroundScenario.MoveResult mv,
       boolean timedOut,
       JSONObject arrival
@@ -255,7 +254,7 @@ final class MoveToAutoObstacleCorridorScenario implements PfTestRunner.Scenario 
          note = "hard wall-clock deadline exceeded (120000ms); movement interrupted";
       } else if (mv != null && mv.cancelledDetail != null) {
          note = "movement cancelled (detail: " + mv.cancelledDetail + ")";
-      } else if (mv != null && mv.walk != WaypointWalker.Result.ARRIVED) {
+      } else if (mv != null && mv.walk != ConfirmedRouteRunner.Status.ARRIVED) {
          note = "movement did not verify arrival at the selected target";
       }
 
@@ -265,14 +264,14 @@ final class MoveToAutoObstacleCorridorScenario implements PfTestRunner.Scenario 
 
    static JSONObject factsJson(
       NavigationTestSpotSelector.Selection sel,
-      PrototypePathfinder.Plan plan,
+      MovementScene.Plan plan,
       MoveToAutoOpenGroundScenario.MoveResult mv,
       String status,
       String reason
    ) {
       JSONObject f = new JSONObject();
       f.put("moved", mv != null && (mv.walk != null || mv.cancelledDetail != null));
-      f.put("arrived", mv != null && mv.walk == WaypointWalker.Result.ARRIVED);
+      f.put("arrived", mv != null && mv.walk == ConfirmedRouteRunner.Status.ARRIVED);
       f.put("profile", NavigationTestSpotSelector.Profile.LOCAL_OBSTACLE_OR_CORRIDOR.name());
       f.put("status", status == null ? "NOT_STARTED" : status);
       if (sel != null) {
@@ -336,6 +335,6 @@ final class MoveToAutoObstacleCorridorScenario implements PfTestRunner.Scenario 
             gui, plan, target, bot
          );
 
-      MoveToAutoOpenGroundScenario.MoveResult run(GameUI var1, PrototypePathfinder.Plan var2, Coord2d var3, Bot var4, PfTestRunner.Run var5) throws Exception;
+      MoveToAutoOpenGroundScenario.MoveResult run(GameUI var1, MovementScene.Plan var2, Coord2d var3, Bot var4, PfTestRunner.Run var5) throws Exception;
    }
 }

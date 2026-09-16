@@ -131,5 +131,20 @@ public class BotUtil {
 	    }
 	};
     }
+
+    /** Right-click a target and choose a flower option without relying on its
+     * GobTag.MENU classification. This is useful for forageables whose live
+     * resource sits outside the usual herbs namespace. */
+    public static Bot.BotAction rclickAndSelectFlower(String... options) {
+	return (target, bot) -> {
+	    FlowerMenu.lastTarget(target);
+	    Reactor.FLOWER.first().subscribe(flowerMenu -> {
+		Reactor.FLOWER_CHOICE.first().subscribe(choice -> unpause());
+		flowerMenu.forceChoose(options);
+	    });
+	    target.rclick(bot);
+	    pause(5000);
+	};
+    }
     
 }

@@ -38,134 +38,6 @@ public final class NavigationTestSpotSelector {
       return select(scene, NavigationTestSpotSelector.Profile.LOCAL_OBSTACLE_OR_CORRIDOR, range, maxExpanded);
    }
 
-   public static NavigationTestSpotSelector.Selection knownMapLongLeg(CoarseTileSource src, long segment, Coord start, double minTiles, double maxTiles) {
-      return knownMapLongLeg(src, segment, start, minTiles, maxTiles, 1000000, 2000000);
-   }
-
-   public static NavigationTestSpotSelector.Selection knownMapLongLeg(
-      CoarseTileSource src, long segment, Coord start, double minTiles, double maxTiles, int maxExpanded
-   ) {
-      return knownMapLongLeg(src, segment, start, minTiles, maxTiles, maxExpanded, 2000000);
-   }
-
-   public static NavigationTestSpotSelector.Selection knownMapLongLeg(
-      CoarseTileSource src, long segment, Coord start, double minTiles, double maxTiles, int maxExpanded, int maxTotalExpanded
-   ) {
-      NavigationTestSpotSelector.Profile profile = NavigationTestSpotSelector.Profile.KNOWN_MAP_LONG_LEG;
-      if (src == null) {
-         return refuse(profile, NavigationTestSpotSelector.Refusal.NO_SOURCE, "no coarse tile source injected");
-      } else if (!Double.isNaN(minTiles) && !Double.isNaN(maxTiles) && !(minTiles < 0.0) && !(maxTiles < minTiles)) {
-         int w = src.width();
-         int h = src.height();
-         if (start != null && start.x >= 0 && start.y >= 0 && start.x < w && start.y < h) {
-            if (src.tile(start.x, start.y) != CoarseTileSource.Tile.FREE) {
-               return refuse(
-                  profile,
-                  NavigationTestSpotSelector.Refusal.START_UNKNOWN,
-                  String.format("start tile %s is not known-free (%s)", start, src.tile(start.x, start.y))
-               );
-            } else if (maxTotalExpanded <= 0) {
-               return refuse(
-                  profile,
-                  NavigationTestSpotSelector.Refusal.BUDGET_EXHAUSTED,
-                  String.format("aggregate coarse route-search budget %d expansions — no route search permitted", maxTotalExpanded)
-               );
-            } else {
-               List<NavigationTestSpotSelector.Candidate> cands = new ArrayList<>();
-               int scanned = 0;
-               int inBand = 0;
-               int searched = 0;
-               int totalExpanded = 0;
-
-               for (int y = 0; y < h; y++) {
-                  for (int x = 0; x < w; x++) {
-                     scanned++;
-                     if (src.tile(x, y) == CoarseTileSource.Tile.FREE) {
-                        double dist = distTiles(start, Coord.of(x, y));
-                        if (!(dist < minTiles) && !(dist > maxTiles)) {
-                           inBand++;
-                           CoarseRoutePlanner.Route r = CoarseRoutePlanner.plan(src, start, Coord.of(x, y), maxExpanded);
-                           searched++;
-                           totalExpanded += r.expanded;
-                           if (totalExpanded > maxTotalExpanded) {
-                              return refuse(
-                                 profile,
-                                 NavigationTestSpotSelector.Refusal.BUDGET_EXHAUSTED,
-                                 String.format(
-                                    "scanned %d tiles: %d known-free tiles in band %.1f..%.1f tiles from start %s; aggregate coarse route-search budget %d expansions exceeded after %d in-band candidate route searches (%d expansions total, per-candidate cap %d); refusing rather than continuing unbounded aggregate search",
-                                    scanned,
-                                    inBand,
-                                    minTiles,
-                                    maxTiles,
-                                    start,
-                                    maxTotalExpanded,
-                                    searched,
-                                    totalExpanded,
-                                    maxExpanded
-                                 )
-                              );
-                           }
-
-                           if (r.status == CoarseRoutePlanner.Status.REACHED) {
-                              cands.add(
-                                 new NavigationTestSpotSelector.Candidate(
-                                    Coord.of(x, y),
-                                    null,
-                                    dist,
-                                    String.format("%.1f tiles from start, coarse route %d waypoints / %d expanded", dist, r.waypoints.size(), r.expanded),
-                                    r.waypoints
-                                 )
-                              );
-                           }
-                        }
-                     }
-                  }
-               }
-
-               if (!cands.isEmpty()) {
-                  sortCandidates(cands);
-                  NavigationTestSpotSelector.Candidate best = cands.get(0);
-                  return new NavigationTestSpotSelector.Selection(
-                     profile,
-                     NavigationTestSpotSelector.Status.SELECTED,
-                     null,
-                     null,
-                     best.tile,
-                     segment,
-                     cands,
-                     String.format(
-                        "KNOWN_MAP_LONG_LEG: selected tile %s (segment %x): %s; %d reachable candidates (best first) of %d tiles scanned",
-                        best.tile,
-                        segment,
-                        best.note,
-                        cands.size(),
-                        scanned
-                     )
-                  );
-               } else {
-                  return inBand == 0
-                     ? refuse(
-                        profile,
-                        NavigationTestSpotSelector.Refusal.NO_CANDIDATE,
-                        String.format("scanned %d tiles: 0 known-free tiles in band %.1f..%.1f tiles from start %s", scanned, minTiles, maxTiles, start)
-                     )
-                     : refuse(
-                        profile,
-                        NavigationTestSpotSelector.Refusal.NO_KNOWN_ROUTE,
-                        String.format("scanned %d tiles: %d known-free tiles in band, 0 with a known coarse route from %s", scanned, inBand, start)
-                     );
-               }
-            }
-         } else {
-            return refuse(profile, NavigationTestSpotSelector.Refusal.START_UNKNOWN, String.format("start tile %s outside source %dx%d", start, w, h));
-         }
-      } else {
-         return refuse(
-            profile, NavigationTestSpotSelector.Refusal.BOUNDS_INVALID, String.format("distance band %.1f..%.1f tiles is invalid", minTiles, maxTiles)
-         );
-      }
-   }
-
    public static NavigationTestSpotSelector.Selection select(
       OccupancyView scene, NavigationTestSpotSelector.Profile profile, NavigationTestSpotSelector.SpotRange range
    ) {
@@ -627,9 +499,7 @@ public final class NavigationTestSpotSelector {
    }
 
    public static enum Interaction {
-      NO_INTERACTION,
-      TRANSITION_FUTURE,
-      NOT_SAFELY_INFERABLE;
+      NO_INTERACTION;
    }
 
    public static enum Profile {
@@ -638,15 +508,6 @@ public final class NavigationTestSpotSelector {
          true,
          NavigationTestSpotSelector.Interaction.NO_INTERACTION,
          "occluded direct line with a verified material-detour occupancy route (obstacle detour or corridor)"
-      ),
-      KNOWN_MAP_LONG_LEG(true, NavigationTestSpotSelector.Interaction.NO_INTERACTION, "known explored coarse-map target with a verified coarse route"),
-      TRANSITION_APPROACH(
-         false, NavigationTestSpotSelector.Interaction.TRANSITION_FUTURE, "declared future — transition approaches (doors, caves, boats) are a later slice"
-      ),
-      CART_OR_PROPERTY(
-         false,
-         NavigationTestSpotSelector.Interaction.NOT_SAFELY_INFERABLE,
-         "never safely inferable — cart/property ownership and interaction safety cannot be proven from occupancy"
       );
 
       public final boolean supported;

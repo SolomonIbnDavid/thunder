@@ -1,175 +1,148 @@
-# Organizer integration guide (headless client)
+# Exact object placement integration
 
-How the headless client uses the **placement logic** to organize picked-up objects
-into shapes. This documents the planning seam only — taking, carrying, and
-placing objects on the ground is the client's own job.
+Thunder has one placement pipeline for logs, stockpiles, containers, and future
+organizer bots. It deliberately keeps three different facts separate:
 
-## What you get, and what you don't
+1. **Grounded movement geometry** says where the player may walk.
+2. **Physical placement geometry** says whether the server can put an object at
+   an exact coordinate and angle.
+3. **Interaction approach geometry** says where the player can stand to use an
+   object.
 
-The organizer logic answers one question: **for each of N objects, where do I stand
-and where does it go?**
+A lifted object contributes no movement collision. Its grounded collision is
+used again only after the server accepts placement.
 
-- **Provided** (this repo): footprint derivation + a deterministic planner that
-  returns, per object, a **world anchor** (where the object lands) and a
-  **proven-reachable stand** (where to stand while placing), without overlapping
-  anything already there.
-- **Not provided**: picking the object up, walking to the stand, dropping/placing
-  it, or confirming the server accepted it. The client owns all of that.
+## Shared pipeline
 
-## Where the code lives
-
-| Piece | Jar / package | Notes |
+| Responsibility | Entry point | Contract |
 | --- | --- | --- |
-| Layout planner (renderer-independent) | `HavenNavigationCore.jar` → `haven.layout.*` | Pure Java 8, no AWT/renderer. The actual logic. |
-| Occupancy grid (renderer-independent) | `HavenNavigationCore.jar` → `haven.pathfinding.OccupancyGrid` | The world obstacle model the planner reads. |
-| `ObjectFootprints` (live seam) | Thunder tree → `src/haven/pathfinding/ObjectFootprints.java` | Derives a footprint from a resource's collision geometry. |
-| `ObjectOrganizer` (live seam) | Thunder tree → `src/haven/pathfinding/ObjectOrganizer.java` | Plan-only entry point. |
+| Resource facts | `ObjectSpatialProfiles.resolve(resname)` | Returns separate navigation and placement facts, their sources, gap confidence, player-overlap rule, and failure signal. |
+| Live physical shape | `PlacementGeometry.relative(gob, angle)` | Reads placement geometry without navigation padding and rotates it to the requested angle. |
+| Exact packing | `ObjectOrganizer.planExact(...)` | Packs exact polygons inside the selected `Area` with continuous world coordinates. The default is front-edge packing; long-object callers may request side-by-side rows. |
+| Placement staging | `PlacementExecutor` | Uses `BotMovement` to reach an open point within confirmed placement range of a lifted object's anchor. Stockpile creation separately stages roughly one tile outside the selected area. |
+| Live placement | `PlacementExecutor` | Arms the real ghost and sends its exact coordinate/angle in Shift fine-placement mode. |
+| Ordinary approach | `BotMovement.approach(...)` | Chooses at most one stable face-center port per cardinal side and never targets the object's center. |
 
-The headless client is a separate hafen fork (`HavenHeadlessWorker`, based on
-`dolda2000/hafen-client`) and does **not** currently contain `haven.layout` or the
-seam classes. To integrate:
+`ExactPlacementPlanner` is the pure geometry engine beneath
+`ObjectOrganizer`. It rejects any candidate whose full polygon extends outside
+the selected area or conflicts with an existing grounded object.
 
-1. Add `HavenNavigationCore.jar` to the headless client's compile + runtime
-   classpath (build it with `ant jar` in `HavenNavigationCore/`, or depend on the
-   published jar).
-2. Copy `ObjectFootprints.java` and `ObjectOrganizer.java` into the headless
-   client's `haven.pathfinding` package. They depend only on base hafen-client
-   classes (`haven.Coord2d`, `haven.Resource`, `haven.MCache`, `haven.Loading`)
-   plus the core jar.
+## Confirmed game rules represented in code
 
-## Concepts
+- A carried overhead object has no active movement hitbox.
+- The placement rectangle is a strict boundary: the whole placed shape stays
+  inside it.
+- The target coordinate and angle are preserved through the live ghost.
+- Placement is sent in Shift fine-placement mode, not regular tile-snap mode.
+- Before a lifted-object commit, Thunder reaches a collision-free staging point
+  0.75 tile from the chosen anchor. This remains inside the placement reach
+  observed in the manual log-row recording, so the game's final automatic
+  movement cannot become a long route through a placed row.
+- An ordinary object may overlap the player during placement.
+- A new stockpile may not overlap the player's hitbox.
+- Ordinary invalid placement can fail silently, so the caller must verify that
+  the carried object became grounded at the intended pose.
+- Stockpile success is verified by observing a newly created stockpile. A game
+  error message is useful telemetry but is not the only success/failure test.
 
-- **Footprint** (`LayoutFootprint`): the object's shape on the placement grid, in
-  cells. `rect(w, h)` for a solid block, `ofCells(...)` for arbitrary shapes
-  (holes/concavities allowed). `blocksApproach` is `true` for things you stand
-  *beside* (containers, furniture, stockpiles) and `false` for things you stand
-  *on/over*.
-- **Pitch**: the placement grid's cell size in world units. A `w × h` footprint
-  reserves `w*pitch × h*pitch` world units. Footprints derived by `ObjectFootprints`
-  use **11 world units per cell** (`MCache.tilesz.x` = one game tile), so pass
-  `pitch = 11.0` to match.
-- **Occupancy** (`OccupancyGrid`): the world obstacle model. Cells are `FREE`,
-  `SOLID` (obstacle), `DILATED`, or `CARVED`. The planner treats `SOLID` as
-  blocked for both placement and approach. Its cell size is independent of pitch;
-  the planner projects footprint cells onto occupancy cells.
-- **Approach from** (`approachFrom`): a world position the actor starts from. Every
-  stand must stay reachable from it.
-- **Keep / occupied shapes** (`LayoutShape`): existing objects that must not be
-  moved. The planner rejects placements that would overlap them
-  (`overlap_keep` / `overlap_occupied`).
+## Current geometry confidence
 
-## End-to-end usage
+Nurgling's `NHitBox` catalog is used for grounded navigation fallbacks.
+Nurgling's `NModelBox`/Neg concept is used as the model for physical placement
+geometry. Thunder does not assume those two shapes are interchangeable.
 
-1. Decide the object's **footprint** (from its resname, or build one directly).
-2. Capture an **occupancy grid** of the current world.
-3. Build the **request** (area, count, pitch, approachFrom, keep/occupied).
-4. Call **`ObjectOrganizer.plan`**.
-5. For each returned **placement**, in order: walk to `stand`, take the object,
-   place it at `world`, verify, then **re-capture occupancy** before the next one
-   (already-placed objects must become solid).
+The ordinary tree-log placement box is confirmed as `20 × 4` world units, and
+the manual parallel-log recording confirms a `0.125` world-unit gap. The same
+gap is the provisional default for other object families. Stockpile sizes are
+currently catalog-backed and explicitly marked provisional until each family
+has a live placement example.
 
-### Example (Java)
+When a server-observed placement succeeds after a wider retry,
+`ObjectSpatialProfiles.confirmPlacementGap(...)` updates that resource family
+for the current client session. Planned-but-unverified placements must never be
+recorded as confirmed.
+
+## Planning an ordinary lifted object
 
 ```java
-import haven.Coord2d;
-import haven.layout.*;
-import haven.pathfinding.*;
+Gob player = gui.map.player();
+double angle = requestedAngle;
+ExactPlacementPlanner.Shape physical = PlacementGeometry.relative(carried, angle);
+List<ExactPlacementPlanner.Shape> occupied = observeGroundedPlacementShapes();
 
-// 1. Footprint for the object being organized.
-LayoutFootprint fp = ObjectFootprints.footprintFor("gfx/invobjs/board-pine");
-// or supply a fallback when the resource has no obstacle layer:
-// ObjectFootprints.footprintFor(resname, Coord2d.of(5.5, 5.5));
-// or build one directly:
-// LayoutFootprint fp = LayoutFootprint.rect(1, 4, true); // 1x4 tiles, stand beside
+ObjectOrganizer.ExactPlan plan = ObjectOrganizer.planExact(
+    physical,
+    selectedTiles,
+    player.rc,
+    12,
+    angle,
+    ObjectSpatialProfiles.resolve(carried.resid()).placementGap,
+    occupied,
+    "live-placement"
+);
 
-// 2. Occupancy. In the Thunder client this comes from the pathfinder; the
-//    headless client must produce an equivalent grid of its own observation.
-//    (Thunder: PrototypePathfinder.observe(gui, false).occupancy)
-OccupancyGrid occ = observeOccupancy();
-
-// 3. Plan N placements inside the selected rectangle.
-Coord2d areaMin = Coord2d.of(x0, y0);
-Coord2d areaMax = Coord2d.of(x1, y1);
-Coord2d approachFrom = playerPosition();
-LayoutPlanResult plan = ObjectOrganizer.plan(
-    fp, occ, areaMin, areaMax, approachFrom, /*count*/ 12, /*pitch*/ 11.0);
-
-// 4. Handle the outcome.
-if (plan.status == LayoutPlanResult.Status.FAILED) {
-    // plan.reason explains why nothing could be placed.
-    return;
-}
-if (plan.status == LayoutPlanResult.Status.PARTIAL) {
-    // plan.placements.size() < count; plan.reason + plan.rejectCounts explain.
-}
-
-// 5. Execute (the client's job), re-observing between placements.
-for (LayoutPlacement p : plan.placements) {
-    walkTo(p.stand);                 // p.standRoute is the waypoint list
-    takeObject();                    // lift the next item into hand
-    placeAt(p.world);                // drop/place so its (0,0) cell lands at p.world
-    verifyPlaced(p.world);
-    occ = observeOccupancy();        // the new object is now solid
+for (ObjectOrganizer.ExactPlacement p : plan.placements) {
+    PlacementExecutor.Result sent = PlacementExecutor.commitLifted(
+        gui, bot, carried, selectedTiles, p.anchor, p.angle,
+        20_000L, 6_000L, NamedPlaceNavigator.NOOP
+    );
+    if (!sent.sent()) break;
+    verifyGroundedAt(p.anchor, p.angle); // required: ordinary failure may be silent
 }
 ```
 
-## The execution contract
+The planner returns an **object anchor**, not a tile corner and not a stand
+position. `p.shape` is the resulting world polygon. Callers should re-observe
+grounded obstacles after each server-accepted placement before planning the next
+object.
 
-The planner only guarantees geometry. The executor must:
+## Planning a stockpile
 
-- **Walk to `stand` before placing.** `stand` is proven reachable from
-  `approachFrom`; `standRoute` is the waypoint list (last point = `stand`).
-- **Re-observe occupancy after every placement.** Otherwise the next plan treats
-  the spot as still free. If you re-plan per object rather than once up front,
-  rebuild the request each time with the fresh grid.
-- **Land the object with its (0,0) footprint cell at `world`.** `world` is the
-  corner of the footprint's (0,0) cell, not the object's center. For a
-  `w × h` footprint the center is `world + (w*pitch/2, h*pitch/2)`.
-- **Confirm the server accepted the placement.** The planner cannot know whether
-  the drop actually happened; treat a failed confirmation as an executor error.
+Stockpiles use the same `ObjectOrganizer.ExactPlan` and exact polygon planner,
+but `StockpilePlacement` owns the itemact/create verification:
 
-## Status and rejection reasons
+```java
+ObjectOrganizer.ExactPlan plan = StockpilePlacement.planExact(
+    gui, stockpileResource, selectedTiles, count);
 
-`LayoutPlanner.plan` returns `PLANNED` (all `count` placed), `PARTIAL` (some), or
-`FAILED` (none). `reason` is empty for `PLANNED`; otherwise it names the dominant
-rejection, and `rejectCounts` has per-candidate tallies:
+for (ObjectOrganizer.ExactPlacement p : plan.placements) {
+    StockpilePlacement.Result result = StockpilePlacement.createHeld(
+        gui, bot, stockpileResource, selectedTiles, p,
+        20_000L, 6_000L, listener);
+    if (!result.success) break;
+}
+```
 
-| Constant | Meaning |
+The former `LayoutPlanner`/`LayoutFootprint` organizer methods remain deprecated
+for source compatibility. No live Thunder placement bot should call them.
+
+## Migrated bots
+
+| Bot or feature | New behavior |
 | --- | --- |
-| `overlap_placed` | Would overlap a placement already accepted this plan. |
-| `overlap_keep` / `overlap_occupied` | Would overlap an immovable preserved shape. |
-| `outside_area` | Footprint extends past the requested rectangle. |
-| `no_free_space` | No free candidate remained. |
-| `unreachable` | No stand could be proven reachable for this candidate. |
-| `lane_blocked` | Candidate would orphan the stand of an earlier placement. |
-| `no_interaction_pose` | No legal stand pose exists geometrically. |
+| Clear Cut | Exact log polygons at one fixed `0.0` world angle, tightly packed side-by-side rows with the recorded `0.125` gap, collision-aware travel to an open staging point, fine coordinate/angle commit, observed-ground verification, and post-drop egress. |
+| Log Cutter | Exact stockpile planning and stockpile-overlap enforcement. |
+| Stockpile Organizer | Same exact stockpile plan/executor as Log Cutter. |
+| Object Organizer API | Generic live-object or explicit-polygon exact planning. |
+| Fish Spit Roaster | Stable `BotMovement.approach`; the direct center-offset fallback was removed. |
+| Directional Forager | Stable `BotMovement.approach` normally; its separate moving-aggressive exclusion route remains active when danger exists. |
 
-## Footprint guidance
+Cupboard Catalog keeps its specialized packed-cupboard rules. Mining Bot keeps
+its construction-ghost workflow. Board Stockpile Worker has its own remote
+worker protocol. Those systems are regression-tested around this change but
+are not ordinary lift-and-place callers.
 
-- **Derive from the resource** when possible: `ObjectFootprints.footprintFor(resname)`
-  reads the resource's `Obstacle` layer (the same geometry the occupancy grid uses)
-  and converts its bounding box to 11u cells. This is what makes the placement
-  respect the object's real hit box.
-- **Fallback**: `footprintFor(resname, fallbackHalf)` uses `fallbackHalf` (world
-  half-extents) when the resource has no obstacle layer. `ObjectFootprints.DEFAULT_HALF`
-  is one 11u tile `(5.5, 5.5)`.
-- **`blocksApproach`**: `true` for solid objects you stand beside — the planner
-  proves a stand *around* the footprint. `false` for things you stand on — the
-  stand becomes the footprint's anchor cell.
-- **Preserve immovables**: pass existing objects as `keep`/`occupied` `LayoutShape`s
-  (`LayoutShape.at(footprint, worldAnchor)`) so the planner leaves them alone.
+## Adding a new placement bot
 
-## Caveats
+Before adding a resource family, capture one real manual placement example and
+answer only the facts the shared profile needs:
 
-- **Pitch must match footprint cell size.** `ObjectFootprints` returns footprints in
-  11u cells; pass `pitch = 11.0`. If you build footprints by hand, keep the two
-  consistent.
-- **`approachFrom` must be a free cell** (not inside a solid/obstacle cell).
-- **Determinism**: placements are enumerated row-major, so the same inputs give the
-  same plan — useful for tests and replays.
-- **The planner is a snapshot.** It does not know the world changed underneath it;
-  that's why re-observation between placements matters.
-- **`ObjectOrganizer` is plan-only.** For the stockpile-specific wire sequence
-  (itemact → wait for placer → `place`), see `StockpileOrganizer` as the reference
-  executor; a generic pick/place executor replaces only its itemact/place step with
-  the client's own take/place action.
+- What is the physical placed shape at the requested angle?
+- What minimum server-accepted gap was observed?
+- May the placed object overlap the player?
+- What authoritative signal proves success or failure?
+
+Do not infer these rules from visual sprite size or grounded navigation
+collision. Add the observed fact to `ObjectSpatialProfiles`, then use
+`ObjectOrganizer` and `PlacementExecutor` rather than adding bot-local placement
+math.

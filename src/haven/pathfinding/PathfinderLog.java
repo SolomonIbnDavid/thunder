@@ -46,17 +46,6 @@ public final class PathfinderLog {
    private PathfinderLog() {
    }
 
-   static {
-      RecedingHorizonNavigator.setTelemetry(new haven.nav.NavigationTelemetrySink() {
-         @Override
-         public void onEvent(String type, String detail) {
-            if ("replan".equals(type)) {
-               PathfinderLog.setReplanReason(detail);
-            }
-         }
-      });
-   }
-
    public static void resetRun() {
       synchronized (recent) {
          recent.clear();
@@ -132,46 +121,6 @@ public final class PathfinderLog {
          if (!probe && gui != null && Boolean.TRUE.equals(CFG.DEBUG_PATHFIND.get())) {
             gui.msg("PF " + trace.summary(), MsgType.INFO);
          }
-      }
-   }
-
-   public static void recordExec(haven.pathfinding.SurfaceController.Tick tick) {
-      if (tick == null || tick.decision == null) {
-         return;
-      }
-      org.json.JSONObject o = new org.json.JSONObject();
-      o.put("kind", tick.decision.kind.name());
-      o.put("reason", tick.reason == null ? tick.decision.reason : tick.reason.name());
-      o.put("recovery", tick.recoveryCount);
-      o.put("plan_ms", tick.planMs);
-      if (tick.decision.target != null) {
-         o.put("target", new org.json.JSONArray().put(tick.decision.target.x).put(tick.decision.target.y));
-      }
-      if (tick.pick != null) {
-         o.put("selected_index", tick.pick.selectedIndex);
-         o.put("considered_index", tick.pick.consideredIndex);
-         o.put("corridor_valid", tick.pick.corridorValid);
-         if (tick.pick.whyShorter != null) {
-            o.put("why_shorter", tick.pick.whyShorter);
-         }
-      }
-      if (tick.escapeCell != null) {
-         o.put("escape", new org.json.JSONArray().put(tick.escapeCell.x).put(tick.escapeCell.y));
-      }
-      if (tick.reason == haven.pathfinding.SurfaceStream.Reason.RECOVERY && tick.escapeCell == null) {
-         o.put("blacklist", true);
-      }
-      if (tick.decision.outcome != null) {
-         o.put("outcome", tick.decision.outcome.name());
-      }
-      synchronized (recent) {
-         recent.addLast(o);
-         while (recent.size() > 24) {
-            recent.removeFirst();
-         }
-      }
-      if (tick.reason != null) {
-         lastReplanReason = tick.reason.name();
       }
    }
 

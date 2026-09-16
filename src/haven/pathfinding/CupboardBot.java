@@ -385,11 +385,11 @@ public final class CupboardBot {
       return gui.ui != null && gui.ui.sess != null ? gui.ui.sess.glob.oc.getgob(id) : null;
    }
 
-   private static Coord2d findStand(PrototypePathfinder.Scene scene, Gob gob, Gob player, List<CupboardCatalog.Node> cups) {
+   private static Coord2d findStand(MovementScene.Scene scene, Gob gob, Gob player, List<CupboardCatalog.Node> cups) {
       return findStand(scene, gob, player, Collections.emptySet(), cups);
    }
 
-   private static Coord2d findStand(PrototypePathfinder.Scene scene, Gob gob, Gob player, Set<String> banned, List<CupboardCatalog.Node> cups) {
+   private static Coord2d findStand(MovementScene.Scene scene, Gob gob, Gob player, Set<String> banned, List<CupboardCatalog.Node> cups) {
       List<Coord2d> cands = freeStands(scene, gob, banned, cups);
       if (cands.isEmpty()) {
          return null;
@@ -411,7 +411,7 @@ public final class CupboardBot {
       return p == null ? "" : Math.round(p.x) + "," + Math.round(p.y);
    }
 
-   private static List<Coord2d> freeStands(PrototypePathfinder.Scene scene, Gob gob, Set<String> banned, List<CupboardCatalog.Node> cups) {
+   private static List<Coord2d> freeStands(MovementScene.Scene scene, Gob gob, Set<String> banned, List<CupboardCatalog.Node> cups) {
       List<Coord2d> out = new ArrayList<>();
       if (gob != null && gob.rc != null) {
          Set<String> seen = new HashSet<>();
@@ -432,7 +432,7 @@ public final class CupboardBot {
    }
 
    private static void addStand(
-      List<Coord2d> out, Set<String> seen, Coord2d dest, Gob gob, Set<String> banned, List<CupboardCatalog.Node> cups, PrototypePathfinder.Scene scene
+      List<Coord2d> out, Set<String> seen, Coord2d dest, Gob gob, Set<String> banned, List<CupboardCatalog.Node> cups, MovementScene.Scene scene
    ) {
       if (dest != null) {
          Coord2d snapped = CupboardCatalog.faceSnap(gob.rc, dest);
@@ -459,7 +459,7 @@ public final class CupboardBot {
 
    private static Coord2d pickStand(GameUI gui, Gob gob, Coord2d preferred, Set<String> banned, List<CupboardCatalog.Node> cups) {
       if (gui != null && gob != null && gob.rc != null && gui.map != null) {
-         PrototypePathfinder.Scene scene = PrototypePathfinder.observe(gui);
+         MovementScene.Scene scene = MovementScene.observe(gui);
          return preferred == null
                || !scene.aisleStand(preferred)
                || !CupboardCatalog.standClear(preferred, cups, gob.id)
@@ -641,7 +641,7 @@ public final class CupboardBot {
             return true;
          } else {
             Coord2d dest = catalogStand(player, gob, preferredStand, banned, cups);
-            PrototypePathfinder.Scene scene = PrototypePathfinder.observe(gui);
+            MovementScene.Scene scene = MovementScene.observe(gui);
             boolean keepPreferred = preferredStand != null && dest != null && dest.dist(preferredStand) < 1.0;
             if (dest != null && !scene.aisleStand(dest) && !keepPreferred) {
                CatalogDebug.event(String.format("frozen stand is not an aisle dest=(%.1f,%.1f), other face", dest.x, dest.y));
@@ -696,8 +696,8 @@ public final class CupboardBot {
                            routeBrief(route)
                         )
                      );
-                     PrototypePathfinder.Plan plan = PrototypePathfinder.Plan.of(route);
-                     WaypointWalker.Result result = executeWaypoints(gui, bot, plan, attempt);
+                     MovementScene.Plan plan = MovementScene.Plan.of(route);
+                     ConfirmedRouteRunner.Result result = executeWaypoints(gui, bot, plan, attempt);
                      player = gui.map.player();
                      if (reachedStand(player, tryDest)) {
                         return true;
@@ -705,25 +705,25 @@ public final class CupboardBot {
 
                      Coord2d far = CupboardCatalog.sameFaceFar(gob.rc, tryDest);
                      if (far != null && CupboardCatalog.standClear(far, cups, gob.id) && !far.equals(tryDest) && usableStand(far, banned)) {
-                        CatalogDebug.event("replan " + (attempt + 1) + "/" + 8 + " after " + result + " → far stand");
+                        CatalogDebug.event("replan " + (attempt + 1) + "/" + 8 + " after " + result.status + " → far stand");
                         tryDest = far;
                         routes = CupboardCatalog.detourOptions(player.rc, far, cups);
                         routeAt = 0;
                      } else {
-                        if (result == WaypointWalker.Result.REJECTED || result == WaypointWalker.Result.SHORT_STOP) {
+                        if (!result.arrived()) {
                            if (++routeAt < routes.size()) {
-                              CatalogDebug.event("try next detour " + routeAt + " after " + result);
+                              CatalogDebug.event("try next detour " + routeAt + " after " + result.status);
                               continue;
                            }
                         }
 
-                        if (result == WaypointWalker.Result.REJECTED) {
+                        if (result.status == ConfirmedRouteRunner.Status.PLAYER_GONE) {
                            CatalogDebug.fail("movement rejected for " + label(gob));
                            dumpStuck(gui);
                            return false;
                         }
 
-                        CatalogDebug.event("replan " + (attempt + 1) + "/" + 8 + " after " + result);
+                        CatalogDebug.event("replan " + (attempt + 1) + "/" + 8 + " after " + result.status);
                      }
                   }
 
@@ -763,8 +763,10 @@ public final class CupboardBot {
       return stand != null && (banned == null || !banned.contains(standKey(stand)));
    }
 
-   private static WaypointWalker.Result executeWaypoints(final GameUI gui, Bot bot, PrototypePathfinder.Plan plan, int replan) throws InterruptedException {
-      return WaypointWalker.execute(gui, bot, plan.waypoints, replan, 20000L, new WaypointWalker.Listener() {
+   private static ConfirmedRouteRunner.Result executeWaypoints(final GameUI gui, Bot bot, MovementScene.Plan plan, int replan) throws InterruptedException {
+      Coord2d goal = plan.waypoints.get(plan.waypoints.size() - 1);
+      return ConfirmedRouteRunner.execute(gui, bot, plan.waypoints, goal, 20000L,
+         ConfirmedRouteRunner.Params.LAND, new MovementListener() {
          @Override
          public void event(String msg) {
             CatalogDebug.event(msg);
@@ -1169,7 +1171,7 @@ public final class CupboardBot {
    }
 
    private static String label(Gob gob) {
-      String name = PrototypePathfinder.displayName(gob);
+      String name = PathfinderCommands.displayName(gob);
       double tiles = 0.0;
 
       try {

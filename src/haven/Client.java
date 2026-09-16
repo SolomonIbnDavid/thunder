@@ -48,6 +48,10 @@ public class Client implements Console.Directory {
     public Client(Toolkit tk) {
 	this.tk = tk;
 	this.wnd = tk.window();
+	haven.multibox.MultiboxControl.onClose(() -> {
+	    Thread main = this.mt;
+	    if(main != null) main.interrupt();
+	});
 	wnd.title(TITLE);
 	Coord fsz = Utils.getprefc("mainwnd/locksize", null);
 	if(fsz == null)
@@ -382,6 +386,10 @@ public class Client implements Console.Directory {
 	me.ender.LegacyBGM.onGameStart();
 	setupres();
 	initfullscreen.set(CFG.VIDEO_FULL_SCREEN.get());
+	/* A hub-managed client owns an isolated display whose full screen is the
+	 * game pane.  Keep it filled regardless of the standalone window setting. */
+	if(System.getenv("HAVEN_MULTIBOX_DISPLAY") != null)
+	    initfullscreen.set(true);
 	Utils.initPvpMap();
 	Utils.initPvpModeMarkers();
 	me.ender.LegacyBGM.onGameStart();

@@ -21,9 +21,9 @@ public final class DebugBoot {
 	touch("thunder.TileQualityDebug");
 	touch("haven.GobWarningDebug");
 	touch("haven.pathfinding.PathfinderDebug");
-	touch("haven.pathfinding.CriticalRouteOverlay");
 	touch("haven.pathfinding.BoardStockpileOverlay");
 	touch("haven.pathfinding.NavReplayRunner");
+	touch("thunder.FishingHeatmapOverlay");
     }
 
     private static void touch(String fqcn) {

@@ -4,7 +4,7 @@ import haven.Coord;
 import haven.Coord2d;
 import haven.pathfinding.PathfinderLog.Occupancy;
 import haven.pathfinding.PathfinderLog.Trace;
-import haven.pathfinding.PrototypePathfinder.Plan;
+import haven.pathfinding.MovementScene.Plan;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -61,12 +61,12 @@ public class NavReplayTest {
    void replayReproducesPlanCoreWithoutLiveGame() {
       Coord2d start = Coord2d.of(0.0, 0.0);
       Coord2d dest = Coord2d.of(0.0, 100.0);
-      PrototypePathfinder.ClipResult clip = PrototypePathfinder.clipToHorizon(start, List.of(dest));
-      PrototypePathfinder.Grid grid = PrototypePathfinder.planGrid(start, clip.targets);
+      MovementScene.ClipResult clip = MovementScene.clipToHorizon(start, List.of(dest));
+      MovementScene.Grid grid = MovementScene.planGrid(start, clip.targets);
       boolean[] solid = new boolean[grid.w * grid.h];
       boolean[] dilated = new boolean[grid.w * grid.h];
       Trace liveTrace = new Trace();
-      Plan live = PrototypePathfinder.planCore(start, List.of(dest), clip.targets, clip.clipped, true, 4.5, grid, solid, dilated, 0, liveTrace);
+      Plan live = MovementScene.planCore(start, List.of(dest), clip.targets, clip.clipped, true, 4.5, grid, solid, dilated, 0, liveTrace);
       Occupancy occ = Occupancy.capture(
          grid.origin, grid.w, grid.h, 2.75, solid, dilated, dilated, liveTrace.startCell, liveTrace.goalCell, liveTrace.freeGoal, List.of()
       );

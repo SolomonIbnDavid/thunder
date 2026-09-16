@@ -11,11 +11,18 @@ public final class TerrainPolicy {
    }
 
    public static boolean isWaterTile(String tileName) {
-      return tileName != null
-         && (tileName.contains("tiles/water")
-            || tileName.contains("tiles/deep")
-            || tileName.contains("tiles/owater")
-            || tileName.contains("tiles/odeep"));
+      if (tileName == null) {
+         return false;
+      }
+      int marker = tileName.indexOf("tiles/");
+      if (marker < 0) {
+         return false;
+      }
+      String local = tileName.substring(marker + 6);
+      int slash = local.indexOf('/');
+      String family = slash < 0 ? local : local.substring(0, slash);
+      return family.equals("water") || family.equals("deep") || family.equals("owater")
+         || family.equals("odeep") || family.equals("odeeper");
    }
 
    public static boolean waterTravelLegal(haven.nav.MobilityProfile mob) {
@@ -27,6 +34,22 @@ public final class TerrainPolicy {
          return !waterTravelLegal(mob);
       }
       return terrainBlocks(tileName);
+   }
+
+   /** A strict boating corridor: unknown tiles, shores, and ordinary land are
+    * all walls. Deep water remains legal so separate shallow stretches can be
+    * connected without beaching the boat. */
+   public static boolean waterOnlyBlocks(String tileName) {
+      return !isWaterTile(tileName);
+   }
+
+   public static boolean isShallowWaterTile(String tileName) {
+      if (!isWaterTile(tileName)) {
+         return false;
+      }
+      int marker = tileName.indexOf("tiles/");
+      String local = marker < 0 ? tileName : tileName.substring(marker + 6);
+      return !(local.startsWith("deep") || local.startsWith("odeep"));
    }
 
    public static double agentRadius(haven.nav.MobilityProfile mob, double landRadius) {

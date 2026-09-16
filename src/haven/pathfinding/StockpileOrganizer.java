@@ -1,21 +1,13 @@
 package haven.pathfinding;
 
 import auto.Bot;
+import haven.Area;
 import haven.Coord2d;
 import haven.GameUI;
 import haven.GItem;
-import haven.Gob;
 import haven.Loading;
-import haven.MCache;
 import haven.WItem;
 import haven.layout.LayoutFootprint;
-import haven.layout.LayoutPlanResult;
-import haven.layout.LayoutPlacement;
-import haven.layout.LayoutRequest;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
 
 /** Opt-in v1 organizer: plans and creates stockpiles in a selected area, never fills or moves them. */
 public final class StockpileOrganizer {
@@ -46,44 +38,28 @@ public final class StockpileOrganizer {
       String stockpile = stockpileResource(itemRes);
       if (stockpile == null) fail(bot, "held item is not a supported stockpile item");
       String kind = stockpile.substring(stockpile.lastIndexOf('-') + 1);
-      LayoutFootprint footprint = stockpileFootprint(stockpile);
-      final double fpCx = footprint.bboxW() * MCache.tilesz.x / 2.0;
-      final double fpCy = footprint.bboxH() * MCache.tilesz.y / 2.0;
-
-      gui.msg("Stockpile: planning " + kind + " piles (footprint " + footprint.bboxW() + "x" + footprint.bboxH() + " tiles)…", GameUI.MsgType.INFO);
-      PrototypePathfinder.Scene scene = PrototypePathfinder.observe(gui, false);
-      if (scene == null || scene.occupancy == null) fail(bot, "local occupancy unavailable; nothing placed");
-      LayoutRequest request = LayoutRequest.builder(scene.occupancy, footprint, gui.map.player().rc, MAX_PILES)
-         .area(area.min, area.max).pitch(MCache.tilesz.x).build();
-      LayoutPlanResult plan = haven.layout.LayoutPlanner.plan(request);
-      if (plan.placements == null || plan.placements.isEmpty())
-         fail(bot, "area is not plannable (" + reason(plan) + "); nothing placed");
-      gui.msg("Stockpile: planned " + plan.placements.size() + " " + kind + " piles", GameUI.MsgType.INFO);
-
+      gui.msg("Stockpile: planning " + kind + " piles with exact placement geometry…", GameUI.MsgType.INFO);
+      Area tiles = new Area(area.minTile, area.maxTile.add(1, 1));
       int created = 0;
-      for (LayoutPlacement placement : plan.placements) {
+      while (created < MAX_PILES) {
          bot.checkCancelled();
+         // Re-plan from the newly grounded world after every server-accepted
+         // pile instead of trusting a stale batch of predicted obstacles.
+         ObjectOrganizer.ExactPlan plan = StockpilePlacement.planExact(gui, stockpile, tiles, 1);
+         if (plan.placements.isEmpty()) {
+            if (created == 0)
+               fail(bot, "area is not plannable (" + plan.reason + "); nothing placed");
+            break;
+         }
+         ObjectOrganizer.ExactPlacement placement = plan.placements.get(0);
          if (gui.hand() == null || gui.hand().item == null) {
             if (!takeItem(gui, bot, itemRes)) fail(bot, "ran out of matching items after " + created + " piles");
          }
 
-         // Refresh occupancy so already-created piles count as solid before walking.
-         PrototypePathfinder.observe(gui, false);
-         gui.msg("Stockpile: pile " + (placement.index + 1) + "/" + plan.placements.size() + " walking…", GameUI.MsgType.INFO);
-         List<Coord2d> route = new ArrayList<Coord2d>(2);
-         route.add(gui.map.player().rc);
-         route.add(placement.stand);
-         WaypointWalker.Result walked = WaypointWalker.execute(gui, bot, route, 2, WALK_TIMEOUT_MS, listener(gui));
-         if (walked != WaypointWalker.Result.ARRIVED && walked != WaypointWalker.Result.READY_TO_INTERACT)
-            fail(bot, "could not reach pile " + placement.index + " stand (" + walked + "); created " + created + " piles");
-
-         if (gui.hand() == null || gui.hand().item == null) fail(bot, "held item lost before placing pile " + placement.index);
-         Coord2d center = placement.world.add(fpCx, fpCy);
-         Set<Long> before = pileIds(gui, stockpile, center);
-         if (!gui.map.itemactAt(center, gui.ui.modflags())) fail(bot, "itemact could not be sent for pile " + placement.index);
-         if (!waitPlacer(gui, bot)) fail(bot, "server did not enter the placer for pile " + placement.index + "; created " + created + " piles");
-         if (!gui.map.placeAt(center, 1, gui.ui.modflags())) fail(bot, "place could not be sent for pile " + placement.index);
-         if (!waitNewPile(gui, bot, stockpile, center, before)) fail(bot, "pile " + placement.index + " placement was not acknowledged; created " + created + " piles");
+         gui.msg("Stockpile: pile " + (created + 1) + " walking…", GameUI.MsgType.INFO);
+         StockpilePlacement.Result result = StockpilePlacement.createHeld(
+            gui, bot, stockpile, tiles, placement, WALK_TIMEOUT_MS, STEP_TIMEOUT_MS, listener(gui));
+         if (!result.success) fail(bot, "pile " + (created + 1) + " failed: " + result.reason + "; created " + created + " piles");
          created++;
       }
       gui.msg("Stockpile: created " + created + " " + kind + " piles (not filled)", GameUI.MsgType.INFO);
@@ -92,10 +68,6 @@ public final class StockpileOrganizer {
    private static void fail(Bot bot, String reason) throws InterruptedException {
       bot.cancel("Stockpile: " + reason);
       throw new InterruptedException(reason);
-   }
-
-   private static String reason(LayoutPlanResult plan) {
-      return (plan.reason == null || plan.reason.isEmpty()) ? "no free space" : plan.reason;
    }
 
    /** Lifts one matching item from the main inventory into hand; false if none left. */
@@ -144,52 +116,22 @@ public final class StockpileOrganizer {
     * collision geometry (see {@link ObjectFootprints}); falls back to the
     * per-type table in {@link #fallbackHalfExtents(String)} when unreadable.
     */
-   static LayoutFootprint stockpileFootprint(String stockpileRes) {
+   @Deprecated
+   public static LayoutFootprint stockpileFootprint(String stockpileRes) {
       return ObjectFootprints.footprintFor(stockpileRes, fallbackHalfExtents(stockpileRes));
    }
 
    static Coord2d fallbackHalfExtents(String resname) {
       if (resname == null) return Coord2d.of(11, 11);
+      if (resname.endsWith("-wblock")) return Coord2d.of(5.5, 5.5);
       if (resname.endsWith("-metal")) return Coord2d.of(5.5, 8.25);
       if (resname.endsWith("-straw") || resname.endsWith("-leaf")) return Coord2d.of(8.25, 8.25);
       if (resname.endsWith("-brick")) return Coord2d.of(11, 5.5);
       return Coord2d.of(11, 11); // board / soil / pumpkin / generic
    }
 
-   private static boolean waitPlacer(GameUI gui, Bot bot) throws InterruptedException {
-      long end = System.currentTimeMillis() + STEP_TIMEOUT_MS;
-      while (System.currentTimeMillis() < end) {
-         bot.checkCancelled();
-         if (gui.map.isPlacing()) return true;
-         Thread.sleep(50L);
-      }
-      return false;
-   }
-
-   private static boolean waitNewPile(GameUI gui, Bot bot, String res, Coord2d center, Set<Long> before) throws InterruptedException {
-      long end = System.currentTimeMillis() + STEP_TIMEOUT_MS;
-      while (System.currentTimeMillis() < end) {
-         bot.checkCancelled();
-         if (!pileIds(gui, res, center).equals(before)) return true;
-         Thread.sleep(50L);
-      }
-      return false;
-   }
-
-   private static Set<Long> pileIds(GameUI gui, String res, Coord2d center) {
-      Set<Long> ids = new HashSet<Long>();
-      synchronized (gui.ui.sess.glob.oc) {
-         for (Gob gob : gui.ui.sess.glob.oc) {
-            if (gob == null || gob.rc == null || gob.id < 0L || gob.rc.dist(center) > MCache.tilesz.x * 2.5) continue;
-            try { if (res.equals(gob.resid())) ids.add(Long.valueOf(gob.id)); }
-            catch (Loading ignored) {}
-         }
-      }
-      return ids;
-   }
-
-   private static WaypointWalker.Listener listener(final GameUI gui) {
-      return new WaypointWalker.Listener() {
+   private static MovementListener listener(final GameUI gui) {
+      return new MovementListener() {
          public void event(String s) {
             gui.msg("Stockpile: " + s, GameUI.MsgType.INFO);
          }

@@ -66,7 +66,7 @@ final class AreaExport {
         obj.add("layer", JsonNull.INSTANCE);
 
         JsonArray tags = new JsonArray();
-        tags.add("navlab");
+        tags.add("pathfinder");
         obj.add("tags", tags);
 
         obj.add("metadata", new JsonObject());
@@ -83,7 +83,7 @@ final class AreaExport {
         return obj;
     }
 
-    /** Produces the role-bearing format used by Critical Routes. */
+    /** Produces a role-bearing area export for local tools. */
     static JSONObject toJson(List<long[]> gridVertices, String name, String role) {
         if (gridVertices == null || gridVertices.isEmpty())
             throw new NullPointerException("gridVertices must not be null or empty");

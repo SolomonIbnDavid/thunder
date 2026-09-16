@@ -197,11 +197,11 @@ public final class PfTestRunner {
       PfTestHarness.write(run, result, root);
    }
 
-   static List<PrototypePathfinder.GobGeom> cupboardGobs(PrototypePathfinder.Scene scene) {
+   static List<MovementScene.GobGeom> cupboardGobs(MovementScene.Scene scene) {
       return PfTestHarness.cupboardGobs(scene);
    }
 
-   static List<CupboardCatalog.Node> cupboardNodes(List<PrototypePathfinder.GobGeom> gobs) {
+   static List<CupboardCatalog.Node> cupboardNodes(List<MovementScene.GobGeom> gobs) {
       return PfTestHarness.cupboardNodes(gobs);
    }
 
@@ -217,11 +217,11 @@ public final class PfTestRunner {
       return PfTestHarness.cupboardFingerprint(cluster);
    }
 
-   static JSONObject evaluateCabinets(PrototypePathfinder.Scene scene) {
+   static JSONObject evaluateCabinets(MovementScene.Scene scene) {
       return PfTestHarness.evaluateCabinets(scene);
    }
 
-   static JSONObject sceneJson(PrototypePathfinder.Scene scene) {
+   static JSONObject sceneJson(MovementScene.Scene scene) {
       return PfTestHarness.sceneJson(scene);
    }
 

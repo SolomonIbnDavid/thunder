@@ -43,7 +43,7 @@ import me.ender.minimap.*;
 import thunder.TileQuality;
 import me.ender.timer.Timer;
 import haven.pathfinding.PathfinderWnd;
-import haven.pathfinding.PrototypePathfinder;
+import haven.pathfinding.PathfinderCommands;
 
 import java.util.*;
 import java.awt.Color;
@@ -95,6 +95,8 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
     public TileQuality tileQuality;
     public TileHighlight.TileHighlightCFG tileHighlight;
     public thunder.TileQualityWnd tileQualityWnd;
+    public final thunder.FishingHelper fishingHelper = new thunder.FishingHelper();
+    public thunder.FishingHelperWnd fishingHelperWnd;
     public thunder.macro.MacroListWnd macroListWnd;
     public haven.pathfinding.AreaExportWnd areaExportWnd;
     public thunder.cookbook.EatingHelperWnd eatingHelperWnd;
@@ -109,7 +111,6 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
     public FilterWnd filter;
     public GobSearchWnd gobSearch;
     public PathfinderWnd pathfinderWnd;
-    public haven.pathfinding.CriticalRouteWnd criticalRouteWnd;
     public haven.pathfinding.BoardStockpileWnd boardStockpileWnd;
     public haven.proto.ProtoInspector protoInspector;
     public haven.proto.StateInspector stateInspector;
@@ -853,15 +854,6 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
         boardStockpileWnd.toggle();
     }
 
-    public void toggleCriticalRoutes() {
-	if(criticalRouteWnd == null) {
-	    criticalRouteWnd = add(new haven.pathfinding.CriticalRouteWnd(), ClientUtils.getScreenCenter(ui));
-	    criticalRouteWnd.show();
-	    return;
-	}
-	criticalRouteWnd.toggle();
-    }
-
     public void toggleProtoInspector() {
 	if(protoInspector == null) {
 	    protoInspector = add(new haven.proto.ProtoInspector(ui.sess), ClientUtils.getScreenCenter(ui));
@@ -924,6 +916,8 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 	    fitwdg(mapfile);
 	    setfocus(mapfile);
 	}
+	if(mapfile != null)
+	    Utils.setprefb("wndvis-map", mapfile.visible());
     }
 
     public void setMapOverlay(String tag, boolean visible) {
@@ -1337,6 +1331,10 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
     
     public void toggleQuestHelper() {
 	questHelper.toggle();
+    }
+
+    public void toggleFishingHelper() {
+	thunder.FishingHelperWnd.toggle(ui);
     }
 
     // KamiClient: open/close the combat distancing tool (yoinked from Hurricane).
@@ -2416,6 +2414,9 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 	} else if(kb_chat.key().match(ev)) {
 	    toggleChat();
 	    return(true);
+	} else if(kb_map.key().match(ev)) {
+	    toggleMap();
+	    return(true);
 	} else if(kb_mmap.key().match(ev)) {
 	    toggleMinimap();
 	    return(true);
@@ -2857,7 +2858,7 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 	cmdmap.put("chrmap", (cons, args) -> {
 	    Utils.setpref("mapfile/" + GameUI.this.chrid, args[1]);
 	});
-	cmdmap.put("pf", (cons, args) -> PrototypePathfinder.console(this, args));
+	cmdmap.put("pf", (cons, args) -> PathfinderCommands.console(this, args));
 	cmdmap.put("tool", (cons, args) -> {
 	    try {
 		Object[] wargs = new Object[args.length - 2];
@@ -2993,7 +2994,8 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 		    default: throw new Exception("Unknown minebot command: " + args[1]);
 		    }
 		}
-	    });
+	});
+	cmdmap.put("rustroot", (cons, args) -> thunder.rustroot.RustrootProspectorWnd.toggle(GameUI.this));
 	cmdmap.put("widget", new Console.Command() {
 		public void run(Console cons, String[] args) throws Exception {
 		    if(args.length >= 2 && args[1].equals("tree")) {

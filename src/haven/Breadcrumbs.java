@@ -103,7 +103,7 @@ public abstract class Breadcrumbs<T> extends Widget {
 	}
 	
 	public static Crumb<MenuGrid.Pagina> fromPagina(MenuGrid.Pagina pagina) {
-	    BufferedImage img = pagina.res().layer(Resource.imgc).img;
+	    BufferedImage img = pagina.button().img();
 	    Resource.AButton act = pagina.button().act();
 	    String name = "...";
 	    if(act != null) {
@@ -113,7 +113,7 @@ public abstract class Breadcrumbs<T> extends Widget {
 	}
 	
 	public Crumb(MenuGrid.Pagina pagina, T data) {
-	    this.img = pagina.res().layer(Resource.imgc).img;
+	    this.img = pagina.button().img();
 	    Resource.AButton act = pagina.button().act();
 	    this.text = "...";
 	    if(act != null) {

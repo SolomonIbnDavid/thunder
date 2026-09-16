@@ -59,7 +59,7 @@ public class ActList extends Listbox<ActList.ActItem> {
 	public ActItem(MenuGrid.Pagina pagina) {
 	    this.pagina = pagina;
 	    this.name = font.render(this.pagina.button().act().name);
-	    this.icon = new TexI(PUtils.convolvedown(pagina.res.get().layer(Resource.imgc).img, new Coord(itemh, itemh), CharWnd.iconfilter));
+	    this.icon = new TexI(PUtils.convolvedown(pagina.button().img(), new Coord(itemh, itemh), CharWnd.iconfilter));
 	}
     }
 }

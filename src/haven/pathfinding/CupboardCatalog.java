@@ -85,7 +85,7 @@ public final class CupboardCatalog {
    }
 
    public static boolean isCupboardResid(String resid) {
-      String name = PrototypePathfinder.baseResid(resid);
+      String name = MovementScene.baseResid(resid);
       return name != null && name.equals("gfx/terobjs/cupboard");
    }
 

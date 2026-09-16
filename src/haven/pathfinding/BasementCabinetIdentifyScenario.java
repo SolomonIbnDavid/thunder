@@ -12,7 +12,6 @@ import haven.MapFile;
 import haven.Moving;
 import haven.UI;
 import haven.Utils;
-import haven.NamedPlaceResolver.Place;
 import java.io.IOException;
 import java.io.Writer;
 import java.nio.file.Files;
@@ -49,9 +48,9 @@ final class BasementCabinetIdentifyScenario implements PfTestRunner.Scenario {
          GameUI gui = ui == null ? null : ui.gui;
          if (gui != null && gui.map != null) {
             checks.add(PfTestRunner.check("in_game", true, "in game"));
-            PrototypePathfinder.Scene scene;
+            MovementScene.Scene scene;
             synchronized (ui) {
-               scene = PrototypePathfinder.observe(gui);
+               scene = MovementScene.observe(gui);
             }
 
             JSONObject eval = PfTestRunner.evaluateCabinets(scene);

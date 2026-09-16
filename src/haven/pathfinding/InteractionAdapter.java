@@ -14,7 +14,7 @@ public final class InteractionAdapter {
    }
 
    public static InteractionSpec fromGob(
-      PrototypePathfinder.GobGeom g,
+      MovementScene.GobGeom g,
       int allowedSides,
       double minDist,
       double maxDist,
@@ -29,7 +29,7 @@ public final class InteractionAdapter {
    }
 
    public static InteractionSpec fromGob(
-      PrototypePathfinder.GobGeom g,
+      MovementScene.GobGeom g,
       int allowedSides,
       double minDist,
       double maxDist,
@@ -54,7 +54,13 @@ public final class InteractionAdapter {
       }
       Coord2d origin = g.rc;
       Coord2d half = Coord2d.of(5.5, 5.5);
-      CollisionGeom geom = CollisionGeom.target(g.obst, g.movement);
+      // Use the same authoritative footprint that was put into the scene's
+      // solid list.  This is especially important for catalog fallbacks: LOS
+      // deliberately ignores the target polygon, and that comparison only
+      // works when both sides use the same shape.
+      CollisionGeom geom = g.collision != null && !g.collision.isEmpty()
+         ? new CollisionGeom(g.collision, g.collisionSource)
+         : CollisionGeom.target(g.obst, g.movement);
       List<Coord2d[]> polys = geom.polygons;
       Coord2d[] box = aabbBox(polys.isEmpty() ? g.hitbox : polys);
       if (box != null) {
@@ -62,8 +68,28 @@ public final class InteractionAdapter {
          half = Coord2d.of(Math.max(0.5, (box[1].x - box[0].x) * 0.5), Math.max(0.5, (box[1].y - box[0].y) * 0.5));
       }
       return new InteractionSpec(
-         Long.toString(g.id), origin, half, allowedSides, minDist, maxDist, requiredClearance, facing, expectedResult, polys, geom.source
+         Long.toString(g.id), origin, half, allowedSides, minDist, maxDist, requiredClearance, facing, expectedResult, polys, geom.source,
+         faceCentersOnly(g.resid), preferredSides(g.resid, g.a)
       );
+   }
+
+   /** Nurgling runs drying racks in hard mode: approach on a face center, not
+    * an arbitrary edge/corner pose between tightly packed neighbors. */
+   static boolean faceCentersOnly(String resid) {
+      return "gfx/terobjs/dframe".equals(MovementScene.baseResid(resid));
+   }
+
+   /** Drying racks are normally operated as a row. Prefer the two narrow ends,
+    * which keeps every rack on the same aisle even when the first rack is
+    * approached diagonally. This is soft: a side face remains a fallback when
+    * both aisle ends are genuinely blocked. */
+   static int preferredSides(String resid, double angle) {
+      if (!faceCentersOnly(resid)) {
+         return 0;
+      }
+      return Math.abs(Math.cos(angle)) >= Math.abs(Math.sin(angle))
+         ? InteractionSpec.SIDE_N | InteractionSpec.SIDE_S
+         : InteractionSpec.SIDE_E | InteractionSpec.SIDE_W;
    }
 
    public static InteractionSpec fromFootprint(

@@ -65,6 +65,7 @@ public abstract class UILoop implements Console.Directory {
     public void start() {
 	this.th.start();
 	haven.dev.DevControl.attach(this);
+	haven.multibox.MultiboxControl.attach(this);
     }
 
     private void setenv(Environment env) {
@@ -297,6 +298,7 @@ public abstract class UILoop implements Console.Directory {
 	    drawstats(ui, g, buf);
 	drawtooltip(ui, g);
 	drawcursor(ui, g);
+	haven.multibox.MultiboxControl.capture(g);
     }
 
     public static class Fence implements Runnable, Abortable {

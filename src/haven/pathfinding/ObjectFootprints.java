@@ -8,11 +8,9 @@ import haven.layout.LayoutFootprint;
 import java.util.Collection;
 
 /**
- * Derives a placement footprint for an arbitrary world object from its real
- * collision geometry — the same {@code Resource.Obstacle} layers the occupancy
- * grid uses via {@code Hitbox} — so a planned placement cannot overlap the
- * object's actual hit box. Falls back to a conservative default when the
- * resource is unreadable or carries no obstacle layer.
+ * Derives a placement footprint for an arbitrary world object. Nurgling's
+ * catalog is preferred when it contains the resource; uncatalogued resources
+ * use their {@code Resource.Obstacle} layer and then a conservative default.
  *
  * <p>Object-class-agnostic: works for stockpiles, containers, furniture, or any
  * gob whose resource has an Obstacle layer. The live pick-up/place executor
@@ -38,7 +36,10 @@ public final class ObjectFootprints {
     * {@link #DEFAULT_HALF} if null/invalid) when the obstacle layer is unreadable.
     */
    public static LayoutFootprint footprintFor(String resname, Coord2d fallbackHalf) {
-      Coord2d half = obstacleHalfExtents(resname);
+      Coord2d half = NurglingFallbacks.half(resname);
+      if (half == null) {
+         half = obstacleHalfExtents(resname);
+      }
       if (half == null || !(half.x > 0.0 && half.y > 0.0)) {
          half = (fallbackHalf != null && fallbackHalf.x > 0.0 && fallbackHalf.y > 0.0) ? fallbackHalf : DEFAULT_HALF;
       }

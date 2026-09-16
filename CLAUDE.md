@@ -8,6 +8,13 @@ Haven & Hearth modified client forked from Kami.
 ant bin
 ```
 
+## Bot development
+
+Before creating or changing an automation bot, read `AGENTS.md` and
+`docs/bot-development-playbook.md` completely. They define the simplicity-first
+process, ownership boundaries, investigation order, and validation gates for
+bot work. If movement is involved, also read `docs/pathfinder-reliability.md`.
+
 ## Run
 
 ```
@@ -65,6 +72,7 @@ scale
 Per-feature design notes. Check the relevant file before reading source for an existing feature.
 
 - [docs/auto-updater.md](docs/auto-updater.md) — release self-updater (updater.jar + launcher integration, GitHub releases)
+- [docs/bot-development-playbook.md](docs/bot-development-playbook.md) — mandatory simplicity-first process for new bots and bot fixes, including ownership boundaries, investigation order, test/live gates, and lessons from Clear-Cut
 - [docs/bot-automation-api.md](docs/bot-automation-api.md) — lessons learned building MiningBot (container right-click, FlowerMenu eating, Defer thread starvation), with pointers to the working code
 - [docs/bot-setup-prompt-template.md](docs/bot-setup-prompt-template.md) — copy/fill template for kicking off a new bot-building session, points at the right reference files
 - [docs/cattle-roster-feature-batch.md](docs/cattle-roster-feature-batch.md) — original roster feature batch (sort, recolor, milking-assist scaffolding)

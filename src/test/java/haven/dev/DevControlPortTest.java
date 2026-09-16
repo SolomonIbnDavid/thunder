@@ -45,23 +45,16 @@ public class DevControlPortTest {
       Assertions.assertEquals(known.size(), result.getJSONArray("scenarios").length());
       Assertions.assertEquals("observe", result.getJSONArray("scenarios").getString(0));
       Assertions.assertEquals("basement_cabinet_identify", result.getJSONArray("scenarios").getString(1));
-      Assertions.assertEquals("move_to_marker", result.getJSONArray("scenarios").getString(2));
-      Assertions.assertEquals("move_to_auto_open_ground", result.getJSONArray("scenarios").getString(3));
-      Assertions.assertEquals("move_to_auto_obstacle_corridor", result.getJSONArray("scenarios").getString(4));
-      Assertions.assertEquals("move_to_auto_known_long_leg", result.getJSONArray("scenarios").getString(5));
-      Assertions.assertEquals("move_to_auto_cave_transition_approach", result.getJSONArray("scenarios").getString(6));
-      Assertions.assertEquals("cross_cellar_door", result.getJSONArray("scenarios").getString(7));
-      Assertions.assertEquals("cross_cellar_stairs", result.getJSONArray("scenarios").getString(8));
-      Assertions.assertEquals("cross_minehole", result.getJSONArray("scenarios").getString(9));
-      Assertions.assertEquals("select_open_ground", result.getJSONArray("scenarios").getString(10));
-      Assertions.assertEquals("select_obstacle_corridor", result.getJSONArray("scenarios").getString(11));
-      Assertions.assertEquals("select_known_long_leg", result.getJSONArray("scenarios").getString(12));
-      Assertions.assertEquals("select_boulder_approach", result.getJSONArray("scenarios").getString(13));
-      Assertions.assertEquals("select_cave_transition_approach", result.getJSONArray("scenarios").getString(14));
-      Assertions.assertEquals("select_door_gate_approach", result.getJSONArray("scenarios").getString(15));
-      Assertions.assertEquals("select_waterline_approach", result.getJSONArray("scenarios").getString(16));
-      Assertions.assertEquals("surface_long_open_ground", result.getJSONArray("scenarios").getString(17));
-      Assertions.assertEquals("campaign_recorded", result.getJSONArray("scenarios").getString(known.size() - 1));
+      Assertions.assertTrue(known.contains("move_to_auto_open_ground"));
+      Assertions.assertTrue(known.contains("move_to_auto_obstacle_corridor"));
+      Assertions.assertTrue(known.contains("select_open_ground"));
+      Assertions.assertTrue(known.contains("select_obstacle_corridor"));
+      Assertions.assertTrue(known.contains("select_boulder_approach"));
+      Assertions.assertTrue(known.contains("select_waterline_approach"));
+      Assertions.assertTrue(known.contains("surface_long_open_ground"));
+      Assertions.assertFalse(known.contains("move_to_marker"));
+      Assertions.assertFalse(known.contains("campaign_recorded"));
+      Assertions.assertFalse(known.contains("transition_cave"));
    }
 
    private static void resetCache() throws Exception {
