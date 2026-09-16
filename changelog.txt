@@ -1,3 +1,8 @@
+$size[14]{$u{experimental Clear-Cut update on 16.09.2026:}
+* Clear-Cut now evaluates every legal staging position, including safer outer-ring routes that used to be hidden by the diagnostic candidate limit.
+* Boulders are chipped before loose logs are hauled, so a nearby rock cannot block the log-carrying approach.
+* Small boulders without usable movement geometry now use the same bounded approach fallback as bushes.
+`
 $size[14]{$u{experimental update on 16.09.2026:}
 * NavCore now uses a smaller confirmed-movement pipeline for bots: bots choose the job and destination, while shared movement owns path execution, approach selection, cancellation, and clear failure reporting.
 * Clear-Cut has moved to the new movement API. It can work trees, bushes, and chip-able boulders, collects bush products, drops chipped-stone stacks, and places logs tightly side by side when a log area is configured.
