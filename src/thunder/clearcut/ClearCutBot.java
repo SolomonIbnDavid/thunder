@@ -195,10 +195,12 @@ public final class ClearCutBot {
             // The exhaustive sweep still runs below, after visible work is exhausted,
             // so initially unloaded targets cannot be missed at completion.
             Survey initial = loadedWorkArea();
+            // Clear boulders before loose logs. A boulder can overlap a log's
+            // interaction side and make the game's carry click walk into it.
+            chipRefs(initial.of(Kind.BOULDER));
             queueLogs(initial.of(Kind.LOG));
             haulPendingLogs();
             digRefs(initial.of(Kind.STUMP));
-            chipRefs(initial.of(Kind.BOULDER));
             processBushes(initial.of(Kind.BUSH));
             processTrees(initial.of(Kind.TREE));
             flushBatch();
@@ -209,10 +211,10 @@ public final class ClearCutBot {
                     depositProducts();
                     done("complete");
                 }
+                chipRefs(finalSurvey.of(Kind.BOULDER));
                 queueLogs(finalSurvey.of(Kind.LOG));
                 haulPendingLogs();
                 digRefs(finalSurvey.of(Kind.STUMP));
-                chipRefs(finalSurvey.of(Kind.BOULDER));
                 processBushes(finalSurvey.of(Kind.BUSH));
                 processTrees(finalSurvey.of(Kind.TREE));
                 flushBatch();
