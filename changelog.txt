@@ -1,3 +1,8 @@
+$size[14]{$u{experimental quality-aware Auto Stack on 17.09.2026:}
+* Stack now merges matching items, reorganizes existing stack contents into close quality bands, and then sorts the container. Shift-click keeps the faster merge-only behavior.
+* Full cupboards are reorganized in place with one free inventory square as a swap buffer, instead of unpacking every stack into the container.
+* Full and rejected stacks are remembered, completed moves are verified before planning continues, and ordered pickup/insert transactions remove the useless retry loop while running substantially faster.
+`
 $size[14]{$u{experimental Measure improvements on 17.09.2026:}
 * Measure line/mark, hover-preview, and label colors can now be customized under Options -> Color settings, along with line thickness from 1 to 8 px.
 * Alt-click starts a detached measurement without clearing earlier measurements; normal clicks continue the newest measurement.
