@@ -80,4 +80,22 @@ public class ItemStackingTest {
 	    new int[] {4, 1});
 	assertArrayEquals(new int[] {1, 0}, pair);
     }
+
+    @Test
+    void rebuildsOnlyOverlappingQualityRanges() {
+	assertArrayEquals(new boolean[] {true, true, false},
+	    ItemStacking.rangesNeedingRebuild(
+		new double[] {10, 15, 31},
+		new double[] {20, 25, 40}));
+	assertArrayEquals(new boolean[] {false, false, false},
+	    ItemStacking.rangesNeedingRebuild(
+		new double[] {10, 20, 30},
+		new double[] {20, 30, 40}));
+    }
+
+    @Test
+    void failedEqualPilesAreBothKnownFull() {
+	assertTrue(ItemStacking.failedSourceIsAlsoFull(4, 4));
+	assertFalse(ItemStacking.failedSourceIsAlsoFull(2, 4));
+    }
 }

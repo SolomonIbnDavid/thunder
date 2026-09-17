@@ -93,7 +93,7 @@ public class StackAllItems implements Defer.Callable<Void> {
     }
 
     private boolean rebuild(Inventory inv) throws InterruptedException {
-	Set<Integer> originalStacks = stackIds(inv);
+	Set<Integer> originalStacks = stackIdsNeedingRebuild(inv);
 	for(int round = 0; round < 80 && !originalStacks.isEmpty(); round++) {
 	    int pendingBefore = originalStacks.size();
 	    boolean unpacked = UnstackAllItems.unstackInv(inv, originalStacks);
@@ -107,7 +107,7 @@ public class StackAllItems implements Defer.Callable<Void> {
 	return stackInv(inv, Collections.emptySet());
     }
 
-    private static Set<Integer> stackIds(Inventory inv) {
+    private static Set<Integer> allStackIds(Inventory inv) {
 	Set<Integer> ids = new HashSet<>();
 	for(Widget wdg = inv.lchild; wdg != null; wdg = wdg.prev) {
 	    if(wdg.visible && wdg instanceof WItem) {
@@ -119,8 +119,42 @@ public class StackAllItems implements Defer.Callable<Void> {
 	return ids;
     }
 
+    private static Set<Integer> stackIdsNeedingRebuild(Inventory inv) {
+	Map<String, List<WItem>> groups = new LinkedHashMap<>();
+	for(Widget wdg = inv.lchild; wdg != null; wdg = wdg.prev) {
+	    if(!wdg.visible || !(wdg instanceof WItem))
+		continue;
+	    WItem w = (WItem) wdg;
+	    String name = itemName(w);
+	    if(!ItemStacking.isStackName(name))
+		continue;
+	    String key = ItemStacking.stackKey(name);
+	    if(key != null)
+		groups.computeIfAbsent(key, k -> new ArrayList<>()).add(w);
+	}
+
+	Set<Integer> ids = new HashSet<>();
+	for(List<WItem> stacks : groups.values()) {
+	    if(stacks.size() < 2)
+		continue;
+	    double[] mins = new double[stacks.size()];
+	    double[] maxs = new double[stacks.size()];
+	    for(int i = 0; i < stacks.size(); i++) {
+		double[] range = qualityRange(stacks.get(i));
+		mins[i] = range[0];
+		maxs[i] = range[1];
+	    }
+	    boolean[] rebuild = ItemStacking.rangesNeedingRebuild(mins, maxs);
+	    for(int i = 0; i < rebuild.length; i++) {
+		if(rebuild[i])
+		    ids.add(stacks.get(i).item.wdgid());
+	    }
+	}
+	return ids;
+    }
+
     private static void pruneUnpacked(Inventory inv, Set<Integer> ids) {
-	Set<Integer> remaining = stackIds(inv);
+	Set<Integer> remaining = allStackIds(inv);
 	for(Iterator<Integer> it = ids.iterator(); it.hasNext();) {
 	    if(!remaining.contains(it.next()))
 		it.remove();
@@ -137,10 +171,11 @@ public class StackAllItems implements Defer.Callable<Void> {
 	}
 	Set<String> stuck = new HashSet<>();
 	Set<String> rejectedGroups = new HashSet<>();
+	Set<Integer> fullStacks = new HashSet<>();
 	for(int pass = 0; pass < MAX_PASSES; pass++) {
 	    if(inv.disposed() || Thread.currentThread().isInterrupted())
 		return true;
-	    int result = mergeOnePass(gui, inv, stuck, rejectedGroups, excludedIds);
+	    int result = mergeOnePass(gui, inv, stuck, rejectedGroups, fullStacks, excludedIds);
 	    if(result < 0)
 		return false;
 	    if(result == 0)
@@ -151,14 +186,15 @@ public class StackAllItems implements Defer.Callable<Void> {
     }
 
     private static int mergeOnePass(GameUI gui, Inventory inv, Set<String> stuck,
-				    Set<String> rejectedGroups, Set<Integer> excludedIds)
+				    Set<String> rejectedGroups, Set<Integer> fullStacks,
+				    Set<Integer> excludedIds)
 				    throws InterruptedException {
 	Map<String, List<WItem>> groups = new LinkedHashMap<>();
 	for(Widget wdg = inv.lchild; wdg != null; wdg = wdg.prev) {
 	    if(!wdg.visible || !(wdg instanceof WItem))
 		continue;
 	    WItem w = (WItem) wdg;
-	    if(excludedIds.contains(w.item.wdgid()))
+	    if(excludedIds.contains(w.item.wdgid()) || fullStacks.contains(w.item.wdgid()))
 		continue;
 	    String name = itemName(w);
 	    String key = ItemStacking.stackKey(name);
@@ -187,7 +223,9 @@ public class StackAllItems implements Defer.Callable<Void> {
 		    mins[i] = range[0];
 		    maxs[i] = range[1];
 		    for(int j = i + 1; j < similar.size(); j++)
-			blocked[i][j] = stuck.contains(pairKey(w, similar.get(j)));
+			blocked[i][j] = fullStacks.contains(w.item.wdgid()) ||
+			    fullStacks.contains(similar.get(j).item.wdgid()) ||
+			    stuck.contains(pairKey(w, similar.get(j)));
 		}
 		int[] pick = ItemStacking.closestQualityPair(mins, maxs, amounts, blocked);
 		if(pick == null)
@@ -208,6 +246,19 @@ public class StackAllItems implements Defer.Callable<Void> {
 		if(!knownStackable) {
 		    rejectedGroups.add(key);
 		    break;
+		}
+		fullStacks.add(destination.item.wdgid());
+		if(ItemStacking.failedSourceIsAlsoFull(amounts[pick[0]], amounts[pick[1]])) {
+		    fullStacks.add(source.item.wdgid());
+		    if(ItemStacking.isStackName(itemName(source)) &&
+		       ItemStacking.isStackName(itemName(destination))) {
+			int learnedCapacity = amounts[pick[1]];
+			for(WItem stack : similar) {
+			    if(ItemStacking.isStackName(itemName(stack)) &&
+			       amount(stack) >= learnedCapacity)
+				fullStacks.add(stack.item.wdgid());
+			}
+		    }
 		}
 	    }
 	}
