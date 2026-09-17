@@ -41,7 +41,7 @@ public enum Action {
     RIVER_MUSSELER(gui -> thunder.MusselBotWnd.toggle(gui), "River Musseler", "Plan a long saved-map water route, follow it by boat, and collect visible River Pearl Mussels."),
     RUSTROOT_PROSPECTOR(gui -> thunder.rustroot.RustrootProspectorWnd.toggle(gui), "Rustroot Prospector", "Triangulate ore below from retained Rustroot Extract readings and suggest the next scan tile."),
     SORT_INVENTORY(InventorySorter::sortAll, "Sort all opened inventories"),
-    STACK_INVENTORIES(StackAllItems::stackOpened, "Stack and sort all opened inventories", "Rebuilds stacks by closest quality, then sorts every open inventory and container."),
+    STACK_INVENTORIES(StackAllItems::stackOpened, "Stack and sort all opened inventories", "Merges partial piles, reorganizes stack contents in place by closest quality, then sorts every open inventory and container."),
     UNSTACK_INVENTORIES(UnstackAllItems::unstackOpened, "Unstack all opened inventories", "Unpacks every stack-of pile in open inventories and containers."),
     TOGGLE_GOB_INFO(CFG.DISPLAY_GOB_INFO, "Display info", "Display crop/tree growth and object health overlay."),
     TOGGLE_GOB_HITBOX(Hitbox::toggle, "Display hitboxes"),

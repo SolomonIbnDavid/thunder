@@ -14,22 +14,28 @@ import me.ender.WindowDetector;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BooleanSupplier;
 
 /**
- * Merge stacks in inventory windows, Hurricane-style: pick the two smallest
- * quality-compatible piles of each name, take the smaller onto the next with
- * shift+ctrl itemact, drop leftovers, and repeat until no merge can progress.
+ * Merge stacks in inventory windows, then organize existing stack contents in
+ * place by quality. Full cupboards use one free inventory square as a swap
+ * buffer rather than unpacking every stack into the cupboard.
  */
 public class StackAllItems implements Defer.Callable<Void> {
     private static final int MAX_PASSES = 512;
+    private static final int MAX_QUALITY_SWAPS = 512;
+    private static final int ACTION_TIMEOUT_MS = 1200;
+    private static final int MERGE_RESPONSE_TIMEOUT_MS = 600;
+    private static final int POLL_MS = 10;
     private static final Object lock = new Object();
+    private static final Map<String, Integer> fullCapacities = new ConcurrentHashMap<>();
     private static StackAllItems current;
     private Defer.Future<Void> task;
 
@@ -93,72 +99,9 @@ public class StackAllItems implements Defer.Callable<Void> {
     }
 
     private boolean rebuild(Inventory inv) throws InterruptedException {
-	Set<Integer> originalStacks = stackIdsNeedingRebuild(inv);
-	for(int round = 0; round < 80 && !originalStacks.isEmpty(); round++) {
-	    int pendingBefore = originalStacks.size();
-	    boolean unpacked = UnstackAllItems.unstackInv(inv, originalStacks);
-	    pruneUnpacked(inv, originalStacks);
-	    if(!stackInv(inv, originalStacks))
-		return false;
-	    pruneUnpacked(inv, originalStacks);
-	    if(!unpacked && originalStacks.size() == pendingBefore)
-		break;
-	}
-	return stackInv(inv, Collections.emptySet());
-    }
-
-    private static Set<Integer> allStackIds(Inventory inv) {
-	Set<Integer> ids = new HashSet<>();
-	for(Widget wdg = inv.lchild; wdg != null; wdg = wdg.prev) {
-	    if(wdg.visible && wdg instanceof WItem) {
-		WItem w = (WItem) wdg;
-		if(ItemStacking.isStackName(itemName(w)))
-		    ids.add(w.item.wdgid());
-	    }
-	}
-	return ids;
-    }
-
-    private static Set<Integer> stackIdsNeedingRebuild(Inventory inv) {
-	Map<String, List<WItem>> groups = new LinkedHashMap<>();
-	for(Widget wdg = inv.lchild; wdg != null; wdg = wdg.prev) {
-	    if(!wdg.visible || !(wdg instanceof WItem))
-		continue;
-	    WItem w = (WItem) wdg;
-	    String name = itemName(w);
-	    if(!ItemStacking.isStackName(name))
-		continue;
-	    String key = ItemStacking.stackKey(name);
-	    if(key != null)
-		groups.computeIfAbsent(key, k -> new ArrayList<>()).add(w);
-	}
-
-	Set<Integer> ids = new HashSet<>();
-	for(List<WItem> stacks : groups.values()) {
-	    if(stacks.size() < 2)
-		continue;
-	    double[] mins = new double[stacks.size()];
-	    double[] maxs = new double[stacks.size()];
-	    for(int i = 0; i < stacks.size(); i++) {
-		double[] range = qualityRange(stacks.get(i));
-		mins[i] = range[0];
-		maxs[i] = range[1];
-	    }
-	    boolean[] rebuild = ItemStacking.rangesNeedingRebuild(mins, maxs);
-	    for(int i = 0; i < rebuild.length; i++) {
-		if(rebuild[i])
-		    ids.add(stacks.get(i).item.wdgid());
-	    }
-	}
-	return ids;
-    }
-
-    private static void pruneUnpacked(Inventory inv, Set<Integer> ids) {
-	Set<Integer> remaining = allStackIds(inv);
-	for(Iterator<Integer> it = ids.iterator(); it.hasNext();) {
-	    if(!remaining.contains(it.next()))
-		it.remove();
-	}
+	if(!stackInv(inv, Collections.emptySet()))
+	    return false;
+	return organizeStackQualities(inv);
     }
 
     private boolean stackInv(Inventory inv, Set<Integer> excludedIds) throws InterruptedException {
@@ -200,6 +143,12 @@ public class StackAllItems implements Defer.Callable<Void> {
 	    String key = ItemStacking.stackKey(name);
 	    if(key == null || !ItemStacking.mayStack(name, w.item.resname(), w.lsz.x, w.lsz.y))
 		continue;
+	    Integer knownCapacity = fullCapacities.get(capacityKey(w));
+	    if(ItemStacking.isStackName(name) && knownCapacity != null &&
+	       amount(w) >= knownCapacity) {
+		fullStacks.add(w.item.wdgid());
+		continue;
+	    }
 	    groups.computeIfAbsent(key, k -> new ArrayList<>()).add(w);
 	}
 	boolean changed = false;
@@ -248,18 +197,19 @@ public class StackAllItems implements Defer.Callable<Void> {
 		    break;
 		}
 		fullStacks.add(destination.item.wdgid());
-		if(ItemStacking.failedSourceIsAlsoFull(amounts[pick[0]], amounts[pick[1]])) {
-		    fullStacks.add(source.item.wdgid());
-		    if(ItemStacking.isStackName(itemName(source)) &&
-		       ItemStacking.isStackName(itemName(destination))) {
-			int learnedCapacity = amounts[pick[1]];
-			for(WItem stack : similar) {
-			    if(ItemStacking.isStackName(itemName(stack)) &&
-			       amount(stack) >= learnedCapacity)
-				fullStacks.add(stack.item.wdgid());
-			}
+		if(ItemStacking.isStackName(itemName(destination))) {
+		    int learnedCapacity = amounts[pick[1]];
+		    String capacityKey = capacityKey(destination);
+		    fullCapacities.put(capacityKey, learnedCapacity);
+		    for(WItem stack : similar) {
+			if(ItemStacking.isStackName(itemName(stack)) &&
+			   capacityKey.equals(capacityKey(stack)) &&
+			   amount(stack) >= learnedCapacity)
+			    fullStacks.add(stack.item.wdgid());
 		    }
 		}
+		if(ItemStacking.failedSourceIsAlsoFull(amounts[pick[0]], amounts[pick[1]]))
+		    fullStacks.add(source.item.wdgid());
 	    }
 	}
 	return changed ? 1 : 0;
@@ -270,21 +220,269 @@ public class StackAllItems implements Defer.Callable<Void> {
 	String before = groupState(inv, key);
 	Coord dropSlot = source.c.sub(1, 1).div(Inventory.sqsz);
 	source.take();
-	if(!waitUntil(() -> gui.vhand != null, 40, 25)) {
+	if(!waitUntil(() -> gui.vhand != null, ACTION_TIMEOUT_MS)) {
 	    gui.error("Stack items: could not pick up an item.");
 	    return -1;
 	}
 	destination.itemact(3);
-	waitUntil(() -> gui.vhand == null || !before.equals(groupState(inv, key)), 40, 25);
+	waitUntil(() -> gui.vhand == null || !before.equals(groupState(inv, key)),
+	    MERGE_RESPONSE_TIMEOUT_MS);
+	boolean progressed = !before.equals(groupState(inv, key));
 	if(gui.vhand != null) {
 	    inv.wdgmsg("drop", dropSlot);
-	    if(!waitUntil(() -> gui.vhand == null, 40, 25)) {
+	    if(!waitUntil(() -> gui.vhand == null, ACTION_TIMEOUT_MS)) {
 		gui.error("Stack items: could not return the leftover item.");
 		return -1;
 	    }
+	} else if(!progressed) {
+	    progressed = waitUntil(() -> !before.equals(groupState(inv, key)),
+		ACTION_TIMEOUT_MS / 4);
 	}
-	boolean progressed = waitUntil(() -> !before.equals(groupState(inv, key)), 20, 25);
 	return progressed ? 1 : 0;
+    }
+
+    private static boolean organizeStackQualities(Inventory inv) throws InterruptedException {
+	GameUI gui = inv.ui.gui;
+	if(gui == null)
+	    return false;
+	Map<String, List<WItem>> groups = new LinkedHashMap<>();
+	for(Widget wdg = inv.lchild; wdg != null; wdg = wdg.prev) {
+	    if(!wdg.visible || !(wdg instanceof WItem))
+		continue;
+	    WItem stack = (WItem) wdg;
+	    if(!ItemStacking.isStackName(itemName(stack)) || stackChildren(stack).isEmpty())
+		continue;
+	    groups.computeIfAbsent(capacityKey(stack), k -> new ArrayList<>()).add(stack);
+	}
+
+	int swaps = 0;
+	for(List<WItem> stacks : groups.values()) {
+	    if(stacks.size() < 2)
+		continue;
+	    stacks.sort(Comparator.comparingDouble(StackAllItems::averageStackQuality));
+	    while(true) {
+		if(inv.disposed() || Thread.currentThread().isInterrupted())
+		    return true;
+		List<List<WItem>> children = new ArrayList<>(stacks.size());
+		double[][] qualities = new double[stacks.size()][];
+		for(int i = 0; i < stacks.size(); i++) {
+		    List<WItem> items = stackChildren(stacks.get(i));
+		    children.add(items);
+		    qualities[i] = new double[items.size()];
+		    for(int j = 0; j < items.size(); j++)
+			qualities[i][j] = quality(items.get(j));
+		}
+		int[] move = ItemStacking.nextQualitySwap(qualities);
+		if(move == null)
+		    break;
+		if(++swaps > MAX_QUALITY_SWAPS) {
+		    gui.error("Stack quality sorting stopped at its safety limit.");
+		    return false;
+		}
+		BufferSpace buffer = findBuffer(gui, inv);
+		if(buffer == null) {
+		    gui.error("Stack quality sorting needs one free inventory square as a swap buffer.");
+		    return false;
+		}
+		WItem lower = stacks.get(move[0]);
+		WItem higher = stacks.get(move[2]);
+		WItem highItem = children.get(move[0]).get(move[1]);
+		WItem lowItem = children.get(move[2]).get(move[3]);
+		if(!swapChildren(gui, inv, lower, highItem, higher, lowItem, buffer)) {
+		    gui.error("Stack quality sorting stopped after a server update did not complete.");
+		    return false;
+		}
+	    }
+	}
+	return true;
+    }
+
+    private static boolean swapChildren(GameUI gui, Inventory targetInv,
+					WItem lower, WItem highItem,
+					WItem higher, WItem lowItem,
+					BufferSpace buffer) throws InterruptedException {
+	int lowerBefore = stackSize(lower);
+	int higherBefore = stackSize(higher);
+	double highQuality = quality(highItem);
+	double lowQuality = quality(lowItem);
+	WItem parked = parkChild(gui, targetInv, lower, highItem, buffer);
+	if(parked == null)
+	    return false;
+
+	lowItem.take();
+	if(!waitUntil(() -> gui.vhand != null && stackSize(higher) < higherBefore,
+		ACTION_TIMEOUT_MS)) {
+	    restoreHand(gui, higher, higherBefore);
+	    restoreBuffered(gui, parked, lower, lowerBefore);
+	    return false;
+	}
+	lower.itemact(0);
+	if(!waitUntil(() -> gui.vhand == null && stackSize(lower) >= lowerBefore &&
+		stackContainsQuality(lower, lowQuality),
+		ACTION_TIMEOUT_MS)) {
+	    restoreHand(gui, higher, higherBefore);
+	    restoreBuffered(gui, parked, lower, lowerBefore);
+	    return false;
+	}
+
+	parked.take();
+	if(!waitUntil(() -> gui.vhand != null, ACTION_TIMEOUT_MS))
+	    return false;
+	higher.itemact(0);
+	if(!waitUntil(() -> gui.vhand == null && stackSize(higher) >= higherBefore &&
+		stackContainsQuality(higher, highQuality),
+		ACTION_TIMEOUT_MS)) {
+	    if(gui.vhand != null) {
+		buffer.inv.wdgmsg("drop", buffer.slot);
+		waitUntil(() -> gui.vhand == null, ACTION_TIMEOUT_MS);
+	    }
+	    return false;
+	}
+	return true;
+    }
+
+    private static WItem parkChild(GameUI gui, Inventory targetInv, WItem sourceStack,
+				   WItem child, BufferSpace buffer) throws InterruptedException {
+	Set<Integer> beforeIds = topLevelIds(buffer.inv);
+	String resname = child.item.resname();
+	double quality = quality(child);
+	int sourceBefore = stackSize(sourceStack);
+	if(buffer.inv == gui.maininv && targetInv != gui.maininv) {
+	    child.item.wdgmsg("transfer", child.sz.div(2));
+	} else {
+	    child.take();
+	    if(!waitUntil(() -> gui.vhand != null && stackSize(sourceStack) < sourceBefore,
+		    ACTION_TIMEOUT_MS)) {
+		if(gui.vhand != null) {
+		    buffer.inv.wdgmsg("drop", buffer.slot);
+		    waitUntil(() -> gui.vhand == null, ACTION_TIMEOUT_MS);
+		}
+		return null;
+	    }
+	    buffer.inv.wdgmsg("drop", buffer.slot);
+	    if(!waitUntil(() -> gui.vhand == null, ACTION_TIMEOUT_MS))
+		return null;
+	}
+	WItem[] found = new WItem[1];
+	boolean ready = waitUntil(() -> {
+	    found[0] = findNewTopLevel(buffer.inv, beforeIds, resname, quality);
+	    return found[0] != null && stackSize(sourceStack) < sourceBefore;
+	}, ACTION_TIMEOUT_MS);
+	return ready ? found[0] : null;
+    }
+
+    private static void restoreHand(GameUI gui, WItem stack, int wantedSize)
+				    throws InterruptedException {
+	if(gui.vhand == null || stack.disposed())
+	    return;
+	stack.itemact(0);
+	waitUntil(() -> gui.vhand == null && stackSize(stack) >= wantedSize,
+	    ACTION_TIMEOUT_MS);
+    }
+
+    private static void restoreBuffered(GameUI gui, WItem buffered, WItem stack,
+					int wantedSize) throws InterruptedException {
+	if(gui.vhand != null || buffered == null || buffered.disposed() || stack.disposed())
+	    return;
+	buffered.take();
+	if(waitUntil(() -> gui.vhand != null, ACTION_TIMEOUT_MS))
+	    restoreHand(gui, stack, wantedSize);
+    }
+
+    private static WItem findNewTopLevel(Inventory inv, Set<Integer> beforeIds,
+					 String resname, double wantedQuality) {
+	for(Widget wdg = inv.lchild; wdg != null; wdg = wdg.prev) {
+	    if(!(wdg instanceof WItem))
+		continue;
+	    WItem w = (WItem) wdg;
+	    if(beforeIds.contains(w.item.wdgid()))
+		continue;
+	    if(!resname.isEmpty() && !resname.equals(w.item.resname()))
+		continue;
+	    double q = quality(w);
+	    if(Double.isFinite(wantedQuality) && Double.isFinite(q) &&
+	       Math.abs(q - wantedQuality) > 0.0001)
+		continue;
+	    return w;
+	}
+	return null;
+    }
+
+    private static Set<Integer> topLevelIds(Inventory inv) {
+	Set<Integer> ids = new HashSet<>();
+	for(Widget wdg = inv.lchild; wdg != null; wdg = wdg.prev) {
+	    if(wdg instanceof WItem)
+		ids.add(((WItem) wdg).item.wdgid());
+	}
+	return ids;
+    }
+
+    private static BufferSpace findBuffer(GameUI gui, Inventory target) {
+	if(gui.maininv != null && !gui.maininv.disposed()) {
+	    Coord slot = gui.maininv.findPlaceFor(Coord.of(1, 1));
+	    if(slot != null)
+		return new BufferSpace(gui.maininv, slot);
+	}
+	Coord slot = target.findPlaceFor(Coord.of(1, 1));
+	return slot == null ? null : new BufferSpace(target, slot);
+    }
+
+    private static final class BufferSpace {
+	final Inventory inv;
+	final Coord slot;
+
+	BufferSpace(Inventory inv, Coord slot) {
+	    this.inv = inv;
+	    this.slot = slot;
+	}
+    }
+
+    private static List<WItem> stackChildren(WItem stack) {
+	if(stack == null || stack.item.contents == null)
+	    return Collections.emptyList();
+	return new ArrayList<>(stack.item.contents.children(WItem.class));
+    }
+
+    private static int stackSize(WItem stack) {
+	List<WItem> children = stackChildren(stack);
+	return children.isEmpty() ? amount(stack) : children.size();
+    }
+
+    private static boolean stackContainsQuality(WItem stack, double wanted) {
+	if(!Double.isFinite(wanted))
+	    return true;
+	for(WItem child : stackChildren(stack)) {
+	    double q = quality(child);
+	    if(Double.isFinite(q) && Math.abs(q - wanted) <= 0.0001)
+		return true;
+	}
+	return false;
+    }
+
+    private static double averageStackQuality(WItem stack) {
+	double total = 0;
+	int count = 0;
+	for(WItem child : stackChildren(stack)) {
+	    double q = quality(child);
+	    if(Double.isFinite(q)) {
+		total += q;
+		count++;
+	    }
+	}
+	return count == 0 ? Double.POSITIVE_INFINITY : total / count;
+    }
+
+    private static String capacityKey(WItem item) {
+	String name = ItemStacking.stackKey(itemName(item));
+	String resname = item.item.resname();
+	for(WItem child : stackChildren(item)) {
+	    String childRes = child.item.resname();
+	    if(!childRes.isEmpty()) {
+		resname = childRes;
+		break;
+	    }
+	}
+	return String.valueOf(name) + "|" + resname;
     }
 
     private static String pairKey(WItem a, WItem b) {
@@ -372,11 +570,12 @@ public class StackAllItems implements Defer.Callable<Void> {
 	return 1;
     }
 
-    private static boolean waitUntil(BooleanSupplier cond, int tries, int sleepMs) throws InterruptedException {
-	for(int i = 0; i < tries; i++) {
+    private static boolean waitUntil(BooleanSupplier cond, int timeoutMs) throws InterruptedException {
+	long deadline = System.nanoTime() + (timeoutMs * 1_000_000L);
+	while(System.nanoTime() < deadline) {
 	    if(cond.getAsBoolean())
 		return true;
-	    Thread.sleep(sleepMs);
+	    Thread.sleep(POLL_MS);
 	}
 	return cond.getAsBoolean();
     }

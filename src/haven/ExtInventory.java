@@ -65,7 +65,7 @@ public class ExtInventory extends Widget {
 	btn_sort.action(() -> InventorySorter.sort(inv));
 	btn_sort.settip("Sort");
 	btn_stack.action(() -> StackAllItems.stack(inv, !ui.modshift));
-	btn_stack.settip("Stack matching qualities and sort\nShift+click: stack only");
+	btn_stack.settip("Stack and reorganize qualities in place, then sort\nShift+click: stack only");
 	btn_unstack.action(() -> UnstackAllItems.unstack(inv));
 	btn_unstack.settip("Unstack all piles in this window");
 	
