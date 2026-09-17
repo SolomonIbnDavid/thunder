@@ -1,3 +1,8 @@
+$size[14]{$u{update on 17.09.2026:}
+* Measure line/mark, hover-preview, and label colors can now be customized under Options -> Color settings, along with line thickness from 1 to 8 px.
+* Alt-click starts a detached measurement without clearing earlier measurements; normal clicks continue the newest measurement.
+* Ctrl-click on either the map or the Measure action undoes the newest mark. Shift-click still clears all measurements.
+`
 $size[14]{$u{update on 12.09.2026:}
 * Fixed a crash after combat ends when "Clear damage from player" (on by default) or "Clear damage from everyone" cleared a damage record at the same moment a creature came into view, leaving a null record that the object tick then dereferenced.
 `

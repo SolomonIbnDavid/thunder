@@ -56,4 +56,48 @@ public class TileMeasureTest {
 	assertNull(TileMeasure.formatTotal(List.of(Coord.of(0, 0))));
 	assertEquals(0, TileMeasure.chebyshevPath(List.of(Coord.of(0, 0))));
     }
+
+    @Test
+    void detachedMarkStartsNewMeasurementWithoutClearingPreviousOne() {
+	TileMeasure measure = new TileMeasure();
+	Coord a = Coord.of(0, 0);
+	Coord b = Coord.of(4, 0);
+	Coord c = Coord.of(10, 10);
+	Coord d = Coord.of(10, 13);
+
+	measure.mark(a);
+	measure.mark(b);
+	measure.mark(c, true);
+	measure.mark(d);
+
+	assertEquals(List.of(List.of(a, b), List.of(c, d)), measure.measurementSnapshot());
+    }
+
+    @Test
+    void undoOnlyChangesNewestMeasurement() {
+	TileMeasure measure = new TileMeasure();
+	Coord a = Coord.of(0, 0);
+	Coord b = Coord.of(4, 0);
+	Coord c = Coord.of(10, 10);
+	Coord d = Coord.of(10, 13);
+
+	measure.mark(a);
+	measure.mark(b);
+	measure.mark(c, true);
+	measure.mark(d);
+	measure.undo();
+	assertEquals(List.of(List.of(a, b), List.of(c)), measure.measurementSnapshot());
+
+	measure.undo();
+	assertEquals(List.of(List.of(a, b)), measure.measurementSnapshot());
+    }
+
+    @Test
+    void detachedHoverDoesNotReportDistanceFromPreviousMeasurement() {
+	TileMeasure measure = new TileMeasure();
+	measure.mark(Coord.of(1, 1));
+	measure.setHover(Coord.of(20, 30));
+
+	assertEquals("Start: 20, 30", measure.hoverTip(true));
+    }
 }
