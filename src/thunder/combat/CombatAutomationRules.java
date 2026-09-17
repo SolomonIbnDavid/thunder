@@ -4,7 +4,7 @@ import java.util.Collections;
 import java.util.EnumSet;
 import java.util.Set;
 
-/** Pure decision rules for the first, small-animal combat profile. */
+/** Pure decision rules for the combat automation profile. */
 public final class CombatAutomationRules {
     public static final int ENEMY_RED_TARGET = 55;
     public static final int OWN_OPENING_LIMIT = 40;
@@ -21,7 +21,6 @@ public final class CombatAutomationRules {
 
     public enum Decision {
         WAIT,
-        UNSUPPORTED_TARGET,
         RESTORE_GREEN,
         RESTORE_YELLOW,
         RESTORE_RED,
@@ -32,7 +31,6 @@ public final class CombatAutomationRules {
 
     public static final class Snapshot {
         public final boolean combatActive;
-        public final boolean supportedTarget;
         public final boolean globalCooldownReady;
         public final int ownGreen;
         public final int ownYellow;
@@ -41,17 +39,16 @@ public final class CombatAutomationRules {
         public final int enemyRed;
         public final Set<Opening> clearableOpenings;
 
-        public Snapshot(boolean combatActive, boolean supportedTarget, boolean globalCooldownReady,
+        public Snapshot(boolean combatActive, boolean globalCooldownReady,
                         int ownGreen, int ownYellow, int ownRed, int ownBlue, int enemyRed) {
-            this(combatActive, supportedTarget, globalCooldownReady,
+            this(combatActive, globalCooldownReady,
                 ownGreen, ownYellow, ownRed, ownBlue, enemyRed, EnumSet.allOf(Opening.class));
         }
 
-        public Snapshot(boolean combatActive, boolean supportedTarget, boolean globalCooldownReady,
+        public Snapshot(boolean combatActive, boolean globalCooldownReady,
                         int ownGreen, int ownYellow, int ownRed, int ownBlue, int enemyRed,
                         Set<Opening> clearableOpenings) {
             this.combatActive = combatActive;
-            this.supportedTarget = supportedTarget;
             this.globalCooldownReady = globalCooldownReady;
             this.ownGreen = ownGreen;
             this.ownYellow = ownYellow;
@@ -71,8 +68,6 @@ public final class CombatAutomationRules {
     public static Decision decide(Snapshot state) {
         if(state == null || !state.combatActive)
             return Decision.WAIT;
-        if(!state.supportedTarget)
-            return Decision.UNSUPPORTED_TARGET;
         if(!state.globalCooldownReady)
             return Decision.WAIT;
 

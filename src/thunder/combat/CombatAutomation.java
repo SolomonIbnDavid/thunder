@@ -7,7 +7,6 @@ import haven.Fightsess;
 import haven.Fightview;
 import haven.GameUI;
 import haven.Gob;
-import haven.GobTag;
 import haven.Loading;
 import haven.MenuGrid;
 import haven.OwnerContext;
@@ -29,7 +28,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 
-/** UI-thread controller for the conservative small-animal combat profile. */
+/** UI-thread controller for the combat automation profile. */
 public final class CombatAutomation extends Widget {
     private static final String QUICK_BARRAGE = "paginae/atk/barrage";
     private static final String FULL_CIRCLE = "paginae/atk/fullcircle";
@@ -57,7 +56,7 @@ public final class CombatAutomation extends Widget {
         this.gui = gui;
         this.log = openLog();
         setStatus("Enabled; waiting for combat");
-        log("enabled profile=small-animal enemy-red-target=" +
+        log("enabled profile=all-combat enemy-red-target=" +
             CombatAutomationRules.ENEMY_RED_TARGET + " own-opening-limit=" +
             CombatAutomationRules.OWN_OPENING_LIMIT + " queue-lead-ms=" +
             Math.round(CombatAutomationRules.ACTION_QUEUE_LEAD * 1000) + " max-action-distance=" +
@@ -86,7 +85,7 @@ public final class CombatAutomation extends Widget {
             gui.msg("Combat Automation disabled.", GameUI.MsgType.INFO);
         } else {
             instance = gui.add(new CombatAutomation(gui));
-            gui.msg("Combat Automation enabled (small animals; bears excluded).", GameUI.MsgType.GOOD);
+            gui.msg("Combat Automation enabled for all combat targets.", GameUI.MsgType.GOOD);
         }
     }
 
@@ -164,13 +163,6 @@ public final class CombatAutomation extends Widget {
             log("target id=" + target.id + " resource=" + target.resid());
         }
 
-        TargetSupport support = targetSupport(target);
-        if(support != TargetSupport.SUPPORTED) {
-            updateState(support == TargetSupport.BEAR ?
-                "Paused: bears are not supported yet" : "Paused: target is not a supported wild animal");
-            return;
-        }
-
         double targetDistance = targetDistance(target);
         if(!Double.isFinite(targetDistance)) {
             updateState("Waiting for player and target position data");
@@ -207,7 +199,7 @@ public final class CombatAutomation extends Widget {
         }
 
         CombatAutomationRules.Snapshot snapshot = new CombatAutomationRules.Snapshot(
-            true, true, CombatAutomationRules.cooldownReadyToQueue(now, fv.atkct),
+            true, CombatAutomationRules.cooldownReadyToQueue(now, fv.atkct),
             ownGreen, ownYellow, ownRed, ownBlue, enemyRed, defenses.clearableOpenings());
         CombatAutomationRules.Decision decision = CombatAutomationRules.decide(snapshot);
         if(decision == CombatAutomationRules.Decision.WAIT) {
@@ -237,8 +229,7 @@ public final class CombatAutomation extends Widget {
             choice = defenses.choice(CombatAutomationRules.Opening.BLUE);
             break;
         default:
-            updateState("Paused: unsupported target");
-            return;
+            throw new AssertionError("Unexpected combat decision: " + decision);
         }
 
         if(choice.loading) {
@@ -382,16 +373,6 @@ public final class CombatAutomation extends Widget {
             decision == CombatAutomationRules.Decision.RESTORE_BLUE);
     }
 
-    private static TargetSupport targetSupport(Gob target) {
-        String resource = target.resid();
-        if(resource != null && resource.startsWith("gfx/kritter/bear/"))
-            return(TargetSupport.BEAR);
-        if(!target.is(GobTag.ANIMAL) || target.anyOf(GobTag.DOMESTIC, GobTag.PLAYER,
-            GobTag.CRITTER, GobTag.DEAD, GobTag.KO))
-            return(TargetSupport.UNSUPPORTED);
-        return(TargetSupport.SUPPORTED);
-    }
-
     private void updateState(String state) {
         setStatus(state);
         if(!state.equals(lastLoggedState)) {
@@ -456,12 +437,6 @@ public final class CombatAutomation extends Widget {
         if(instance == this)
             instance = null;
         super.destroy();
-    }
-
-    private enum TargetSupport {
-        SUPPORTED,
-        BEAR,
-        UNSUPPORTED
     }
 
     private static final class ActionChoice {

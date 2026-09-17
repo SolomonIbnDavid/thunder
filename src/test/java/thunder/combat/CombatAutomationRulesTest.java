@@ -12,26 +12,19 @@ import static org.junit.jupiter.api.Assertions.*;
 public class CombatAutomationRulesTest {
     private static CombatAutomationRules.Snapshot state(int enemyRed,
                                                          int green, int yellow, int red, int blue) {
-        return new CombatAutomationRules.Snapshot(true, true, true,
+        return new CombatAutomationRules.Snapshot(true, true,
             green, yellow, red, blue, enemyRed);
     }
 
     @Test void waitsWithoutAnActiveCombat() {
         CombatAutomationRules.Snapshot state = new CombatAutomationRules.Snapshot(
-            false, true, true, 0, 0, 0, 0, 0);
+            false, true, 0, 0, 0, 0, 0);
         assertEquals(CombatAutomationRules.Decision.WAIT, CombatAutomationRules.decide(state));
-    }
-
-    @Test void rejectsUnsupportedTargetsBeforeChoosingAMove() {
-        CombatAutomationRules.Snapshot state = new CombatAutomationRules.Snapshot(
-            true, false, true, 0, 0, 0, 0, 80);
-        assertEquals(CombatAutomationRules.Decision.UNSUPPORTED_TARGET,
-            CombatAutomationRules.decide(state));
     }
 
     @Test void waitsForTheServerReportedGlobalCooldown() {
         CombatAutomationRules.Snapshot state = new CombatAutomationRules.Snapshot(
-            true, true, false, 0, 0, 0, 0, 0);
+            true, false, 0, 0, 0, 0, 0);
         assertEquals(CombatAutomationRules.Decision.WAIT, CombatAutomationRules.decide(state));
     }
 
@@ -79,7 +72,7 @@ public class CombatAutomationRulesTest {
 
     @Test void skipsAnUnsafeColorThatHasNoMatchingMoveOnTheDeck() {
         CombatAutomationRules.Snapshot state = new CombatAutomationRules.Snapshot(
-            true, true, true, 68, 0, 0, 40, 60,
+            true, true, 68, 0, 0, 40, 60,
             EnumSet.of(CombatAutomationRules.Opening.BLUE));
         assertEquals(CombatAutomationRules.Decision.RESTORE_BLUE,
             CombatAutomationRules.decide(state));
@@ -95,9 +88,9 @@ public class CombatAutomationRulesTest {
 
     @Test void continuesOffenseWhenNoUnsafeColorCanBeCleared() {
         CombatAutomationRules.Snapshot finish = new CombatAutomationRules.Snapshot(
-            true, true, true, 68, 0, 0, 0, 60, Collections.emptySet());
+            true, true, 68, 0, 0, 0, 60, Collections.emptySet());
         CombatAutomationRules.Snapshot build = new CombatAutomationRules.Snapshot(
-            true, true, true, 68, 0, 0, 0, 40, Collections.emptySet());
+            true, true, 68, 0, 0, 0, 40, Collections.emptySet());
         assertEquals(CombatAutomationRules.Decision.FULL_CIRCLE,
             CombatAutomationRules.decide(finish));
         assertEquals(CombatAutomationRules.Decision.QUICK_BARRAGE,
