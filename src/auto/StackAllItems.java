@@ -14,8 +14,8 @@ import me.ender.WindowDetector;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,26 +24,35 @@ import java.util.function.BooleanSupplier;
 
 /**
  * Merge stacks in inventory windows, Hurricane-style: pick the two smallest
- * piles of each name, take the smaller onto the next with shift+ctrl itemact,
- * drop leftovers, repeat until each name is one pile.
+ * quality-compatible piles of each name, take the smaller onto the next with
+ * shift+ctrl itemact, drop leftovers, and repeat until no merge can progress.
  */
 public class StackAllItems implements Defer.Callable<Void> {
+    private static final int MAX_PASSES = 512;
     private static final Object lock = new Object();
     private static StackAllItems current;
     private Defer.Future<Void> task;
 
     private final List<Inventory> inventories;
+    private final boolean rebuildStacks;
+    private boolean completed = true;
 
-    private StackAllItems(List<Inventory> inventories) {
+    private StackAllItems(List<Inventory> inventories, boolean rebuildStacks) {
 	this.inventories = inventories;
+	this.rebuildStacks = rebuildStacks;
     }
 
     public static void stack(Inventory inv) {
+	stack(inv, true);
+    }
+
+    public static void stack(Inventory inv, boolean organize) {
 	if(inv == null || inv.ui == null || inv.ui.gui == null)
 	    return;
 	if(InventorySorter.invalidCursor(inv.ui))
 	    return;
-	start(new StackAllItems(Collections.singletonList(inv)), inv.ui.gui);
+	start(new StackAllItems(Collections.singletonList(inv), organize), inv.ui.gui,
+	      organize ? () -> InventorySorter.sort(inv) : null);
     }
 
     public static void stackOpened(GameUI gui) {
@@ -59,7 +68,7 @@ public class StackAllItems implements Defer.Callable<Void> {
 	    targets.add(w.inv);
 	}
 	if(!targets.isEmpty())
-	    start(new StackAllItems(targets), gui);
+	    start(new StackAllItems(targets, true), gui, () -> InventorySorter.sortAll(gui));
     }
 
     @Override
@@ -68,7 +77,11 @@ public class StackAllItems implements Defer.Callable<Void> {
 	    for(Inventory inv : inventories) {
 		if(inv.disposed())
 		    continue;
-		stackInv(inv);
+		boolean ok = rebuildStacks ? rebuild(inv) : stackInv(inv, Collections.emptySet());
+		if(!ok) {
+		    completed = false;
+		    break;
+		}
 	    }
 	} finally {
 	    synchronized(lock) {
@@ -79,78 +92,148 @@ public class StackAllItems implements Defer.Callable<Void> {
 	return null;
     }
 
-    private void stackInv(Inventory inv) throws InterruptedException {
-	GameUI gui = inv.ui.gui;
-	if(gui == null)
-	    return;
-	if(gui.vhand != null) {
-	    gui.error("Can't stack items with an occupied cursor!");
-	    return;
+    private boolean rebuild(Inventory inv) throws InterruptedException {
+	Set<Integer> originalStacks = stackIds(inv);
+	for(int round = 0; round < 80 && !originalStacks.isEmpty(); round++) {
+	    int pendingBefore = originalStacks.size();
+	    boolean unpacked = UnstackAllItems.unstackInv(inv, originalStacks);
+	    pruneUnpacked(inv, originalStacks);
+	    if(!stackInv(inv, originalStacks))
+		return false;
+	    pruneUnpacked(inv, originalStacks);
+	    if(!unpacked && originalStacks.size() == pendingBefore)
+		break;
 	}
-	Set<String> stuck = new HashSet<>();
-	for(int pass = 0; pass < 80; pass++) {
-	    if(inv.disposed() || Thread.currentThread().isInterrupted())
-		return;
-	    String before = state(inv);
-	    mergeOnePass(gui, inv, stuck);
-	    Thread.sleep(80);
-	    if(before.equals(state(inv)))
-		return;
+	return stackInv(inv, Collections.emptySet());
+    }
+
+    private static Set<Integer> stackIds(Inventory inv) {
+	Set<Integer> ids = new HashSet<>();
+	for(Widget wdg = inv.lchild; wdg != null; wdg = wdg.prev) {
+	    if(wdg.visible && wdg instanceof WItem) {
+		WItem w = (WItem) wdg;
+		if(ItemStacking.isStackName(itemName(w)))
+		    ids.add(w.item.wdgid());
+	    }
+	}
+	return ids;
+    }
+
+    private static void pruneUnpacked(Inventory inv, Set<Integer> ids) {
+	Set<Integer> remaining = stackIds(inv);
+	for(Iterator<Integer> it = ids.iterator(); it.hasNext();) {
+	    if(!remaining.contains(it.next()))
+		it.remove();
 	}
     }
 
-    private static void mergeOnePass(GameUI gui, Inventory inv, Set<String> stuck) throws InterruptedException {
+    private boolean stackInv(Inventory inv, Set<Integer> excludedIds) throws InterruptedException {
+	GameUI gui = inv.ui.gui;
+	if(gui == null)
+	    return false;
+	if(gui.vhand != null) {
+	    gui.error("Can't stack items with an occupied cursor!");
+	    return false;
+	}
+	Set<String> stuck = new HashSet<>();
+	Set<String> rejectedGroups = new HashSet<>();
+	for(int pass = 0; pass < MAX_PASSES; pass++) {
+	    if(inv.disposed() || Thread.currentThread().isInterrupted())
+		return true;
+	    int result = mergeOnePass(gui, inv, stuck, rejectedGroups, excludedIds);
+	    if(result < 0)
+		return false;
+	    if(result == 0)
+		return true;
+	}
+	gui.error("Stack items stopped at its safety limit.");
+	return false;
+    }
+
+    private static int mergeOnePass(GameUI gui, Inventory inv, Set<String> stuck,
+				    Set<String> rejectedGroups, Set<Integer> excludedIds)
+				    throws InterruptedException {
 	Map<String, List<WItem>> groups = new LinkedHashMap<>();
 	for(Widget wdg = inv.lchild; wdg != null; wdg = wdg.prev) {
 	    if(!wdg.visible || !(wdg instanceof WItem))
 		continue;
 	    WItem w = (WItem) wdg;
-	    String key = ItemStacking.stackKey(itemName(w));
-	    if(key == null)
+	    if(excludedIds.contains(w.item.wdgid()))
+		continue;
+	    String name = itemName(w);
+	    String key = ItemStacking.stackKey(name);
+	    if(key == null || !ItemStacking.mayStack(name, w.item.resname(), w.lsz.x, w.lsz.y))
 		continue;
 	    groups.computeIfAbsent(key, k -> new ArrayList<>()).add(w);
 	}
-	for(List<WItem> similar : groups.values()) {
-	    if(similar.size() < 2)
+	boolean changed = false;
+	for(Map.Entry<String, List<WItem>> entry : groups.entrySet()) {
+	    String key = entry.getKey();
+	    List<WItem> similar = entry.getValue();
+	    if(similar.size() < 2 || rejectedGroups.contains(key))
 		continue;
-	    List<WItem> bySize = new ArrayList<>(similar);
-	    Collections.sort(bySize, new Comparator<WItem>() {
-		@Override
-		public int compare(WItem a, WItem b) {
-		    return Integer.compare(amount(a), amount(b));
+	    boolean knownStackable = false;
+	    for(WItem w : similar)
+		knownStackable |= ItemStacking.isStackName(itemName(w));
+	    while(true) {
+		int[] amounts = new int[similar.size()];
+		double[] mins = new double[similar.size()];
+		double[] maxs = new double[similar.size()];
+		boolean[][] blocked = new boolean[similar.size()][similar.size()];
+		for(int i = 0; i < similar.size(); i++) {
+		    WItem w = similar.get(i);
+		    amounts[i] = amount(w);
+		    double[] range = qualityRange(w);
+		    mins[i] = range[0];
+		    maxs[i] = range[1];
+		    for(int j = i + 1; j < similar.size(); j++)
+			blocked[i][j] = stuck.contains(pairKey(w, similar.get(j)));
 		}
-	    });
-	    boolean did = false;
-	    for(int i = 0; i < bySize.size() && !did; i++) {
-		for(int j = i + 1; j < bySize.size(); j++) {
-		    WItem lowest = bySize.get(i);
-		    WItem next = bySize.get(j);
-		    if(lowest.disposed() || next.disposed())
-			continue;
-		    String pair = pairKey(lowest, next);
-		    if(stuck.contains(pair))
-			continue;
-		    Coord dropSlot = lowest.c.sub(1, 1).div(Inventory.sqsz);
-		    int destBefore = amount(next);
-		    lowest.take();
-		    if(!waitUntil(() -> gui.vhand != null, 40, 25)) {
-			gui.error("Stack items: could not pick up an item.");
-			return;
-		    }
-		    next.itemact(3);
-		    waitUntil(() -> gui.vhand == null, 12, 25);
-		    if(gui.vhand != null) {
-			inv.wdgmsg("drop", dropSlot);
-			waitUntil(() -> gui.vhand == null, 40, 25);
-		    }
-		    Thread.sleep(50);
-		    if(!ItemStacking.stacked(lowest.disposed(), destBefore, amount(next)))
-			stuck.add(pair);
-		    did = true;
+		int[] pick = ItemStacking.closestQualityPair(mins, maxs, amounts, blocked);
+		if(pick == null)
+		    break;
+		WItem source = similar.get(pick[0]);
+		WItem destination = similar.get(pick[1]);
+		if(source.disposed() || destination.disposed())
+		    break;
+		String pair = pairKey(source, destination);
+		int result = merge(gui, inv, key, source, destination);
+		if(result < 0)
+		    return -1;
+		if(result > 0) {
+		    changed = true;
+		    break;
+		}
+		stuck.add(pair);
+		if(!knownStackable) {
+		    rejectedGroups.add(key);
 		    break;
 		}
 	    }
 	}
+	return changed ? 1 : 0;
+    }
+
+    private static int merge(GameUI gui, Inventory inv, String key, WItem source,
+			     WItem destination) throws InterruptedException {
+	String before = groupState(inv, key);
+	Coord dropSlot = source.c.sub(1, 1).div(Inventory.sqsz);
+	source.take();
+	if(!waitUntil(() -> gui.vhand != null, 40, 25)) {
+	    gui.error("Stack items: could not pick up an item.");
+	    return -1;
+	}
+	destination.itemact(3);
+	waitUntil(() -> gui.vhand == null || !before.equals(groupState(inv, key)), 40, 25);
+	if(gui.vhand != null) {
+	    inv.wdgmsg("drop", dropSlot);
+	    if(!waitUntil(() -> gui.vhand == null, 40, 25)) {
+		gui.error("Stack items: could not return the leftover item.");
+		return -1;
+	    }
+	}
+	boolean progressed = waitUntil(() -> !before.equals(groupState(inv, key)), 20, 25);
+	return progressed ? 1 : 0;
     }
 
     private static String pairKey(WItem a, WItem b) {
@@ -164,39 +247,50 @@ public class StackAllItems implements Defer.Callable<Void> {
 	return ia + ":" + ib;
     }
 
-    private static String state(Inventory inv) {
-	Map<String, List<Integer>> groups = new LinkedHashMap<>();
+    private static String groupState(Inventory inv, String wantedKey) {
+	List<String> values = new ArrayList<>();
 	for(Widget wdg = inv.lchild; wdg != null; wdg = wdg.prev) {
 	    if(!(wdg instanceof WItem))
 		continue;
 	    WItem w = (WItem) wdg;
-	    String key = ItemStacking.stackKey(itemName(w));
-	    if(key == null)
+	    String name = itemName(w);
+	    String key = ItemStacking.stackKey(name);
+	    if(!wantedKey.equals(key))
 		continue;
-	    List<Integer> amts = groups.get(key);
-	    if(amts == null) {
-		amts = new ArrayList<>();
-		groups.put(key, amts);
-	    }
-	    amts.add(Integer.valueOf(amount(w)));
+	    values.add(amount(w) + (ItemStacking.isStackName(name) ? "s" : "i"));
 	}
-	List<String> names = new ArrayList<>(groups.keySet());
-	Collections.sort(names);
-	StringBuilder sb = new StringBuilder();
-	for(int n = 0; n < names.size(); n++) {
-	    String name = names.get(n);
-	    List<Integer> amts = groups.get(name);
-	    Collections.sort(amts);
-	    if(n > 0)
-		sb.append(';');
-	    sb.append(name).append(':');
-	    for(int i = 0; i < amts.size(); i++) {
-		if(i > 0)
-		    sb.append(',');
-		sb.append(amts.get(i));
+	Collections.sort(values);
+	return values.toString();
+    }
+
+    private static double[] qualityRange(WItem w) {
+	double min = Double.POSITIVE_INFINITY;
+	double max = Double.NEGATIVE_INFINITY;
+	if(w.item.contents != null) {
+	    for(WItem child : w.item.contents.children(WItem.class)) {
+		double q = quality(child);
+		if(Double.isFinite(q)) {
+		    min = Math.min(min, q);
+		    max = Math.max(max, q);
+		}
 	    }
 	}
-	return sb.toString();
+	if(min == Double.POSITIVE_INFINITY) {
+	    double q = quality(w);
+	    if(Double.isFinite(q))
+		return new double[] {q, q};
+	    return new double[] {Double.NaN, Double.NaN};
+	}
+	return new double[] {min, max};
+    }
+
+    private static double quality(WItem w) {
+	try {
+	    double q = w.quality();
+	    return q > 0 ? q : Double.NaN;
+	} catch(Loading ignored) {
+	    return Double.NaN;
+	}
     }
 
     static String itemName(WItem w) {
@@ -250,12 +344,17 @@ public class StackAllItems implements Defer.Callable<Void> {
 	}
     }
 
-    private static void start(StackAllItems job, GameUI gui) {
+    private static void start(StackAllItems job, GameUI gui, Runnable afterComplete) {
+	UnstackAllItems.cancel();
 	cancel();
 	synchronized(lock) {current = job;}
 	job.run((result) -> {
-	    if(!"complete".equals(result))
+	    if("complete".equals(result) && job.completed) {
+		if(afterComplete != null)
+		    afterComplete.run();
+	    } else if(!"complete".equals(result)) {
 		gui.ui.message(String.format("Stack is %s.", result), GameUI.MsgType.INFO);
+	    }
 	});
     }
 }

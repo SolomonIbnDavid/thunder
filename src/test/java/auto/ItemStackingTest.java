@@ -31,6 +31,15 @@ public class ItemStackingTest {
     }
 
     @Test
+    void onlyProbesPlausibleStackItems() {
+	assertTrue(ItemStacking.mayStack("Chives", "gfx/invobjs/chives", 1, 1));
+	assertFalse(ItemStacking.mayStack("Waterskin", "gfx/invobjs/waterskin", 1, 1));
+	assertFalse(ItemStacking.mayStack("Bucket", "gfx/invobjs/bucket-water", 1, 1));
+	assertFalse(ItemStacking.mayStack("Large item", "gfx/invobjs/large", 2, 1));
+	assertFalse(ItemStacking.mayStack("0.25 l of Water", "gfx/invobjs/water", 1, 1));
+    }
+
+    @Test
     void twoSmallestPicksLowestThenNext() {
 	assertArrayEquals(new int[] {2, 0}, ItemStacking.twoSmallest(new int[] {5, 9, 1, 8}));
 	assertArrayEquals(new int[] {0, 1}, ItemStacking.twoSmallest(new int[] {1, 1, 4}));
@@ -43,5 +52,32 @@ public class ItemStackingTest {
 	assertFalse(ItemStacking.stacked(false, 4, 4));
 	assertTrue(ItemStacking.stacked(true, 4, 4));
 	assertTrue(ItemStacking.stacked(false, 3, 4));
+    }
+
+    @Test
+    void closestPairKeepsSimilarQualitiesTogether() {
+	int[] pair = ItemStacking.closestQualityPair(
+	    new double[] {12, 31.2, 25.2, 30},
+	    new double[] {12, 31.2, 25.2, 30},
+	    new int[] {1, 1, 1, 1});
+	assertArrayEquals(new int[] {1, 3}, pair);
+    }
+
+    @Test
+    void closestPairUsesWholeExistingStackRange() {
+	int[] pair = ItemStacking.closestQualityPair(
+	    new double[] {10, 19, 20},
+	    new double[] {30, 21, 22},
+	    new int[] {4, 2, 2});
+	assertArrayEquals(new int[] {1, 2}, pair);
+    }
+
+    @Test
+    void closestPairHoldsTheSmallerPile() {
+	int[] pair = ItemStacking.closestQualityPair(
+	    new double[] {20, 20},
+	    new double[] {20, 20},
+	    new int[] {4, 1});
+	assertArrayEquals(new int[] {1, 0}, pair);
     }
 }

@@ -13,6 +13,8 @@ import me.ender.WindowDetector;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.function.BooleanSupplier;
 
 /** Shift+ctrl right-click every "stack of" pile so it unpacks into free squares. */
 public class UnstackAllItems implements Defer.Callable<Void> {
@@ -67,13 +69,17 @@ public class UnstackAllItems implements Defer.Callable<Void> {
 	return null;
     }
 
-    private static void unstackInv(Inventory inv) throws InterruptedException {
+    static boolean unstackInv(Inventory inv) throws InterruptedException {
+	return unstackInv(inv, null);
+    }
+
+    static boolean unstackInv(Inventory inv, Set<Integer> onlyIds) throws InterruptedException {
 	GameUI gui = inv.ui.gui;
 	if(gui == null)
-	    return;
+	    return false;
 	if(gui.vhand != null) {
 	    gui.error("Can't unstack items with an occupied cursor!");
-	    return;
+	    return false;
 	}
 	List<WItem> stacks = new ArrayList<>();
 	for(Widget wdg = inv.lchild; wdg != null; wdg = wdg.prev) {
@@ -86,15 +92,46 @@ public class UnstackAllItems implements Defer.Callable<Void> {
 	    } catch(Loading ignored) {
 		continue;
 	    }
-	    if(ItemStacking.isStackName(name))
+	    if(ItemStacking.isStackName(name) &&
+	       (onlyIds == null || onlyIds.contains(w.item.wdgid())))
 		stacks.add(w);
 	}
+	boolean changed = false;
 	for(WItem w : stacks) {
 	    if(w.disposed() || inv.disposed())
-		return;
+		return changed;
+	    String before = state(inv);
 	    w.item.wdgmsg("iact", Coord.z, 3);
-	    Thread.sleep(40);
+	    changed |= waitUntil(() -> w.disposed() || !before.equals(state(inv)), 20, 25);
 	}
+	return changed;
+    }
+
+    private static String state(Inventory inv) {
+	List<String> items = new ArrayList<>();
+	for(Widget wdg = inv.lchild; wdg != null; wdg = wdg.prev) {
+	    if(!(wdg instanceof WItem))
+		continue;
+	    WItem w = (WItem) wdg;
+	    String name;
+	    try {
+		name = w.item.name.get("");
+	    } catch(Loading ignored) {
+		name = "";
+	    }
+	    items.add(w.item.wdgid() + ":" + name);
+	}
+	Collections.sort(items);
+	return items.toString();
+    }
+
+    private static boolean waitUntil(BooleanSupplier cond, int tries, int sleepMs) throws InterruptedException {
+	for(int i = 0; i < tries; i++) {
+	    if(cond.getAsBoolean())
+		return true;
+	    Thread.sleep(sleepMs);
+	}
+	return cond.getAsBoolean();
     }
 
     private void run(java.util.function.Consumer<String> callback) {
@@ -112,6 +149,7 @@ public class UnstackAllItems implements Defer.Callable<Void> {
     }
 
     private static void start(UnstackAllItems job, GameUI gui) {
+	StackAllItems.cancel();
 	cancel();
 	synchronized(lock) {current = job;}
 	job.run((result) -> {
