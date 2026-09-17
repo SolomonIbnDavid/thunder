@@ -2,6 +2,8 @@ package thunder.combat;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -75,14 +77,22 @@ public class CombatAutomationRulesTest {
             CombatAutomationRules.decide(state(70, 60, 60, 60, 60)));
     }
 
-    @Test void exposesKnownRestorationsForEveryOpening() {
-        assertEquals("paginae/atk/zigzag", CombatAutomationRules.restorationCandidates(
-            CombatAutomationRules.Opening.RED).get(0));
-        assertTrue(CombatAutomationRules.restorationCandidates(
-            CombatAutomationRules.Opening.YELLOW).contains("paginae/atk/jump"));
-        assertTrue(CombatAutomationRules.restorationCandidates(
-            CombatAutomationRules.Opening.BLUE).contains("paginae/atk/qdodge"));
-        assertTrue(CombatAutomationRules.restorationCandidates(
-            CombatAutomationRules.Opening.GREEN).contains("paginae/atk/sidestep"));
+    @Test void skipsAnUnsafeColorThatHasNoMatchingMoveOnTheDeck() {
+        CombatAutomationRules.Snapshot state = new CombatAutomationRules.Snapshot(
+            true, true, true, 68, 0, 0, 45, 60,
+            EnumSet.of(CombatAutomationRules.Opening.BLUE));
+        assertEquals(CombatAutomationRules.Decision.RESTORE_BLUE,
+            CombatAutomationRules.decide(state));
+    }
+
+    @Test void continuesOffenseWhenNoUnsafeColorCanBeCleared() {
+        CombatAutomationRules.Snapshot finish = new CombatAutomationRules.Snapshot(
+            true, true, true, 68, 0, 0, 0, 60, Collections.emptySet());
+        CombatAutomationRules.Snapshot build = new CombatAutomationRules.Snapshot(
+            true, true, true, 68, 0, 0, 0, 40, Collections.emptySet());
+        assertEquals(CombatAutomationRules.Decision.FULL_CIRCLE,
+            CombatAutomationRules.decide(finish));
+        assertEquals(CombatAutomationRules.Decision.QUICK_BARRAGE,
+            CombatAutomationRules.decide(build));
     }
 }

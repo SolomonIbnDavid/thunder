@@ -1,8 +1,8 @@
 package thunder.combat;
 
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.List;
+import java.util.EnumSet;
+import java.util.Set;
 
 /** Pure decision rules for the first, small-animal combat profile. */
 public final class CombatAutomationRules {
@@ -36,9 +36,17 @@ public final class CombatAutomationRules {
         public final int ownRed;
         public final int ownBlue;
         public final int enemyRed;
+        public final Set<Opening> clearableOpenings;
 
         public Snapshot(boolean combatActive, boolean supportedTarget, boolean globalCooldownReady,
                         int ownGreen, int ownYellow, int ownRed, int ownBlue, int enemyRed) {
+            this(combatActive, supportedTarget, globalCooldownReady,
+                ownGreen, ownYellow, ownRed, ownBlue, enemyRed, EnumSet.allOf(Opening.class));
+        }
+
+        public Snapshot(boolean combatActive, boolean supportedTarget, boolean globalCooldownReady,
+                        int ownGreen, int ownYellow, int ownRed, int ownBlue, int enemyRed,
+                        Set<Opening> clearableOpenings) {
             this.combatActive = combatActive;
             this.supportedTarget = supportedTarget;
             this.globalCooldownReady = globalCooldownReady;
@@ -47,6 +55,10 @@ public final class CombatAutomationRules {
             this.ownRed = ownRed;
             this.ownBlue = ownBlue;
             this.enemyRed = enemyRed;
+            EnumSet<Opening> available = EnumSet.noneOf(Opening.class);
+            if(clearableOpenings != null)
+                available.addAll(clearableOpenings);
+            this.clearableOpenings = Collections.unmodifiableSet(available);
         }
     }
 
@@ -77,31 +89,12 @@ public final class CombatAutomationRules {
         int[] values = {state.ownRed, state.ownYellow, state.ownBlue, state.ownGreen};
         Opening[] openings = {Opening.RED, Opening.YELLOW, Opening.BLUE, Opening.GREEN};
         for(int i = 0; i < values.length; i++) {
-            if(values[i] > highest) {
+            if(state.clearableOpenings.contains(openings[i]) && values[i] > highest) {
                 highest = values[i];
                 result = openings[i];
             }
         }
         return result;
-    }
-
-    public static List<String> restorationCandidates(Opening opening) {
-        if(opening == null)
-            return Collections.emptyList();
-        switch(opening) {
-        case RED:
-            return Arrays.asList("paginae/atk/zigzag", "paginae/atk/artevade");
-        case YELLOW:
-            return Arrays.asList("paginae/atk/zigzag", "paginae/atk/regain",
-                                 "paginae/atk/jump", "paginae/atk/artevade");
-        case BLUE:
-            return Arrays.asList("paginae/atk/regain", "paginae/atk/qdodge",
-                                 "paginae/atk/artevade");
-        case GREEN:
-            return Arrays.asList("paginae/atk/sidestep", "paginae/atk/artevade");
-        default:
-            return Collections.emptyList();
-        }
     }
 
     private static Decision restorationDecision(Opening opening) {

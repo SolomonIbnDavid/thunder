@@ -24,7 +24,10 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 
 /** UI-thread controller for the conservative small-animal combat profile. */
 public final class CombatAutomation extends Widget {
@@ -43,7 +46,9 @@ public final class CombatAutomation extends Widget {
     private double pendingSince;
     private double pendingLastUse;
     private String pendingAction;
+    private String pendingName;
     private String lastLoggedState;
+    private String lastDefenseDeck;
 
     private CombatAutomation(GameUI gui) {
         this.gui = gui;
@@ -101,14 +106,16 @@ public final class CombatAutomation extends Widget {
             if(fv == null || fsess == null || fv.current == null) {
                 log("combat ended while awaiting acknowledgement action=" + pendingAction);
                 pendingAction = null;
+                pendingName = null;
                 targetId = -1;
                 updateState("Enabled; waiting for combat");
                 return;
             } else if(fv.lastuse > pendingLastUse) {
                 log("ack action=" + pendingAction);
                 pendingAction = null;
+                pendingName = null;
             } else if(now - pendingSince >= ACK_TIMEOUT) {
-                disableWithError("No server acknowledgement for " + displayName(pendingAction) + ".");
+                disableWithError("No server acknowledgement for " + pendingName + ".");
                 return;
             } else {
                 return;
@@ -149,9 +156,19 @@ public final class CombatAutomation extends Widget {
             return;
         }
 
+        DeckDefenses defenses = inspectDefenses(fsess, now);
+        if(defenses.loading) {
+            updateState("Waiting for combat deck data");
+            return;
+        }
+        if(!defenses.description.equals(lastDefenseDeck)) {
+            lastDefenseDeck = defenses.description;
+            log("defense deck " + (lastDefenseDeck.isEmpty() ? "none" : lastDefenseDeck));
+        }
+
         CombatAutomationRules.Snapshot snapshot = new CombatAutomationRules.Snapshot(
             true, true, now >= fv.atkct,
-            ownGreen, ownYellow, ownRed, ownBlue, enemyRed);
+            ownGreen, ownYellow, ownRed, ownBlue, enemyRed, defenses.clearableOpenings());
         CombatAutomationRules.Decision decision = CombatAutomationRules.decide(snapshot);
         if(decision == CombatAutomationRules.Decision.WAIT) {
             updateState(String.format("Cooldown; enemy red %d%%, own max %d%%",
@@ -159,57 +176,69 @@ public final class CombatAutomation extends Widget {
             return;
         }
 
-        List<String> candidates;
+        ActionChoice choice;
         switch(decision) {
         case QUICK_BARRAGE:
-            candidates = Collections.singletonList(QUICK_BARRAGE);
+            choice = chooseAction(fsess, Collections.singletonList(QUICK_BARRAGE), now);
             break;
         case FULL_CIRCLE:
-            candidates = Collections.singletonList(FULL_CIRCLE);
+            choice = chooseAction(fsess, Collections.singletonList(FULL_CIRCLE), now);
             break;
         case RESTORE_GREEN:
-            candidates = CombatAutomationRules.restorationCandidates(CombatAutomationRules.Opening.GREEN);
+            choice = defenses.choice(CombatAutomationRules.Opening.GREEN);
             break;
         case RESTORE_YELLOW:
-            candidates = CombatAutomationRules.restorationCandidates(CombatAutomationRules.Opening.YELLOW);
+            choice = defenses.choice(CombatAutomationRules.Opening.YELLOW);
             break;
         case RESTORE_RED:
-            candidates = CombatAutomationRules.restorationCandidates(CombatAutomationRules.Opening.RED);
+            choice = defenses.choice(CombatAutomationRules.Opening.RED);
             break;
         case RESTORE_BLUE:
-            candidates = CombatAutomationRules.restorationCandidates(CombatAutomationRules.Opening.BLUE);
+            choice = defenses.choice(CombatAutomationRules.Opening.BLUE);
             break;
         default:
             updateState("Paused: unsupported target");
             return;
         }
 
-        ActionChoice choice = chooseAction(fsess, candidates, now);
         if(choice.loading) {
             updateState("Waiting for combat deck data");
             return;
         }
         if(!choice.found) {
-            disableWithError("Required move is not in the active combat deck: " +
-                candidateNames(candidates) + ".");
-            return;
+            if(isRestoration(decision)) {
+                decision = (enemyRed < CombatAutomationRules.ENEMY_RED_TARGET) ?
+                    CombatAutomationRules.Decision.QUICK_BARRAGE :
+                    CombatAutomationRules.Decision.FULL_CIRCLE;
+                choice = chooseAction(fsess, Collections.singletonList(
+                    decision == CombatAutomationRules.Decision.QUICK_BARRAGE ?
+                        QUICK_BARRAGE : FULL_CIRCLE), now);
+            }
+            if(!choice.found) {
+                disableWithError("Required move is not in the active combat deck: " +
+                    displayName(decision == CombatAutomationRules.Decision.QUICK_BARRAGE ?
+                        QUICK_BARRAGE : FULL_CIRCLE) + ".");
+                return;
+            }
         }
         if(choice.slot < 0) {
-            updateState("Move cooldown: " + candidateNames(candidates));
+            updateState("Move cooldown: " + choice.name);
             return;
         }
 
         String state = String.format("%s; enemy red %d%%, own G/Y/R/B %d/%d/%d/%d%%",
-            displayName(choice.resource), enemyRed, ownGreen, ownYellow, ownRed, ownBlue);
+            choice.name, enemyRed, ownGreen, ownYellow, ownRed, ownBlue);
         updateState(state);
         pendingSince = now;
         pendingLastUse = fv.lastuse;
         pendingAction = choice.resource;
-        log("send slot=" + choice.slot + " action=" + choice.resource +
+        pendingName = choice.name;
+        log("send slot=" + choice.slot + " action=" + choice.resource + " name=" + choice.name +
             " enemy-red=" + enemyRed + " own=" + ownGreen + "/" + ownYellow +
             "/" + ownRed + "/" + ownBlue);
         if(!fsess.triggerAction(choice.slot, target.rc)) {
             pendingAction = null;
+            pendingName = null;
             disableWithError("Combat action slot became unavailable.");
         }
     }
@@ -242,14 +271,55 @@ public final class CombatAutomation extends Widget {
                     if(candidate.equals(resource.name)) {
                         found = true;
                         if(now >= action.ct)
-                            return(new ActionChoice(slot, candidate, true, false));
+                            return(new ActionChoice(slot, candidate, actionName(resource), true, false));
                     }
                 } catch(Loading l) {
                     loading = true;
                 }
             }
         }
-        return(new ActionChoice(-1, null, found, !found && loading));
+        String resource = candidates.isEmpty() ? null : candidates.get(0);
+        return(new ActionChoice(-1, resource, displayName(resource), found, !found && loading));
+    }
+
+    private static DeckDefenses inspectDefenses(Fightsess fsess, double now) {
+        DeckDefenses result = new DeckDefenses();
+        StringBuilder description = new StringBuilder();
+        for(int slot = 0; slot < fsess.actions.length; slot++) {
+            Fightsess.Action action = fsess.actions[slot];
+            if(action == null)
+                continue;
+            try {
+                Resource resource = action.res.get();
+                Resource.Pagina pagina = resource.layer(Resource.pagina);
+                EnumSet<CombatAutomationRules.Opening> colors = CombatMoveMetadata.reducedOpenings(
+                    pagina == null ? null : pagina.text);
+                if(colors.isEmpty())
+                    continue;
+                String name = actionName(resource);
+                if(description.length() > 0)
+                    description.append("; ");
+                description.append("slot ").append(slot).append(' ').append(name).append('=').append(colors);
+                for(CombatAutomationRules.Opening color : colors)
+                    result.add(color, slot, resource.name, name, now >= action.ct);
+            } catch(Loading l) {
+                result.loading = true;
+            }
+        }
+        result.description = description.toString();
+        return(result);
+    }
+
+    private static String actionName(Resource resource) {
+        Resource.Tooltip tooltip = resource.layer(Resource.tooltip);
+        return(tooltip == null ? displayName(resource.name) : tooltip.t);
+    }
+
+    private static boolean isRestoration(CombatAutomationRules.Decision decision) {
+        return(decision == CombatAutomationRules.Decision.RESTORE_GREEN ||
+            decision == CombatAutomationRules.Decision.RESTORE_YELLOW ||
+            decision == CombatAutomationRules.Decision.RESTORE_RED ||
+            decision == CombatAutomationRules.Decision.RESTORE_BLUE);
     }
 
     private static TargetSupport targetSupport(Gob target) {
@@ -279,16 +349,6 @@ public final class CombatAutomation extends Widget {
 
     private static void setStatus(String status) {
         lastStatus = status;
-    }
-
-    private static String candidateNames(List<String> candidates) {
-        StringBuilder result = new StringBuilder();
-        for(String candidate : candidates) {
-            if(result.length() > 0)
-                result.append(" / ");
-            result.append(displayName(candidate));
-        }
-        return(result.toString());
     }
 
     private static String displayName(String resource) {
@@ -347,14 +407,42 @@ public final class CombatAutomation extends Widget {
     private static final class ActionChoice {
         final int slot;
         final String resource;
+        final String name;
         final boolean found;
         final boolean loading;
 
-        ActionChoice(int slot, String resource, boolean found, boolean loading) {
+        ActionChoice(int slot, String resource, String name, boolean found, boolean loading) {
             this.slot = slot;
             this.resource = resource;
+            this.name = name;
             this.found = found;
             this.loading = loading;
+        }
+    }
+
+    private static final class DeckDefenses {
+        final Map<CombatAutomationRules.Opening, ActionChoice> actions =
+            new EnumMap<>(CombatAutomationRules.Opening.class);
+        boolean loading;
+        String description = "";
+
+        void add(CombatAutomationRules.Opening color, int slot, String resource,
+                 String name, boolean ready) {
+            ActionChoice current = actions.get(color);
+            if(current == null || (ready && current.slot < 0))
+                actions.put(color, new ActionChoice(ready ? slot : -1, resource, name, true, false));
+        }
+
+        EnumSet<CombatAutomationRules.Opening> clearableOpenings() {
+            EnumSet<CombatAutomationRules.Opening> result =
+                EnumSet.noneOf(CombatAutomationRules.Opening.class);
+            result.addAll(actions.keySet());
+            return(result);
+        }
+
+        ActionChoice choice(CombatAutomationRules.Opening color) {
+            ActionChoice result = actions.get(color);
+            return(result == null ? new ActionChoice(-1, null, "opening clear", false, false) : result);
         }
     }
 }
