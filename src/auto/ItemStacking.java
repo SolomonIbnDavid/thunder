@@ -1,5 +1,13 @@
 package auto;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+
 /** Pure helpers for Hurricane-style inventory auto-stack / unstack. */
 public final class ItemStacking {
     public static final String STACK_SUFFIX = ", stack of";
@@ -99,57 +107,141 @@ public final class ItemStacking {
 	return sourceAmount >= destinationAmount;
     }
 
+    /** Number of known-quality items that are outside their final sorted band. */
+    public static int qualityMisplacementCount(double[][] qualities) {
+	return qualityMoves(qualities).size();
+    }
+
     /**
-     * Find the largest quality inversion between stacks that are already in
-     * low-to-high average-quality order. The result is
-     * {lower stack, high item, higher stack, low item}; swapping those two
-     * items strictly improves the quality bands without changing stack sizes.
+     * Plan one closed redistribution cycle. Stacks are assumed to be in their
+     * desired low-to-high order. Each row is {source stack, item index,
+     * destination stack}. Rotating a returned cycle puts every listed item in
+     * its final quality band while keeping every stack the same size.
+     *
+     * Equal qualities are assigned to their current stack first, preventing
+     * pointless exchanges where either copy would satisfy the same band.
      */
-    public static int[] nextQualitySwap(double[][] qualities) {
-	if(qualities == null || qualities.length < 2)
+    public static int[][] nextQualityCycle(double[][] qualities) {
+	List<QualityMove> moves = qualityMoves(qualities);
+	if(moves.isEmpty())
 	    return null;
-	int[] best = null;
-	double bestGap = 0;
-	for(int lower = 0; lower < qualities.length; lower++) {
-	    double[] lowStack = qualities[lower];
-	    if(lowStack == null)
+	@SuppressWarnings("unchecked")
+	ArrayDeque<QualityMove>[] outgoing = new ArrayDeque[qualities.length];
+	for(int i = 0; i < outgoing.length; i++)
+	    outgoing[i] = new ArrayDeque<>();
+	for(QualityMove move : moves)
+	    outgoing[move.source].addLast(move);
+
+	int[] firstVisit = new int[qualities.length];
+	Arrays.fill(firstVisit, -1);
+	List<QualityMove> path = new ArrayList<>();
+	int current = moves.get(0).source;
+	while(firstVisit[current] < 0) {
+	    firstVisit[current] = path.size();
+	    QualityMove edge = outgoing[current].pollFirst();
+	    if(edge == null)
+		return null;
+	    path.add(edge);
+	    current = edge.target;
+	}
+	int start = firstVisit[current];
+	int[][] cycle = new int[path.size() - start][];
+	for(int i = start; i < path.size(); i++) {
+	    QualityMove move = path.get(i);
+	    cycle[i - start] = new int[] {move.source, move.item, move.target};
+	}
+	return cycle;
+    }
+
+    private static List<QualityMove> qualityMoves(double[][] qualities) {
+	List<QualityMove> moves = new ArrayList<>();
+	if(qualities == null || qualities.length < 2)
+	    return moves;
+	int[] capacities = new int[qualities.length];
+	Map<Double, List<QualityItem>> actual = new TreeMap<>();
+	List<QualityItem> sorted = new ArrayList<>();
+	for(int stack = 0; stack < qualities.length; stack++) {
+	    double[] items = qualities[stack];
+	    if(items == null)
 		continue;
-	    int highItem = finiteMaxIndex(lowStack);
-	    if(highItem < 0)
-		continue;
-	    for(int higher = lower + 1; higher < qualities.length; higher++) {
-		double[] highStack = qualities[higher];
-		if(highStack == null)
+	    for(int item = 0; item < items.length; item++) {
+		double quality = items[item];
+		if(!Double.isFinite(quality))
 		    continue;
-		int lowItem = finiteMinIndex(highStack);
-		if(lowItem < 0)
-		    continue;
-		double gap = lowStack[highItem] - highStack[lowItem];
-		if(gap > bestGap) {
-		    bestGap = gap;
-		    best = new int[] {lower, highItem, higher, lowItem};
+		QualityItem ref = new QualityItem(stack, item, quality);
+		actual.computeIfAbsent(quality, ignored -> new ArrayList<>()).add(ref);
+		sorted.add(ref);
+		capacities[stack]++;
+	    }
+	}
+	if(sorted.size() < 2)
+	    return moves;
+	sorted.sort(Comparator.comparingDouble((QualityItem item) -> item.quality)
+	    .thenComparingInt(item -> item.source)
+	    .thenComparingInt(item -> item.item));
+
+	Map<Double, int[]> desired = new TreeMap<>();
+	int target = 0;
+	int remaining = capacities[0];
+	for(QualityItem item : sorted) {
+	    while(remaining == 0 && target + 1 < capacities.length)
+		remaining = capacities[++target];
+	    desired.computeIfAbsent(item.quality, ignored -> new int[qualities.length])[target]++;
+	    remaining--;
+	}
+
+	for(Map.Entry<Double, List<QualityItem>> entry : actual.entrySet()) {
+	    @SuppressWarnings("unchecked")
+	    List<QualityItem>[] bySource = new List[qualities.length];
+	    for(int i = 0; i < bySource.length; i++)
+		bySource[i] = new ArrayList<>();
+	    for(QualityItem item : entry.getValue())
+		bySource[item.source].add(item);
+	    int[] need = desired.get(entry.getKey()).clone();
+	    for(int source = 0; source < bySource.length; source++) {
+		int stay = Math.min(bySource[source].size(), need[source]);
+		if(stay > 0) {
+		    bySource[source].subList(0, stay).clear();
+		    need[source] -= stay;
+		}
+	    }
+	    int nextTarget = 0;
+	    for(int source = 0; source < bySource.length; source++) {
+		for(QualityItem item : bySource[source]) {
+		    while(nextTarget < need.length && need[nextTarget] == 0)
+			nextTarget++;
+		    if(nextTarget >= need.length)
+			return new ArrayList<>();
+		    moves.add(new QualityMove(source, item.item, nextTarget));
+		    need[nextTarget]--;
 		}
 	    }
 	}
-	return best;
+	return moves;
     }
 
-    private static int finiteMinIndex(double[] values) {
-	int best = -1;
-	for(int i = 0; i < values.length; i++) {
-	    if(Double.isFinite(values[i]) && (best < 0 || values[i] < values[best]))
-		best = i;
+    private static final class QualityItem {
+	final int source;
+	final int item;
+	final double quality;
+
+	QualityItem(int source, int item, double quality) {
+	    this.source = source;
+	    this.item = item;
+	    this.quality = quality;
 	}
-	return best;
     }
 
-    private static int finiteMaxIndex(double[] values) {
-	int best = -1;
-	for(int i = 0; i < values.length; i++) {
-	    if(Double.isFinite(values[i]) && (best < 0 || values[i] > values[best]))
-		best = i;
+    private static final class QualityMove {
+	final int source;
+	final int item;
+	final int target;
+
+	QualityMove(int source, int item, int target) {
+	    this.source = source;
+	    this.item = item;
+	    this.target = target;
 	}
-	return best;
     }
 
     /**
