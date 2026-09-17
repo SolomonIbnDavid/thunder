@@ -57,17 +57,17 @@ public class CombatAutomationRulesTest {
             CombatAutomationRules.Decision.FULL_CIRCLE), decisions);
     }
 
-    @Test void restoresAtTheSixtyPercentBoundaryBeforeAttacking() {
+    @Test void restoresAtTheFortyPercentBoundaryBeforeAttacking() {
         assertEquals(CombatAutomationRules.Decision.FULL_CIRCLE,
-            CombatAutomationRules.decide(state(60, 59, 59, 59, 59)));
+            CombatAutomationRules.decide(state(60, 39, 39, 39, 39)));
         assertEquals(CombatAutomationRules.Decision.RESTORE_GREEN,
-            CombatAutomationRules.decide(state(60, 60, 0, 0, 0)));
+            CombatAutomationRules.decide(state(60, 40, 0, 0, 0)));
         assertEquals(CombatAutomationRules.Decision.RESTORE_YELLOW,
-            CombatAutomationRules.decide(state(20, 0, 60, 0, 0)));
+            CombatAutomationRules.decide(state(20, 0, 40, 0, 0)));
         assertEquals(CombatAutomationRules.Decision.RESTORE_RED,
-            CombatAutomationRules.decide(state(20, 0, 0, 60, 0)));
+            CombatAutomationRules.decide(state(20, 0, 0, 40, 0)));
         assertEquals(CombatAutomationRules.Decision.RESTORE_BLUE,
-            CombatAutomationRules.decide(state(20, 0, 0, 0, 60)));
+            CombatAutomationRules.decide(state(20, 0, 0, 0, 40)));
     }
 
     @Test void restoresTheLargestOpeningAndPrefersRedOnTies() {
@@ -79,7 +79,7 @@ public class CombatAutomationRulesTest {
 
     @Test void skipsAnUnsafeColorThatHasNoMatchingMoveOnTheDeck() {
         CombatAutomationRules.Snapshot state = new CombatAutomationRules.Snapshot(
-            true, true, true, 68, 0, 0, 60, 60,
+            true, true, true, 68, 0, 0, 40, 60,
             EnumSet.of(CombatAutomationRules.Opening.BLUE));
         assertEquals(CombatAutomationRules.Decision.RESTORE_BLUE,
             CombatAutomationRules.decide(state));
