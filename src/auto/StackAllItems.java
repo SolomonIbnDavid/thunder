@@ -32,7 +32,6 @@ public class StackAllItems implements Defer.Callable<Void> {
     private static final int MAX_PASSES = 512;
     private static final int MAX_QUALITY_CYCLES = 256;
     private static final int ACTION_TIMEOUT_MS = 1200;
-    private static final int MERGE_RESPONSE_TIMEOUT_MS = 600;
     private static final int POLL_MS = 10;
     private static final Object lock = new Object();
     private static final Map<String, Integer> fullCapacities = new ConcurrentHashMap<>();
@@ -218,35 +217,30 @@ public class StackAllItems implements Defer.Callable<Void> {
     private static int merge(GameUI gui, Inventory inv, String key, WItem source,
 			     WItem destination) throws InterruptedException {
 	String before = groupState(inv, key);
+	int totalBefore = groupAmount(inv, key);
 	Coord dropSlot = source.c.sub(1, 1).div(Inventory.sqsz);
+	/*
+	 * These messages are processed in order by the server. Sending the whole
+	 * transaction together avoids waiting for a round trip between take,
+	 * itemact, and drop. The total-amount check below still waits for the final
+	 * server state, so a rejected merge is not mistaken for progress while the
+	 * source is temporarily on the cursor.
+	 */
 	source.take();
-	if(!waitUntil(() -> gui.vhand != null, ACTION_TIMEOUT_MS)) {
-	    gui.error("Stack items: could not pick up an item.");
+	destination.itemact(3);
+	inv.wdgmsg("drop", dropSlot);
+	boolean settled = waitUntil(() -> source.disposed() && gui.vhand == null &&
+	    groupAmount(inv, key) == totalBefore, ACTION_TIMEOUT_MS);
+	if(!settled && gui.vhand != null) {
+	    inv.wdgmsg("drop", dropSlot);
+	    settled = waitUntil(() -> gui.vhand == null &&
+		groupAmount(inv, key) == totalBefore, ACTION_TIMEOUT_MS);
+	}
+	if(!settled) {
+	    gui.error("Stack items: the server did not finish the stack move.");
 	    return -1;
 	}
-	String heldBefore = cursorState(gui);
-	int destinationBefore = amount(destination);
-	destination.itemact(3);
-	waitUntil(() -> gui.vhand == null || destination.disposed() ||
-	    amount(destination) != destinationBefore || !heldBefore.equals(cursorState(gui)),
-	    MERGE_RESPONSE_TIMEOUT_MS);
-	if(gui.vhand != null) {
-	    inv.wdgmsg("drop", dropSlot);
-	    if(!waitUntil(() -> gui.vhand == null, ACTION_TIMEOUT_MS)) {
-		gui.error("Stack items: could not return the leftover item.");
-		return -1;
-	    }
-	}
-	boolean settledProgress = waitUntil(() -> !before.equals(groupState(inv, key)),
-	    ACTION_TIMEOUT_MS / 4);
-	return settledProgress ? 1 : 0;
-    }
-
-    private static String cursorState(GameUI gui) {
-	WItem hand = gui.vhand;
-	if(hand == null)
-	    return "";
-	return hand.item.wdgid() + ":" + amount(hand) + ":" + hand.item.resname();
+	return before.equals(groupState(inv, key)) ? 0 : 1;
     }
 
     private static boolean organizeStackQualities(Inventory inv) throws InterruptedException {
@@ -377,15 +371,12 @@ public class StackAllItems implements Defer.Callable<Void> {
 	    double wantedQuality = quality(item);
 	    int sourceBefore = stackSize(source);
 	    int vacancyBefore = stackSize(destination);
+	    /* Queue take and insertion together; the size/quality postcondition is
+	     * the acknowledgement for both ordered server actions. */
 	    item.take();
-	    if(!waitUntil(() -> gui.vhand != null && stackSize(source) < sourceBefore,
-		    ACTION_TIMEOUT_MS)) {
-		restoreHand(gui, source, sourceBefore);
-		restoreBuffered(gui, parked, vacancy, vacancyBefore + 1);
-		return false;
-	    }
 	    destination.itemact(0);
 	    boolean inserted = waitUntil(() -> gui.vhand == null &&
+		stackSize(source) < sourceBefore &&
 		stackSize(destination) > vacancyBefore &&
 		stackContainsQuality(destination, wantedQuality), ACTION_TIMEOUT_MS);
 	    if(!inserted) {
@@ -408,10 +399,6 @@ public class StackAllItems implements Defer.Callable<Void> {
 	WItem destination = vacancy;
 	int vacancyBefore = stackSize(destination);
 	parked.take();
-	if(!waitUntil(() -> gui.vhand != null, ACTION_TIMEOUT_MS)) {
-	    restoreBuffered(gui, parked, vacancy, vacancyBefore + 1);
-	    return false;
-	}
 	destination.itemact(0);
 	if(!waitUntil(() -> gui.vhand == null && stackSize(destination) > vacancyBefore &&
 		stackContainsQuality(destination, parkedQuality), ACTION_TIMEOUT_MS)) {
@@ -430,24 +417,20 @@ public class StackAllItems implements Defer.Callable<Void> {
 	if(buffer.inv == gui.maininv && targetInv != gui.maininv) {
 	    child.item.wdgmsg("transfer", child.sz.div(2));
 	} else {
+	    /* As above, drop is safe to queue immediately after take. */
 	    child.take();
-	    if(!waitUntil(() -> gui.vhand != null && stackSize(sourceStack) < sourceBefore,
-		    ACTION_TIMEOUT_MS)) {
-		if(gui.vhand != null) {
-		    buffer.inv.wdgmsg("drop", buffer.slot);
-		    waitUntil(() -> gui.vhand == null, ACTION_TIMEOUT_MS);
-		}
-		return null;
-	    }
 	    buffer.inv.wdgmsg("drop", buffer.slot);
-	    if(!waitUntil(() -> gui.vhand == null, ACTION_TIMEOUT_MS))
-		return null;
 	}
 	WItem[] found = new WItem[1];
 	boolean ready = waitUntil(() -> {
 	    found[0] = findNewTopLevel(buffer.inv, beforeIds, resname, quality);
-	    return found[0] != null && stackSize(sourceStack) < sourceBefore;
+	    return gui.vhand == null && found[0] != null &&
+		stackSize(sourceStack) < sourceBefore;
 	}, ACTION_TIMEOUT_MS);
+	if(!ready && gui.vhand != null) {
+	    buffer.inv.wdgmsg("drop", buffer.slot);
+	    waitUntil(() -> gui.vhand == null, ACTION_TIMEOUT_MS);
+	}
 	return ready ? found[0] : null;
     }
 
@@ -590,6 +573,18 @@ public class StackAllItems implements Defer.Callable<Void> {
 	}
 	Collections.sort(values);
 	return values.toString();
+    }
+
+    private static int groupAmount(Inventory inv, String wantedKey) {
+	int total = 0;
+	for(Widget wdg = inv.lchild; wdg != null; wdg = wdg.prev) {
+	    if(!(wdg instanceof WItem))
+		continue;
+	    WItem w = (WItem) wdg;
+	    if(wantedKey.equals(ItemStacking.stackKey(itemName(w))))
+		total += amount(w);
+	}
+	return total;
     }
 
     private static double[] qualityRange(WItem w) {
