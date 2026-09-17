@@ -31,6 +31,7 @@ public final class BotMovement {
 
    public enum Mode {
       LAND,
+      CAVE,
       BOAT_ROUTE,
       BOAT_LOCAL,
       BOAT_APPROACH
@@ -305,6 +306,8 @@ public final class BotMovement {
       // blocked candidate to the player's current cell can manufacture a
       // zero-length REACHED plan and hide another valid candidate.
       switch (mode == null ? Mode.LAND : mode) {
+         case CAVE:
+            return MovementScene.planAnyCaveAvoiding(gui, candidates, false, hazards, hazardRadius);
          case BOAT_LOCAL:
             return MovementScene.planAnyWaterAvoiding(gui, candidates, false, hazards, hazardRadius);
          case BOAT_APPROACH:

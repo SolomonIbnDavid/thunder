@@ -46,6 +46,7 @@ import me.ender.QuestCondition;
 import me.ender.gob.KinInfo;
 import me.ender.minimap.*;
 import thunder.MusselRouteOverlay;
+import thunder.DirectionalForagerRouteOverlay;
 import haven.MapFile.TileInfo;
 
 import static haven.MCache.cmaps;
@@ -1167,6 +1168,7 @@ public class MiniMap extends Widget {
     public void drawparts(GOut g){
 	drawmap(g);
 	MusselRouteOverlay.paintMiniMap(g, this);
+	DirectionalForagerRouteOverlay.paintMiniMap(g, this);
 	drawmarkers(g);
 	boolean playerSegment = (sessloc != null) && ((curloc == null) || (sessloc.seg.id == curloc.seg.id));
 	if(zoomlevel <= 2 && CFG.MMAP_GRID.get()) {drawgrid(g);}

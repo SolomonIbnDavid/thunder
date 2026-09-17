@@ -33,7 +33,7 @@ public final class DirectionalForagerWnd extends WindowX {
         dirs.check(0);
         y += UI.scale(28);
 
-        CheckBox cave = add(new CheckBox("Follow winding cave passages"), 0, y);
+        CheckBox cave = add(new CheckBox("Use saved-map cave coverage route (ignores direction)"), 0, y);
         cave.a = caveMode;
         cave.changed(on -> {
             caveMode = on;

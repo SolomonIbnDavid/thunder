@@ -12,6 +12,8 @@ import haven.MCache;
 import haven.Moving;
 import haven.OCache;
 import haven.Resource;
+import haven.Tiler;
+import haven.resutil.Ridges;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -27,6 +29,7 @@ import java.util.Set;
 public final class MovementScene {
    public enum TerrainMode {
       NORMAL,
+      CAVE,
       WATER_ONLY,
       WATER_APPROACH
    }
@@ -84,6 +87,14 @@ public final class MovementScene {
       GameUI gui, List<Coord2d> destinations, boolean snap, List<Coord2d> avoid, double avoidRadius
    ) {
       return planAnyAvoiding(gui, destinations, snap, avoid, avoidRadius, TerrainMode.WATER_ONLY);
+   }
+
+   /** Local land planning that is restricted to the same exact cave-floor
+    * allowlist used by the saved-map cave planner. */
+   public static MovementScene.Plan planAnyCaveAvoiding(
+      GameUI gui, List<Coord2d> destinations, boolean snap, List<Coord2d> avoid, double avoidRadius
+   ) {
+      return planAnyAvoiding(gui, destinations, snap, avoid, avoidRadius, TerrainMode.CAVE);
    }
 
    /** Water-only planning for a final, short approach near a bank. Both water
@@ -531,18 +542,30 @@ public final class MovementScene {
 
    private static boolean[] rasterTerrain(GameUI gui, MovementScene.Grid grid, String[] names, TerrainMode terrainMode) {
       boolean[] mask = new boolean[grid.blocked.length];
+      MCache map = gui.ui.sess.glob.map;
+      haven.nav.MobilityProfile mobility = MovementProfile.of(
+         gui != null && gui.map != null ? gui.map.player() : null);
 
       for (int y = 0; y < grid.h; y++) {
          for (int x = 0; x < grid.w; x++) {
             Coord2d wc = grid.world(Coord.of(x, y));
+            Coord tile = wc.floor(MCache.tilesz);
             String name = null;
 
             try {
-               Resource res = gui.ui.sess.glob.map.tilesetr(gui.ui.sess.glob.map.gettile(wc.floor(MCache.tilesz)));
+               int tileId = map.gettile(tile);
+               Resource res = map.tilesetr(tileId);
                name = res == null ? "" : res.name;
-               boolean blocked = terrainMode != TerrainMode.NORMAL
-                  ? TerrainPolicy.waterOnlyBlocks(name)
-                  : TerrainPolicy.terrainBlocks(name, MovementProfile.of(gui != null && gui.map != null ? gui.map.player() : null));
+               boolean blocked;
+               if (terrainMode == TerrainMode.CAVE) {
+                  blocked = !MapFileCaveSource.isWalkableCaveFloor(name)
+                     || brokenRidge(map, tile, tileId);
+               } else if (terrainMode != TerrainMode.NORMAL) {
+                  blocked = TerrainPolicy.waterOnlyBlocks(name);
+               } else {
+                  blocked = TerrainPolicy.terrainBlocks(name, mobility,
+                     brokenRidge(map, tile, tileId));
+               }
                if (blocked) {
                   grid.block(x, y);
                   mask[y * grid.w + x] = true;
@@ -560,6 +583,42 @@ public final class MovementScene {
       }
 
       return mask;
+   }
+
+   /** Uses the same terrain/ridge classification as local land planning so a
+    * strategic bot can fold currently visible server-side walls into its map. */
+   public static boolean liveTerrainBlocks(GameUI gui, Coord tile) {
+      if (gui == null || gui.ui == null || gui.ui.sess == null || tile == null) return true;
+      MCache map = gui.ui.sess.glob.map;
+      int tileId = map.gettile(tile);
+      Resource res = map.tilesetr(tileId);
+      String name = res == null ? "" : res.name;
+      return TerrainPolicy.terrainBlocks(name,
+         MovementProfile.of(gui.map == null ? null : gui.map.player()),
+         brokenRidge(map, tile, tileId));
+   }
+
+   /** Uses the cave allowlist in the live map, failing closed for every other
+    * terrain resource and for broken ridge tiles. */
+   public static boolean liveCaveTerrainBlocks(GameUI gui, Coord tile) {
+      if (gui == null || gui.ui == null || gui.ui.sess == null || tile == null) return true;
+      MCache map = gui.ui.sess.glob.map;
+      int tileId = map.gettile(tile);
+      Resource res = map.tilesetr(tileId);
+      String name = res == null ? "" : res.name;
+      return !MapFileCaveSource.isWalkableCaveFloor(name)
+         || brokenRidge(map, tile, tileId);
+   }
+
+   private static boolean brokenRidge(MCache map, Coord tile, int tileId) {
+      try {
+         Tiler tiler = map.tiler(tileId);
+         return tiler instanceof Ridges.RidgeTile && Ridges.brokenp(map, tile);
+      } catch (Loading loading) {
+         throw loading;
+      } catch (RuntimeException unavailable) {
+         return false;
+      }
    }
 
    private static int rasterGobs(GameUI gui, MovementScene.Grid grid, Gob player, List<Coord2d[]> debugPolys, List<Coord2d[]> body) {
@@ -1088,7 +1147,7 @@ public final class MovementScene {
     * terrain; close mussel approaches separately validate the rotated hull.
     */
    static boolean inflateTerrainWithBody(TerrainMode terrainMode) {
-      return terrainMode == TerrainMode.NORMAL;
+      return terrainMode == TerrainMode.NORMAL || terrainMode == TerrainMode.CAVE;
    }
 
 

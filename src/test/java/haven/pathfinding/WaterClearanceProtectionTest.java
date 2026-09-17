@@ -13,5 +13,7 @@ class WaterClearanceProtectionTest {
             MovementScene.TerrainMode.WATER_APPROACH));
         assertTrue(MovementScene.inflateTerrainWithBody(
             MovementScene.TerrainMode.NORMAL));
+        assertTrue(MovementScene.inflateTerrainWithBody(
+            MovementScene.TerrainMode.CAVE));
     }
 }
