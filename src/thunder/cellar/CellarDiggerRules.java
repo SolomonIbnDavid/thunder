@@ -6,8 +6,7 @@ import java.util.Locale;
 
 /** Pure resource and safety rules for the Cellar Digger state machine. */
 public final class CellarDiggerRules {
-    /** IMeter reports the game's 0-10,000 energy scale as 0.0-1.0. */
-    public static final double LOW_ENERGY = 0.40;
+    public static final double LOW_ENERGY = 0.25;
     public static final double LOW_STAMINA = 0.40;
     public static final double STAMINA_RECOVERY_TARGET = 0.80;
     public static final int MIN_AUTO_DRINK_THRESHOLD = 40;
