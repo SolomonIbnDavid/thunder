@@ -54,7 +54,7 @@ public enum Action {
     }, "Toggle tile centering"),
     TOGGLE_INSPECT(gui -> CustomCursors.toggleInspectMode(gui.map), "Toggle inspect mode"),
     TRACK_OBJECT(gui -> CustomCursors.toggleTrackingMode(gui.map), "Track object"),
-    TOGGLE_MEASURE(gui -> CustomCursors.toggleMeasureMode(gui.map), "Measure tiles", "Click tiles to measure distances. Overlay stays until you clear it (Shift-click this action, or Shift-click the map while measuring)."),
+    TOGGLE_MEASURE(gui -> CustomCursors.toggleMeasureMode(gui.map), "Measure tiles", "Click tiles to measure distances; Alt-click starts a detached measurement. Ctrl-click this action to undo, or Shift-click it to clear all measurements."),
     AREA_EXPORT(GameUI::toggleAreaExport, "Area export", "Opens the area selection and export window."),
     BOT_PICK_ALL_HERBS(Actions::pickup, "Auto-pick stuff", "Will automatically pickup all herbs/mussels/clay/frogs/grasshoppers etc. in radius that can be changed in Options->General."),
     BOT_MOUNT_HORSE(Actions::mountClosestHorse, "Mount nearest domestic horse", "Whistle at a closest domestic horse and mount it once it is close enough. If it is very close - mount without whistling."),
