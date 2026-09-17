@@ -79,6 +79,13 @@ public class CellarDiggerRulesTest {
         assertEquals(-1, CellarDiggerRules.exactMenuOption(null, "Chip stone"));
     }
 
+    @Test public void directInteractionRangeIncludesItsBoundary() {
+        assertTrue(CellarDiggerRules.withinDirectInteractionRange(0.0, 55.0));
+        assertTrue(CellarDiggerRules.withinDirectInteractionRange(55.0, 55.0));
+        assertFalse(CellarDiggerRules.withinDirectInteractionRange(55.001, 55.0));
+        assertFalse(CellarDiggerRules.withinDirectInteractionRange(Double.NaN, 55.0));
+    }
+
     @Test public void boulderDropTargetsTheOpenApproachSide() {
         Coord2d target = CellarDiggerRules.boulderDropTarget(
             Coord2d.of(10.0, 20.0), Coord2d.of(13.0, 24.0), 0.0, 10.0, 1);

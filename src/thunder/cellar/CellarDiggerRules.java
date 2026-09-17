@@ -75,6 +75,11 @@ public final class CellarDiggerRules {
         return -1;
     }
 
+    static boolean withinDirectInteractionRange(double distance, double limit) {
+        return Double.isFinite(distance) && Double.isFinite(limit) &&
+            distance >= 0.0 && limit >= 0.0 && distance <= limit;
+    }
+
     /** Chooses the ground-right-click used to release a cellar bumling. The
      * preferred direction points back toward the open side from which the
      * player approached the cellar door. If excavation has already pulled the

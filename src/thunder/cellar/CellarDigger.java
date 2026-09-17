@@ -45,6 +45,7 @@ public final class CellarDigger {
     private static final long BOULDER_GROUND_TIMEOUT = 9000L;
     private static final double BOULDER_APPROACH_RADIUS = MCache.tilesz.x * 1.25;
     private static final double BOULDER_DROP_DISTANCE = MCache.tilesz.x * 2.5;
+    private static final double BOULDER_DIRECT_CLICK_RADIUS = MCache.tilesz.x * 5.0;
     private static final double DOOR_DIRECT_CLICK_RADIUS = MCache.tilesz.x * 5.0;
     private static final int MAX_ROCK_DROPS = 600;
 
@@ -302,6 +303,8 @@ public final class CellarDigger {
             if(bumling == null) return;
             if(isCarried(bumling)) {
                 placeCarriedBoulder(bumling);
+                bumling = currentBumling(bumling.id);
+                if(bumling != null) chipBoulder(bumling);
                 return;
             }
             chipBoulder(bumling);
@@ -773,6 +776,15 @@ public final class CellarDigger {
             for(int attempt = 1; attempt <= CellarDiggerRules.MAX_ATTEMPTS; attempt++) {
                 Gob target = currentBumling(id);
                 if(target == null) return false;
+                Gob player = gui.map.player();
+                double distance = player == null || player.rc == null ? Double.POSITIVE_INFINITY :
+                    player.rc.dist(target.rc);
+                if(CellarDiggerRules.withinDirectInteractionRange(
+                    distance, BOULDER_DIRECT_CLICK_RADIUS)) {
+                    diag("BOULDER-APPROACH id=%d resid=%s attempt=%d status=DIRECT_PROTOCOL distance=%.3f",
+                        id, resid(target), attempt, distance);
+                    return true;
+                }
                 BotMovement.Result normal = BotMovement.approach(gui, bot, target, BotMovement.Mode.LAND);
                 diag("BOULDER-APPROACH id=%d resid=%s attempt=%d status=%s detail=%s", id,
                     resid(target), attempt, normal == null ? null : normal.status,
@@ -786,7 +798,7 @@ public final class CellarDigger {
                     candidates.add(target.rc.add(Math.cos(angle) * BOULDER_APPROACH_RADIUS,
                         Math.sin(angle) * BOULDER_APPROACH_RADIUS));
                 }
-                Gob player = gui.map.player();
+                player = gui.map.player();
                 if(player != null && player.rc != null)
                     candidates.sort(Comparator.comparingDouble(player.rc::dist));
                 BotMovement.Result ring = BotMovement.moveToAny(gui, bot, candidates,
