@@ -58,15 +58,17 @@ public class GobDamageInfo extends GobInfo {
     public void update(int c, int v) {
 //	Debug.log.println(String.format("Number %d, c: %d", v, c));
 	//35071 - Initiative
-	if(c == SHP) {
-	    damage.shp += v;
-	    update();
-	} else if(c == HHP) {
-	    damage.hhp += v;
-	    update();
-	} else if(c == ARM) {
-	    damage.armor += v;
-	    update();
+	synchronized(damage) {
+	    if(c == SHP) {
+		damage.shp += v;
+		update();
+	    } else if(c == HHP) {
+		damage.hhp += v;
+		update();
+	    } else if(c == ARM) {
+		damage.armor += v;
+		update();
+	    }
 	}
     }
     
@@ -77,6 +79,34 @@ public class GobDamageInfo extends GobInfo {
     
     public static boolean has(Gob gob) {
 	return gobDamage.containsKey(gob.id);
+    }
+
+    /** Immutable read-only view of the floating damage counters for one gob. */
+    public static final class DamageSnapshot {
+	public final int armor;
+	public final int shp;
+	public final int hhp;
+	public final long total;
+
+	public DamageSnapshot(int armor, int shp, int hhp) {
+	    this.armor = armor;
+	    this.shp = shp;
+	    this.hhp = hhp;
+	    this.total = (long)armor + shp + hhp;
+	}
+
+	public static DamageSnapshot empty() {
+	    return new DamageSnapshot(0, 0, 0);
+	}
+    }
+
+    public static DamageSnapshot snapshot(long gobId) {
+	DamageVO damage = gobDamage.get(gobId);
+	if(damage == null)
+	    return DamageSnapshot.empty();
+	synchronized(damage) {
+	    return new DamageSnapshot(damage.armor, damage.shp, damage.hhp);
+	}
     }
     
     private static void clearDamage(Gob gob, long id) {

@@ -7,6 +7,7 @@ import haven.Fightsess;
 import haven.Fightview;
 import haven.GameUI;
 import haven.Gob;
+import haven.GobDamageInfo;
 import haven.Loading;
 import haven.MenuGrid;
 import haven.OwnerContext;
@@ -22,16 +23,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Collections;
-import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** UI-thread controller for the combat automation profile. */
+/** UI-thread controller for user-authored combat plans. */
 public final class CombatAutomation extends Widget {
-    private static final String QUICK_BARRAGE = "paginae/atk/barrage";
-    private static final String FULL_CIRCLE = "paginae/atk/fullcircle";
     private static final double ACK_TIMEOUT = 3.0;
     private static final double ACK_RETRY_DELAY = 0.75;
     private static final DateTimeFormatter LOG_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
@@ -41,26 +41,30 @@ public final class CombatAutomation extends Widget {
     private static String lastStatus = "Disabled";
 
     private final GameUI gui;
+    private final CombatPlanStore plans = CombatPlanStore.get();
+    private final CombatEngagementDamage damage = new CombatEngagementDamage();
     private final PrintWriter log;
     private long targetId = -1;
     private double pendingSince;
     private double pendingLastUse;
     private String pendingAction;
     private String pendingName;
+    private boolean pendingDistanceCapable;
     private int consecutiveAckTimeouts;
     private double retryNotBefore;
     private String lastLoggedState;
-    private String lastDefenseDeck;
+    private String lastDeck;
+    private String lastVisibleError;
 
     private CombatAutomation(GameUI gui) {
         this.gui = gui;
         this.log = openLog();
         setStatus("Enabled; waiting for combat");
-        log("enabled profile=all-combat enemy-red-target=" +
-            CombatAutomationRules.ENEMY_RED_TARGET + " own-opening-limit=" +
-            CombatAutomationRules.OWN_OPENING_LIMIT + " queue-lead-ms=" +
-            Math.round(CombatAutomationRules.ACTION_QUEUE_LEAD * 1000) + " max-action-distance=" +
-            CombatAutomationRules.MAX_ACTION_DISTANCE);
+        log("enabled character=" + characterId() + " queue-lead-ms=" +
+            Math.round(CombatAutomationRules.ACTION_QUEUE_LEAD * 1000) +
+            " melee-safety-distance=" + CombatAutomationRules.MAX_ACTION_DISTANCE);
+        if(plans.loadError() != null)
+            log("planner load warning=" + plans.loadError());
     }
 
     public static boolean paginaAction(OwnerContext ctx, MenuGrid.Interaction iact) {
@@ -85,7 +89,7 @@ public final class CombatAutomation extends Widget {
             gui.msg("Combat Automation disabled.", GameUI.MsgType.INFO);
         } else {
             instance = gui.add(new CombatAutomation(gui));
-            gui.msg("Combat Automation enabled for all combat targets.", GameUI.MsgType.GOOD);
+            gui.msg("Combat Automation enabled.", GameUI.MsgType.GOOD);
         }
     }
 
@@ -97,6 +101,53 @@ public final class CombatAutomation extends Widget {
         return(lastStatus);
     }
 
+    public static String currentTargetResource(GameUI gui) {
+        if(gui == null || gui.fv == null || gui.fv.current == null || gui.ui == null)
+            return(null);
+        Gob target = gui.ui.sess.glob.oc.getgob(gui.fv.current.gobid);
+        if(target == null)
+            return(null);
+        try {
+            return(target.resid());
+        } catch(Loading loading) {
+            return(null);
+        }
+    }
+
+    /** Localized live-deck data used by the planner's move picker. */
+    public static final class MoveInfo {
+        public final String resource;
+        public final String name;
+        public final String description;
+        public final boolean equipped;
+
+        MoveInfo(String resource, String name, String description, boolean equipped) {
+            this.resource = resource;
+            this.name = name;
+            this.description = description;
+            this.equipped = equipped;
+        }
+    }
+
+    public static Map<String, MoveInfo> currentDeck(GameUI gui) {
+        if(gui == null || gui.fsess == null)
+            return(Collections.emptyMap());
+        Map<String, MoveInfo> result = new LinkedHashMap<>();
+        for(Fightsess.Action action : gui.fsess.actions) {
+            if(action == null)
+                continue;
+            try {
+                Resource resource = action.res.get();
+                Resource.Pagina pagina = resource.layer(Resource.pagina);
+                result.put(resource.name, new MoveInfo(resource.name, actionName(resource),
+                    pagina == null ? "" : pagina.text, true));
+            } catch(Loading loading) {
+                // The editor will refresh on the next UI tick.
+            }
+        }
+        return(result);
+    }
+
     @Override
     public void tick(double dt) {
         super.tick(dt);
@@ -105,47 +156,16 @@ public final class CombatAutomation extends Widget {
 
         Fightview fv = gui.fv;
         Fightsess fsess = gui.fsess;
+        updateEngagementDamage(fv);
         double now = Utils.rtime();
-        if(pendingAction != null) {
-            if(fv == null || fsess == null || fv.current == null) {
-                log("combat ended while awaiting acknowledgement action=" + pendingAction);
-                clearPending();
-                targetId = -1;
-                consecutiveAckTimeouts = 0;
-                retryNotBefore = 0;
-                updateState("Enabled; waiting for combat");
-                return;
-            } else if(fv.lastuse > pendingLastUse) {
-                log("ack action=" + pendingAction);
-                clearPending();
-                consecutiveAckTimeouts = 0;
-                retryNotBefore = 0;
-            } else if(now - pendingSince >= ACK_TIMEOUT) {
-                String timedOutAction = pendingAction;
-                String timedOutName = pendingName;
-                double distance = currentTargetDistance(fv);
-                int timeout = ++consecutiveAckTimeouts;
-                clearPending();
-                if(CombatAutomationRules.shouldRetryMissingAcknowledgement(timeout, distance)) {
-                    retryNotBefore = now + ACK_RETRY_DELAY;
-                    log(String.format("ack timeout action=%s name=%s attempt=%d distance=%.1f retry",
-                        timedOutAction, timedOutName, timeout, distance));
-                    updateState(String.format("Waiting to retry %s; target distance %.1f",
-                        timedOutName, distance));
-                    return;
-                }
-                disableWithError("No server acknowledgement for " + timedOutName +
-                    " after " + timeout + " in-range attempts.");
-                return;
-            } else {
-                return;
-            }
-        }
+        if(handlePending(fv, fsess, now))
+            return;
 
         if(fv == null || fsess == null || fv.current == null) {
             targetId = -1;
             consecutiveAckTimeouts = 0;
             retryNotBefore = 0;
+            lastVisibleError = null;
             updateState("Enabled; waiting for combat");
             return;
         }
@@ -156,133 +176,224 @@ public final class CombatAutomation extends Widget {
             updateState("Waiting for current target data");
             return;
         }
+        String targetResource;
+        try {
+            targetResource = target.resid();
+        } catch(Loading loading) {
+            updateState("Waiting for target resource data");
+            return;
+        }
+        if(targetResource == null)
+            targetResource = "unknown/" + target.id;
         if(targetId != target.id) {
             targetId = target.id;
             consecutiveAckTimeouts = 0;
             retryNotBefore = 0;
-            log("target id=" + target.id + " resource=" + target.resid());
-        }
-
-        double targetDistance = targetDistance(target);
-        if(!Double.isFinite(targetDistance)) {
-            updateState("Waiting for player and target position data");
-            return;
-        }
-        if(!CombatAutomationRules.canAttemptAction(targetDistance)) {
-            updateState(String.format("Approaching target; distance %.1f (need %.1f or less)",
-                targetDistance, CombatAutomationRules.MAX_ACTION_DISTANCE));
-            return;
+            lastVisibleError = null;
+            log("target id=" + target.id + " resource=" + targetResource);
+            plans.observeTarget(characterId(), targetResource, CombatTargetCatalog.labelFor(targetResource));
         }
         if(now < retryNotBefore) {
-            updateState(String.format("Waiting to retry; target distance %.1f", targetDistance));
+            updateState("Waiting to retry " + (pendingName == null ? "action" : pendingName));
             return;
         }
 
-        Integer ownGreen = opening(fv.buffs, Buff.OPEN_GREEN);
-        Integer ownYellow = opening(fv.buffs, Buff.OPEN_YELLOW);
-        Integer ownRed = opening(fv.buffs, Buff.OPEN_RED);
-        Integer ownBlue = opening(fv.buffs, Buff.OPEN_BLUE);
-        Integer enemyRed = opening(relation.buffs, Buff.OPEN_RED);
-        if(ownGreen == null || ownYellow == null || ownRed == null || ownBlue == null || enemyRed == null) {
+        CombatPlanEvaluator.State observed = observeState(fv, relation);
+        if(observed == null) {
             updateState("Waiting for opening data");
             return;
         }
+        GobDamageInfo.DamageSnapshot dealt = damage.snapshot(relation.gobid);
+        observed.armorDamage = dealt.armor;
+        observed.shpDamage = dealt.shp;
+        observed.hhpDamage = dealt.hhp;
 
-        DeckDefenses defenses = inspectDefenses(fsess, now);
-        if(defenses.loading) {
+        DeckSnapshot deck = inspectDeck(fsess);
+        if(deck.loading) {
             updateState("Waiting for combat deck data");
             return;
         }
-        if(!defenses.description.equals(lastDefenseDeck)) {
-            lastDefenseDeck = defenses.description;
-            log("defense deck " + (lastDefenseDeck.isEmpty() ? "none" : lastDefenseDeck));
+        if(!deck.description.equals(lastDeck)) {
+            lastDeck = deck.description;
+            log("deck " + (lastDeck.isEmpty() ? "empty" : lastDeck));
         }
 
-        CombatAutomationRules.Snapshot snapshot = new CombatAutomationRules.Snapshot(
-            true, CombatAutomationRules.cooldownReadyToQueue(now, fv.atkct),
-            ownGreen, ownYellow, ownRed, ownBlue, enemyRed, defenses.clearableOpenings());
-        CombatAutomationRules.Decision decision = CombatAutomationRules.decide(snapshot);
-        if(decision == CombatAutomationRules.Decision.WAIT) {
-            updateState(String.format("Cooldown; enemy red %d%%, own max %d%%",
-                enemyRed, max(ownGreen, ownYellow, ownRed, ownBlue)));
+        CombatPlan.CharacterPlans characterPlans = plans.character(characterId());
+        CombatPlan.Resolution resolved = CombatPlan.resolve(characterPlans, targetResource);
+        if(resolved.profile == null || resolved.strategy == null) {
+            pause("No active combat strategy is available.");
+            return;
+        }
+        CombatPlanEvaluator.Result result = CombatPlanEvaluator.evaluate(
+            resolved.strategy, observed, deck.moves, now, fv.atkct);
+        if(result.outcome == CombatPlanEvaluator.Outcome.NO_MATCH) {
+            lastVisibleError = null;
+            updateState("Waiting; no rule matches in " + resolved.strategy.name);
+            return;
+        }
+        if(result.outcome == CombatPlanEvaluator.Outcome.MISSING_MOVE) {
+            pause(result.detail + "; equip it to resume.");
+            return;
+        }
+        if(result.outcome == CombatPlanEvaluator.Outcome.WAIT) {
+            lastVisibleError = null;
+            updateState("Waiting for " + (result.move == null ? "action" : result.move.name) + " cooldown");
             return;
         }
 
-        ActionChoice choice;
-        switch(decision) {
-        case QUICK_BARRAGE:
-            choice = chooseAction(fsess, Collections.singletonList(QUICK_BARRAGE), now);
-            break;
-        case FULL_CIRCLE:
-            choice = chooseAction(fsess, Collections.singletonList(FULL_CIRCLE), now);
-            break;
-        case RESTORE_GREEN:
-            choice = defenses.choice(CombatAutomationRules.Opening.GREEN);
-            break;
-        case RESTORE_YELLOW:
-            choice = defenses.choice(CombatAutomationRules.Opening.YELLOW);
-            break;
-        case RESTORE_RED:
-            choice = defenses.choice(CombatAutomationRules.Opening.RED);
-            break;
-        case RESTORE_BLUE:
-            choice = defenses.choice(CombatAutomationRules.Opening.BLUE);
-            break;
-        default:
-            throw new AssertionError("Unexpected combat decision: " + decision);
-        }
-
-        if(choice.loading) {
-            updateState("Waiting for combat deck data");
+        CombatPlanEvaluator.DeckMove move = result.move;
+        boolean distanceCapable = CombatMoveCatalog.distanceCapable(move.resource);
+        double distance = targetDistance(target);
+        if(!Double.isFinite(distance)) {
+            updateState("Waiting for player and target position data");
             return;
         }
-        if(!choice.found) {
-            if(isRestoration(decision)) {
-                decision = (enemyRed < CombatAutomationRules.ENEMY_RED_TARGET) ?
-                    CombatAutomationRules.Decision.QUICK_BARRAGE :
-                    CombatAutomationRules.Decision.FULL_CIRCLE;
-                choice = chooseAction(fsess, Collections.singletonList(
-                    decision == CombatAutomationRules.Decision.QUICK_BARRAGE ?
-                        QUICK_BARRAGE : FULL_CIRCLE), now);
-            }
-            if(!choice.found) {
-                disableWithError("Required move is not in the active combat deck: " +
-                    displayName(decision == CombatAutomationRules.Decision.QUICK_BARRAGE ?
-                        QUICK_BARRAGE : FULL_CIRCLE) + ".");
-                return;
-            }
-        }
-        if(choice.slot < 0) {
-            updateState("Move cooldown: " + choice.name);
+        if(!CombatAutomationRules.canAttemptAction(distance, distanceCapable)) {
+            updateState(String.format("Approaching target; distance %.1f (need %.1f or less for %s)",
+                distance, CombatAutomationRules.MAX_ACTION_DISTANCE, move.name));
             return;
         }
 
-        String state = String.format("%s; enemy red %d%%, own G/Y/R/B %d/%d/%d/%d%%",
-            choice.name, enemyRed, ownGreen, ownYellow, ownRed, ownBlue);
-        updateState(state);
+        lastVisibleError = null;
+        String stateText = formatState(observed);
+        updateState(move.name + "; " + stateText);
         pendingSince = now;
         pendingLastUse = fv.lastuse;
-        pendingAction = choice.resource;
-        pendingName = choice.name;
-        log("send slot=" + choice.slot + " action=" + choice.resource + " name=" + choice.name +
-            " enemy-red=" + enemyRed + " own=" + ownGreen + "/" + ownYellow +
-            "/" + ownRed + "/" + ownBlue + String.format(" distance=%.1f queue-ahead-ms=%d",
-                targetDistance, Math.round(Math.max(0, fv.atkct - now) * 1000)));
-        if(!fsess.triggerAction(choice.slot, target.rc)) {
+        pendingAction = move.resource;
+        pendingName = move.name;
+        pendingDistanceCapable = distanceCapable;
+        long queueLead = Math.round(Math.max(0,
+            Math.max(fv.atkct, move.cooldownEnd) - now) * 1000);
+        log("send target-resource=" + targetResource +
+            " target-profile=" + resolved.profile.displayName +
+            " fallback=" + resolved.fallback +
+            " strategy=" + resolved.strategy.name +
+            " rule=" + result.rule.name +
+            " observed={" + stateText + "}" +
+            " slot=" + move.slot + " action=" + move.resource + " name=" + move.name +
+            String.format(" distance=%.1f distance-capable=%s queue-lead-ms=%d",
+                distance, distanceCapable, queueLead));
+        if(!fsess.triggerAction(move.slot, target.rc)) {
             clearPending();
             disableWithError("Combat action slot became unavailable.");
         }
     }
 
+    private boolean handlePending(Fightview fv, Fightsess fsess, double now) {
+        if(pendingAction == null)
+            return(false);
+        if(fv == null || fsess == null || fv.current == null) {
+            log("combat ended while awaiting acknowledgement action=" + pendingAction);
+            clearPending();
+            targetId = -1;
+            consecutiveAckTimeouts = 0;
+            retryNotBefore = 0;
+            updateState("Enabled; waiting for combat");
+            return(true);
+        }
+        if(fv.lastuse > pendingLastUse) {
+            log("ack action=" + pendingAction);
+            clearPending();
+            consecutiveAckTimeouts = 0;
+            retryNotBefore = 0;
+            return(false);
+        }
+        if(now - pendingSince < ACK_TIMEOUT)
+            return(true);
+
+        String timedOutAction = pendingAction;
+        String timedOutName = pendingName;
+        boolean distanceCapable = pendingDistanceCapable;
+        double distance = currentTargetDistance(fv);
+        int timeout = ++consecutiveAckTimeouts;
+        clearPending();
+        if(CombatAutomationRules.shouldRetryMissingAcknowledgement(timeout, distance, distanceCapable)) {
+            retryNotBefore = now + ACK_RETRY_DELAY;
+            log(String.format("ack timeout action=%s name=%s attempt=%d distance=%.1f retry",
+                timedOutAction, timedOutName, timeout, distance));
+            updateState(String.format("Waiting to retry %s; target distance %.1f", timedOutName, distance));
+            return(true);
+        }
+        disableWithError("No server acknowledgement for " + timedOutName +
+            " after " + timeout + " valid-range attempts.");
+        return(true);
+    }
+
+    private void updateEngagementDamage(Fightview fv) {
+        if(fv == null) {
+            damage.clear();
+            return;
+        }
+        List<Long> active = new ArrayList<>();
+        for(Fightview.Relation relation : fv.lsrel) {
+            if(relation != null && !relation.invalid)
+                active.add(relation.gobid);
+        }
+        damage.update(active, GobDamageInfo::snapshot);
+    }
+
+    private CombatPlanEvaluator.State observeState(Fightview fv, Fightview.Relation relation) {
+        Integer ownGreen = opening(fv.buffs, Buff.OPEN_GREEN);
+        Integer ownYellow = opening(fv.buffs, Buff.OPEN_YELLOW);
+        Integer ownRed = opening(fv.buffs, Buff.OPEN_RED);
+        Integer ownBlue = opening(fv.buffs, Buff.OPEN_BLUE);
+        Integer opponentGreen = opening(relation.buffs, Buff.OPEN_GREEN);
+        Integer opponentYellow = opening(relation.buffs, Buff.OPEN_YELLOW);
+        Integer opponentRed = opening(relation.buffs, Buff.OPEN_RED);
+        Integer opponentBlue = opening(relation.buffs, Buff.OPEN_BLUE);
+        if(ownGreen == null || ownYellow == null || ownRed == null || ownBlue == null ||
+           opponentGreen == null || opponentYellow == null || opponentRed == null || opponentBlue == null)
+            return(null);
+        CombatPlanEvaluator.State state = new CombatPlanEvaluator.State();
+        state.yourIp = relation.ip;
+        state.opponentIp = relation.oip;
+        state.yourGreen = ownGreen;
+        state.yourYellow = ownYellow;
+        state.yourRed = ownRed;
+        state.yourBlue = ownBlue;
+        state.opponentGreen = opponentGreen;
+        state.opponentYellow = opponentYellow;
+        state.opponentRed = opponentRed;
+        state.opponentBlue = opponentBlue;
+        return(state);
+    }
+
+    private static DeckSnapshot inspectDeck(Fightsess fsess) {
+        DeckSnapshot result = new DeckSnapshot();
+        StringBuilder description = new StringBuilder();
+        for(int slot = 0; slot < fsess.actions.length; slot++) {
+            Fightsess.Action action = fsess.actions[slot];
+            if(action == null)
+                continue;
+            try {
+                Resource resource = action.res.get();
+                Resource.Pagina pagina = resource.layer(Resource.pagina);
+                EnumSet<CombatAutomationRules.Opening> clears = CombatMoveMetadata.reducedOpenings(
+                    pagina == null ? null : pagina.text);
+                String name = actionName(resource);
+                result.moves.add(new CombatPlanEvaluator.DeckMove(
+                    resource.name, name, slot, action.ct, clears));
+                if(description.length() > 0)
+                    description.append("; ");
+                description.append(slot).append(':').append(resource.name);
+                if(!clears.isEmpty())
+                    description.append(" clears=").append(clears);
+            } catch(Loading loading) {
+                result.loading = true;
+            }
+        }
+        result.description = description.toString();
+        return(result);
+    }
+
     private double currentTargetDistance(Fightview fv) {
         if(fv == null || fv.current == null)
             return(Double.NaN);
-        Gob target = gui.ui.sess.glob.oc.getgob(fv.current.gobid);
-        return(targetDistance(target));
+        return(targetDistance(gui.ui.sess.glob.oc.getgob(fv.current.gobid)));
     }
 
     private double targetDistance(Gob target) {
-        Gob player = (gui.map == null) ? null : gui.map.player();
+        Gob player = gui.map == null ? null : gui.map.player();
         if(player == null || player.rc == null || target == null || target.rc == null)
             return(Double.NaN);
         return(player.rc.dist(target.rc));
@@ -291,6 +402,7 @@ public final class CombatAutomation extends Widget {
     private void clearPending() {
         pendingAction = null;
         pendingName = null;
+        pendingDistanceCapable = false;
     }
 
     private static Integer opening(Bufflist list, String resource) {
@@ -308,69 +420,32 @@ public final class CombatAutomation extends Widget {
         return(loading ? null : 0);
     }
 
-    private static ActionChoice chooseAction(Fightsess fsess, List<String> candidates, double now) {
-        boolean loading = false;
-        boolean found = false;
-        for(String candidate : candidates) {
-            for(int slot = 0; slot < fsess.actions.length; slot++) {
-                Fightsess.Action action = fsess.actions[slot];
-                if(action == null)
-                    continue;
-                try {
-                    Resource resource = action.res.get();
-                    if(candidate.equals(resource.name)) {
-                        found = true;
-                        if(CombatAutomationRules.cooldownReadyToQueue(now, action.ct))
-                            return(new ActionChoice(slot, candidate, actionName(resource), true, false));
-                    }
-                } catch(Loading l) {
-                    loading = true;
-                }
-            }
-        }
-        String resource = candidates.isEmpty() ? null : candidates.get(0);
-        return(new ActionChoice(-1, resource, displayName(resource), found, !found && loading));
-    }
-
-    private static DeckDefenses inspectDefenses(Fightsess fsess, double now) {
-        DeckDefenses result = new DeckDefenses();
-        StringBuilder description = new StringBuilder();
-        for(int slot = 0; slot < fsess.actions.length; slot++) {
-            Fightsess.Action action = fsess.actions[slot];
-            if(action == null)
-                continue;
-            try {
-                Resource resource = action.res.get();
-                Resource.Pagina pagina = resource.layer(Resource.pagina);
-                EnumSet<CombatAutomationRules.Opening> colors = CombatMoveMetadata.reducedOpenings(
-                    pagina == null ? null : pagina.text);
-                if(colors.isEmpty())
-                    continue;
-                String name = actionName(resource);
-                if(description.length() > 0)
-                    description.append("; ");
-                description.append("slot ").append(slot).append(' ').append(name).append('=').append(colors);
-                for(CombatAutomationRules.Opening color : colors)
-                    result.add(color, slot, resource.name, name,
-                        CombatAutomationRules.cooldownReadyToQueue(now, action.ct));
-            } catch(Loading l) {
-                result.loading = true;
-            }
-        }
-        result.description = description.toString();
-        return(result);
-    }
-
     private static String actionName(Resource resource) {
         Resource.Tooltip tooltip = resource.layer(Resource.tooltip);
-        return(tooltip == null ? displayName(resource.name) : tooltip.t);
+        return(tooltip == null ? CombatMoveCatalog.label(resource.name) : tooltip.t);
     }
 
-    private static boolean isRestoration(CombatAutomationRules.Decision decision) {
-        return(decision == CombatAutomationRules.Decision.RESTORE_GREEN ||
-            decision == CombatAutomationRules.Decision.RESTORE_YELLOW ||
-            decision == CombatAutomationRules.Decision.RESTORE_RED ||
-            decision == CombatAutomationRules.Decision.RESTORE_BLUE);
+    private static String formatState(CombatPlanEvaluator.State state) {
+        return("ip=" + state.yourIp + "/" + state.opponentIp +
+            " own-gyrb=" + state.yourGreen + "/" + state.yourYellow + "/" +
+            state.yourRed + "/" + state.yourBlue +
+            " opponent-gyrb=" + state.opponentGreen + "/" + state.opponentYellow + "/" +
+            state.opponentRed + "/" + state.opponentBlue +
+            " damage-arm/shp/hhp/total=" + state.armorDamage + "/" + state.shpDamage + "/" +
+            state.hhpDamage + "/" + state.totalDamage());
+    }
+
+    private String characterId() {
+        return(gui.chrid);
+    }
+
+    private void pause(String reason) {
+        updateState("Paused: " + reason);
+        if(!reason.equals(lastVisibleError)) {
+            lastVisibleError = reason;
+            gui.error("Combat Automation paused: " + reason);
+            log("paused reason=" + reason);
+        }
     }
 
     private void updateState(String state) {
@@ -392,25 +467,6 @@ public final class CombatAutomation extends Widget {
         lastStatus = status;
     }
 
-    private static String displayName(String resource) {
-        if(QUICK_BARRAGE.equals(resource)) return("Quick Barrage");
-        if(FULL_CIRCLE.equals(resource)) return("Full Circle");
-        if("paginae/atk/zigzag".equals(resource)) return("Zig-Zag");
-        if("paginae/atk/artevade".equals(resource)) return("Artful Evasion");
-        if("paginae/atk/regain".equals(resource)) return("Regain Composure");
-        if("paginae/atk/jump".equals(resource)) return("Jump");
-        if("paginae/atk/qdodge".equals(resource)) return("Quick Dodge");
-        if("paginae/atk/sidestep".equals(resource)) return("Sidestep");
-        return(resource == null ? "combat move" : resource);
-    }
-
-    private static int max(int... values) {
-        int result = Integer.MIN_VALUE;
-        for(int value : values)
-            result = Math.max(result, value);
-        return(result);
-    }
-
     private static PrintWriter openLog() {
         try {
             Path dir = Debug.somedir("combat-automation-logs");
@@ -430,6 +486,7 @@ public final class CombatAutomation extends Widget {
 
     @Override
     public void destroy() {
+        damage.clear();
         if(log != null) {
             log("controller destroyed");
             log.close();
@@ -439,45 +496,9 @@ public final class CombatAutomation extends Widget {
         super.destroy();
     }
 
-    private static final class ActionChoice {
-        final int slot;
-        final String resource;
-        final String name;
-        final boolean found;
-        final boolean loading;
-
-        ActionChoice(int slot, String resource, String name, boolean found, boolean loading) {
-            this.slot = slot;
-            this.resource = resource;
-            this.name = name;
-            this.found = found;
-            this.loading = loading;
-        }
-    }
-
-    private static final class DeckDefenses {
-        final Map<CombatAutomationRules.Opening, ActionChoice> actions =
-            new EnumMap<>(CombatAutomationRules.Opening.class);
+    private static final class DeckSnapshot {
+        final List<CombatPlanEvaluator.DeckMove> moves = new ArrayList<>();
         boolean loading;
         String description = "";
-
-        void add(CombatAutomationRules.Opening color, int slot, String resource,
-                 String name, boolean ready) {
-            ActionChoice current = actions.get(color);
-            if(current == null || (ready && current.slot < 0))
-                actions.put(color, new ActionChoice(ready ? slot : -1, resource, name, true, false));
-        }
-
-        EnumSet<CombatAutomationRules.Opening> clearableOpenings() {
-            EnumSet<CombatAutomationRules.Opening> result =
-                EnumSet.noneOf(CombatAutomationRules.Opening.class);
-            result.addAll(actions.keySet());
-            return(result);
-        }
-
-        ActionChoice choice(CombatAutomationRules.Opening color) {
-            ActionChoice result = actions.get(color);
-            return(result == null ? new ActionChoice(-1, null, "opening clear", false, false) : result);
-        }
     }
 }
