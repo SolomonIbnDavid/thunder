@@ -30,7 +30,7 @@ import java.util.function.BooleanSupplier;
  */
 public class StackAllItems implements Defer.Callable<Void> {
     private static final int MAX_PASSES = 512;
-    private static final int MAX_QUALITY_SWAPS = 512;
+    private static final int MAX_QUALITY_CYCLES = 256;
     private static final int ACTION_TIMEOUT_MS = 1200;
     private static final int MERGE_RESPONSE_TIMEOUT_MS = 600;
     private static final int POLL_MS = 10;
@@ -224,27 +224,39 @@ public class StackAllItems implements Defer.Callable<Void> {
 	    gui.error("Stack items: could not pick up an item.");
 	    return -1;
 	}
+	String heldBefore = cursorState(gui);
+	int destinationBefore = amount(destination);
 	destination.itemact(3);
-	waitUntil(() -> gui.vhand == null || !before.equals(groupState(inv, key)),
+	waitUntil(() -> gui.vhand == null || destination.disposed() ||
+	    amount(destination) != destinationBefore || !heldBefore.equals(cursorState(gui)),
 	    MERGE_RESPONSE_TIMEOUT_MS);
-	boolean progressed = !before.equals(groupState(inv, key));
 	if(gui.vhand != null) {
 	    inv.wdgmsg("drop", dropSlot);
 	    if(!waitUntil(() -> gui.vhand == null, ACTION_TIMEOUT_MS)) {
 		gui.error("Stack items: could not return the leftover item.");
 		return -1;
 	    }
-	} else if(!progressed) {
-	    progressed = waitUntil(() -> !before.equals(groupState(inv, key)),
-		ACTION_TIMEOUT_MS / 4);
 	}
-	return progressed ? 1 : 0;
+	boolean settledProgress = waitUntil(() -> !before.equals(groupState(inv, key)),
+	    ACTION_TIMEOUT_MS / 4);
+	return settledProgress ? 1 : 0;
+    }
+
+    private static String cursorState(GameUI gui) {
+	WItem hand = gui.vhand;
+	if(hand == null)
+	    return "";
+	return hand.item.wdgid() + ":" + amount(hand) + ":" + hand.item.resname();
     }
 
     private static boolean organizeStackQualities(Inventory inv) throws InterruptedException {
 	GameUI gui = inv.ui.gui;
 	if(gui == null)
 	    return false;
+	if(!waitUntil(() -> stackContentsReady(inv), ACTION_TIMEOUT_MS)) {
+	    gui.error("Stack quality sorting stopped because stack contents did not finish loading.");
+	    return false;
+	}
 	Map<String, List<WItem>> groups = new LinkedHashMap<>();
 	for(Widget wdg = inv.lchild; wdg != null; wdg = wdg.prev) {
 	    if(!wdg.visible || !(wdg instanceof WItem))
@@ -255,7 +267,7 @@ public class StackAllItems implements Defer.Callable<Void> {
 	    groups.computeIfAbsent(capacityKey(stack), k -> new ArrayList<>()).add(stack);
 	}
 
-	int swaps = 0;
+	int cycles = 0;
 	for(List<WItem> stacks : groups.values()) {
 	    if(stacks.size() < 2)
 		continue;
@@ -263,19 +275,16 @@ public class StackAllItems implements Defer.Callable<Void> {
 	    while(true) {
 		if(inv.disposed() || Thread.currentThread().isInterrupted())
 		    return true;
-		List<List<WItem>> children = new ArrayList<>(stacks.size());
-		double[][] qualities = new double[stacks.size()][];
-		for(int i = 0; i < stacks.size(); i++) {
-		    List<WItem> items = stackChildren(stacks.get(i));
-		    children.add(items);
-		    qualities[i] = new double[items.size()];
-		    for(int j = 0; j < items.size(); j++)
-			qualities[i][j] = quality(items.get(j));
-		}
-		int[] move = ItemStacking.nextQualitySwap(qualities);
-		if(move == null)
+		QualitySnapshot before = qualitySnapshot(stacks);
+		int misplacedBefore = ItemStacking.qualityMisplacementCount(before.qualities);
+		if(misplacedBefore == 0)
 		    break;
-		if(++swaps > MAX_QUALITY_SWAPS) {
+		int[][] cycle = ItemStacking.nextQualityCycle(before.qualities);
+		if(cycle == null || cycle.length < 2) {
+		    gui.error("Stack quality sorting could not produce a safe move plan.");
+		    return false;
+		}
+		if(++cycles > MAX_QUALITY_CYCLES) {
 		    gui.error("Stack quality sorting stopped at its safety limit.");
 		    return false;
 		}
@@ -284,12 +293,17 @@ public class StackAllItems implements Defer.Callable<Void> {
 		    gui.error("Stack quality sorting needs one free inventory square as a swap buffer.");
 		    return false;
 		}
-		WItem lower = stacks.get(move[0]);
-		WItem higher = stacks.get(move[2]);
-		WItem highItem = children.get(move[0]).get(move[1]);
-		WItem lowItem = children.get(move[2]).get(move[3]);
-		if(!swapChildren(gui, inv, lower, highItem, higher, lowItem, buffer)) {
+		if(!rotateQualityCycle(gui, inv, stacks, before.children, cycle, buffer)) {
 		    gui.error("Stack quality sorting stopped after a server update did not complete.");
+		    return false;
+		}
+		boolean improved = waitUntil(() -> {
+		    QualitySnapshot after = qualitySnapshot(stacks);
+		    return after.finiteCount >= before.finiteCount &&
+			ItemStacking.qualityMisplacementCount(after.qualities) < misplacedBefore;
+		}, ACTION_TIMEOUT_MS);
+		if(!improved) {
+		    gui.error("Stack quality sorting stopped because the last plan made no progress.");
 		    return false;
 		}
 	    }
@@ -297,45 +311,111 @@ public class StackAllItems implements Defer.Callable<Void> {
 	return true;
     }
 
-    private static boolean swapChildren(GameUI gui, Inventory targetInv,
-					WItem lower, WItem highItem,
-					WItem higher, WItem lowItem,
-					BufferSpace buffer) throws InterruptedException {
-	int lowerBefore = stackSize(lower);
-	int higherBefore = stackSize(higher);
-	double highQuality = quality(highItem);
-	double lowQuality = quality(lowItem);
-	WItem parked = parkChild(gui, targetInv, lower, highItem, buffer);
+    private static boolean stackContentsReady(Inventory inv) {
+	for(Widget wdg = inv.lchild; wdg != null; wdg = wdg.prev) {
+	    if(!(wdg instanceof WItem))
+		continue;
+	    WItem stack = (WItem) wdg;
+	    if(ItemStacking.isStackName(itemName(stack)) &&
+	       stackChildren(stack).size() < amount(stack))
+		return false;
+	}
+	return true;
+    }
+
+    private static QualitySnapshot qualitySnapshot(List<WItem> stacks) {
+	List<List<WItem>> children = new ArrayList<>(stacks.size());
+	double[][] qualities = new double[stacks.size()][];
+	int finiteCount = 0;
+	for(int i = 0; i < stacks.size(); i++) {
+	    List<WItem> items = stackChildren(stacks.get(i));
+	    children.add(items);
+	    qualities[i] = new double[items.size()];
+	    for(int j = 0; j < items.size(); j++) {
+		double q = quality(items.get(j));
+		qualities[i][j] = q;
+		if(Double.isFinite(q))
+		    finiteCount++;
+	    }
+	}
+	return new QualitySnapshot(children, qualities, finiteCount);
+    }
+
+    private static final class QualitySnapshot {
+	final List<List<WItem>> children;
+	final double[][] qualities;
+	final int finiteCount;
+
+	QualitySnapshot(List<List<WItem>> children, double[][] qualities, int finiteCount) {
+	    this.children = children;
+	    this.qualities = qualities;
+	    this.finiteCount = finiteCount;
+	}
+    }
+
+    private static boolean rotateQualityCycle(GameUI gui, Inventory targetInv,
+				       List<WItem> stacks, List<List<WItem>> children,
+				       int[][] cycle, BufferSpace buffer)
+				       throws InterruptedException {
+	int[] first = cycle[0];
+	WItem firstStack = stacks.get(first[0]);
+	WItem firstItem = children.get(first[0]).get(first[1]);
+	WItem parked = parkChild(gui, targetInv, firstStack, firstItem, buffer);
 	if(parked == null)
 	    return false;
 
-	lowItem.take();
-	if(!waitUntil(() -> gui.vhand != null && stackSize(higher) < higherBefore,
-		ACTION_TIMEOUT_MS)) {
-	    restoreHand(gui, higher, higherBefore);
-	    restoreBuffered(gui, parked, lower, lowerBefore);
-	    return false;
-	}
-	lower.itemact(0);
-	if(!waitUntil(() -> gui.vhand == null && stackSize(lower) >= lowerBefore &&
-		stackContainsQuality(lower, lowQuality),
-		ACTION_TIMEOUT_MS)) {
-	    restoreHand(gui, higher, higherBefore);
-	    restoreBuffered(gui, parked, lower, lowerBefore);
-	    return false;
+	WItem vacancy = firstStack;
+	for(int i = cycle.length - 1; i >= 1; i--) {
+	    int[] move = cycle[i];
+	    WItem source = stacks.get(move[0]);
+	    if(stacks.get(move[2]) != vacancy) {
+		restoreBuffered(gui, parked, vacancy, stackSize(vacancy) + 1);
+		return false;
+	    }
+	    WItem destination = vacancy;
+	    WItem item = children.get(move[0]).get(move[1]);
+	    double wantedQuality = quality(item);
+	    int sourceBefore = stackSize(source);
+	    int vacancyBefore = stackSize(destination);
+	    item.take();
+	    if(!waitUntil(() -> gui.vhand != null && stackSize(source) < sourceBefore,
+		    ACTION_TIMEOUT_MS)) {
+		restoreHand(gui, source, sourceBefore);
+		restoreBuffered(gui, parked, vacancy, vacancyBefore + 1);
+		return false;
+	    }
+	    destination.itemact(0);
+	    boolean inserted = waitUntil(() -> gui.vhand == null &&
+		stackSize(destination) > vacancyBefore &&
+		stackContainsQuality(destination, wantedQuality), ACTION_TIMEOUT_MS);
+	    if(!inserted) {
+		if(gui.vhand != null) {
+		    restoreHand(gui, source, sourceBefore);
+		} else if(stackSize(destination) > vacancyBefore) {
+		    vacancy = source;
+		}
+		restoreBuffered(gui, parked, vacancy, stackSize(vacancy) + 1);
+		return false;
+	    }
+	    vacancy = source;
 	}
 
-	parked.take();
-	if(!waitUntil(() -> gui.vhand != null, ACTION_TIMEOUT_MS))
+	if(stacks.get(first[2]) != vacancy) {
+	    restoreBuffered(gui, parked, vacancy, stackSize(vacancy) + 1);
 	    return false;
-	higher.itemact(0);
-	if(!waitUntil(() -> gui.vhand == null && stackSize(higher) >= higherBefore &&
-		stackContainsQuality(higher, highQuality),
-		ACTION_TIMEOUT_MS)) {
-	    if(gui.vhand != null) {
-		buffer.inv.wdgmsg("drop", buffer.slot);
-		waitUntil(() -> gui.vhand == null, ACTION_TIMEOUT_MS);
-	    }
+	}
+	double parkedQuality = quality(parked);
+	WItem destination = vacancy;
+	int vacancyBefore = stackSize(destination);
+	parked.take();
+	if(!waitUntil(() -> gui.vhand != null, ACTION_TIMEOUT_MS)) {
+	    restoreBuffered(gui, parked, vacancy, vacancyBefore + 1);
+	    return false;
+	}
+	destination.itemact(0);
+	if(!waitUntil(() -> gui.vhand == null && stackSize(destination) > vacancyBefore &&
+		stackContainsQuality(destination, parkedQuality), ACTION_TIMEOUT_MS)) {
+	    restoreHand(gui, destination, vacancyBefore + 1);
 	    return false;
 	}
 	return true;
