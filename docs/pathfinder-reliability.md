@@ -12,9 +12,10 @@ commit `3f701fd80`, with 188 navigation-core tests and 1,631 Thunder tests
 passing before the simplification work began.
 
 `BotMovement` exposes `moveTo`, `moveToAny`, `approach`, and
-`followKnownRoute`. Its only modes are `LAND`, `BOAT_ROUTE`, `BOAT_LOCAL`, and
-`BOAT_APPROACH`. Callers receive a typed result and cancellation remains
-`InterruptedException`.
+`followKnownRoute`. Its modes are `LAND`, `CAVE`, `BOAT_ROUTE`, `BOAT_LOCAL`,
+and `BOAT_APPROACH`. `CAVE` point travel fails closed outside the strict
+walkable-cave-floor allowlist. Callers receive a typed result and cancellation
+remains `InterruptedException`.
 
 ## Planning and execution
 

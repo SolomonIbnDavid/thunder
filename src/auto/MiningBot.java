@@ -2,11 +2,13 @@ package auto;
 
 import haven.*;
 import haven.pathfinding.BotMovement;
+import haven.pathfinding.PathfinderLog;
 import haven.res.gfx.fx.mscover.Global;
 import haven.res.gfx.fx.mscover.Data;
 import haven.rx.Reactor;
 import thunder.mining.MiningZoneStore;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -76,6 +78,56 @@ public class MiningBot {
             diagLog.println(line);
             diagLog.flush();
         }
+    }
+
+    /* MiningBot operates underground. Keep every bot-owned travel request on
+     * NavCore's cave terrain policy, and preserve the typed result in the run log
+     * instead of collapsing distinct planner/execution failures into an unlabelled
+     * boolean. PathfinderLog's target is thread-local, so these labels also make the
+     * debug overlay and plans.jsonl identify the MiningBot phase that produced them. */
+    private static final BotMovement.Mode MOVEMENT_MODE = BotMovement.Mode.CAVE;
+
+    static BotMovement.Result moveToPoint(GameUI gui, Bot bot, Coord2d target, String phase) throws InterruptedException {
+        PathfinderLog.setTarget("minebot " + phase);
+        try {
+            BotMovement.Result result = BotMovement.moveTo(gui, bot, target, MOVEMENT_MODE);
+            logMovement("moveTo", phase, result);
+            return result;
+        } finally {
+            PathfinderLog.clearTarget();
+        }
+    }
+
+    static BotMovement.Result moveToAnyPoint(GameUI gui, Bot bot, List<Coord2d> targets, String phase) throws InterruptedException {
+        PathfinderLog.setTarget("minebot " + phase);
+        try {
+            BotMovement.Result result = BotMovement.moveToAny(
+                gui, bot, targets, BotMovement.Avoidance.NONE, MOVEMENT_MODE);
+            logMovement("moveToAny", phase, result);
+            return result;
+        } finally {
+            PathfinderLog.clearTarget();
+        }
+    }
+
+    static BotMovement.Result approachGob(GameUI gui, Bot bot, Gob target, String phase) throws InterruptedException {
+        PathfinderLog.setTarget("minebot " + phase);
+        try {
+            BotMovement.Result result = BotMovement.approach(gui, bot, target, MOVEMENT_MODE);
+            logMovement("approach", phase, result);
+            return result;
+        } finally {
+            PathfinderLog.clearTarget();
+        }
+    }
+
+    private static void logMovement(String operation, String phase, BotMovement.Result result) {
+        if(result == null) {
+            diag("[minebot-diag] navcore %s phase=%s result=null", operation, phase);
+            return;
+        }
+        diag("[minebot-diag] navcore %s phase=%s status=%s end=%s selected=%s replans=%d detail=%s",
+            operation, phase, result.status, result.end, result.selectedGoal, result.replans, result.detail);
     }
 
     /** Live stack trace of every thread named "Worker thread #N" (Defer.Worker's own
@@ -251,13 +303,11 @@ public class MiningBot {
                 } else {
                     mined = mineTile(gui, bot, targetTile); // false may just mean "already open floor here"
                 }
-                // A tile just mined this same iteration can still fail to walk into
-                // immediately -- confirmed live under the previous nav backend: the
-                // freshly-opened tile could still show as blocked in the local walker's
-                // own occupancy cache for a moment after mining, a settle-timing race
-                // rather than a real obstruction. Only retry here when we just mined it
-                // ourselves this iteration; a tile that was never mineable in the first
-                // place shouldn't get extra chances before reporting the real block.
+                // A tile just mined this same iteration can still be reported blocked
+                // until the live terrain update arrives. Re-run the complete NavCore
+                // observe-plan-confirm cycle after a short settle pause, but only for a
+                // tile we actually mined this iteration. An untouched solid tile should
+                // report its real failure without extra retries.
                 boolean walked = walkToTile(gui, bot, targetTile);
                 for(int retry = 1; !walked && mined && retry <= FRESH_MINE_WALK_RETRIES; retry++) {
                     bot.checkCancelled();
@@ -342,30 +392,9 @@ public class MiningBot {
         return MCache.tilesz.mul(tile.x, tile.y).add(5, 5);
     }
 
-    /**
-     * Try the plain straight-line click first -- it's what always worked for the
-     * routine "walk into the tile I just mined" case (adjacent, already-open
-     * floor, no obstacles), and it doesn't touch BotMovement's grid/occupancy
-     * planning at all, so it can't hit its staleness races. Escalate to
-     * BotMovement's real pathfinding only if that fails -- confirmed live this
-     * is specifically needed for getting back into the tunnel after
-     * ensureSupplies sends the character off to a resupply zone (rarely in a
-     * direct line from the mining frontier, past the tunnel's own rock walls).
-     * Routing the routine one-tile advance through the pathfinder unconditionally
-     * (an earlier version of this method) was itself a regression: it exposed
-     * every single mining step to the planner's cache-staleness failure modes
-     * right after a fresh mine that a plain click never had, breaking the
-     * common case to fix the rare one.
-     */
-    private static final long SIMPLE_WALK_TIMEOUT_MS = 4000;
-
     private static boolean walkToTile(GameUI gui, Bot bot, Coord tile) throws InterruptedException {
         Coord2d target = tileCenter(tile);
-        if(MapHelper.walkTo(gui, target, SIMPLE_WALK_TIMEOUT_MS)) {
-            return true;
-        }
-        diag("[minebot-diag] walkToTile: plain walkTo to %s failed, escalating to BotMovement", tile);
-        BotMovement.Result result = BotMovement.moveTo(gui, bot, target, BotMovement.Mode.LAND);
+        BotMovement.Result result = moveToPoint(gui, bot, target, "tunnel tile " + tile);
         return result != null && result.arrived();
     }
 
@@ -397,8 +426,8 @@ public class MiningBot {
     private static final double LOW_ENERGY_THRESHOLD = 0.26;
 
     // See the walkToTile retry right after mineTile in runLoop's step loop --
-    // covers the local-occupancy-cache staleness failure mode right after a
-    // fresh mine with a short settle-and-retry.
+    // covers the live-terrain-update race right after a fresh mine with a short
+    // settle-and-replan.
     private static final int FRESH_MINE_WALK_RETRIES = 4;
     private static final long FRESH_MINE_WALK_RETRY_DELAY_MS = 750L;
 
