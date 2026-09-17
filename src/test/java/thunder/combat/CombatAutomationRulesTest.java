@@ -85,6 +85,14 @@ public class CombatAutomationRulesTest {
             CombatAutomationRules.decide(state));
     }
 
+    @Test void queuesActionsDuringTheLastHundredMillisecondsOfCooldown() {
+        assertFalse(CombatAutomationRules.cooldownReadyToQueue(10.0, 10.101));
+        assertTrue(CombatAutomationRules.cooldownReadyToQueue(10.0, 10.100));
+        assertTrue(CombatAutomationRules.cooldownReadyToQueue(10.0, 9.0));
+        assertFalse(CombatAutomationRules.cooldownReadyToQueue(Double.NaN, 10.0));
+        assertFalse(CombatAutomationRules.cooldownReadyToQueue(10.0, Double.NaN));
+    }
+
     @Test void continuesOffenseWhenNoUnsafeColorCanBeCleared() {
         CombatAutomationRules.Snapshot finish = new CombatAutomationRules.Snapshot(
             true, true, true, 68, 0, 0, 0, 60, Collections.emptySet());

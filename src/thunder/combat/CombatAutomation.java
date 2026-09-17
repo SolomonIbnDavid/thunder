@@ -59,7 +59,8 @@ public final class CombatAutomation extends Widget {
         setStatus("Enabled; waiting for combat");
         log("enabled profile=small-animal enemy-red-target=" +
             CombatAutomationRules.ENEMY_RED_TARGET + " own-opening-limit=" +
-            CombatAutomationRules.OWN_OPENING_LIMIT + " max-action-distance=" +
+            CombatAutomationRules.OWN_OPENING_LIMIT + " queue-lead-ms=" +
+            Math.round(CombatAutomationRules.ACTION_QUEUE_LEAD * 1000) + " max-action-distance=" +
             CombatAutomationRules.MAX_ACTION_DISTANCE);
     }
 
@@ -206,7 +207,7 @@ public final class CombatAutomation extends Widget {
         }
 
         CombatAutomationRules.Snapshot snapshot = new CombatAutomationRules.Snapshot(
-            true, true, now >= fv.atkct,
+            true, true, CombatAutomationRules.cooldownReadyToQueue(now, fv.atkct),
             ownGreen, ownYellow, ownRed, ownBlue, enemyRed, defenses.clearableOpenings());
         CombatAutomationRules.Decision decision = CombatAutomationRules.decide(snapshot);
         if(decision == CombatAutomationRules.Decision.WAIT) {
@@ -274,7 +275,8 @@ public final class CombatAutomation extends Widget {
         pendingName = choice.name;
         log("send slot=" + choice.slot + " action=" + choice.resource + " name=" + choice.name +
             " enemy-red=" + enemyRed + " own=" + ownGreen + "/" + ownYellow +
-            "/" + ownRed + "/" + ownBlue + String.format(" distance=%.1f", targetDistance));
+            "/" + ownRed + "/" + ownBlue + String.format(" distance=%.1f queue-ahead-ms=%d",
+                targetDistance, Math.round(Math.max(0, fv.atkct - now) * 1000)));
         if(!fsess.triggerAction(choice.slot, target.rc)) {
             clearPending();
             disableWithError("Combat action slot became unavailable.");
@@ -327,7 +329,7 @@ public final class CombatAutomation extends Widget {
                     Resource resource = action.res.get();
                     if(candidate.equals(resource.name)) {
                         found = true;
-                        if(now >= action.ct)
+                        if(CombatAutomationRules.cooldownReadyToQueue(now, action.ct))
                             return(new ActionChoice(slot, candidate, actionName(resource), true, false));
                     }
                 } catch(Loading l) {
@@ -358,7 +360,8 @@ public final class CombatAutomation extends Widget {
                     description.append("; ");
                 description.append("slot ").append(slot).append(' ').append(name).append('=').append(colors);
                 for(CombatAutomationRules.Opening color : colors)
-                    result.add(color, slot, resource.name, name, now >= action.ct);
+                    result.add(color, slot, resource.name, name,
+                        CombatAutomationRules.cooldownReadyToQueue(now, action.ct));
             } catch(Loading l) {
                 result.loading = true;
             }

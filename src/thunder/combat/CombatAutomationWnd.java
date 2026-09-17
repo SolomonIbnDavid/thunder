@@ -27,6 +27,9 @@ public final class CombatAutomationWnd extends WindowX {
         add(new Label(String.format("At %d%% own opening, use a matching restoration first.",
             CombatAutomationRules.OWN_OPENING_LIMIT)), 0, y);
         y += UI.scale(20);
+        add(new Label(String.format("Queue each move %d ms before cooldown expiry.",
+            Math.round(CombatAutomationRules.ACTION_QUEUE_LEAD * 1000))), 0, y);
+        y += UI.scale(20);
         add(new Label("Bears and rage mode are intentionally excluded."), 0, y);
         y += UI.scale(28);
         add(new Label("Status:"), 0, y);
