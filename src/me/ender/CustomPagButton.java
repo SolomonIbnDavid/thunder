@@ -15,7 +15,6 @@ public class CustomPagButton extends MenuGrid.PagButton {
     
     private final CustomPaginaAction action;
     private final Supplier<Boolean> toggleState;
-    private GSprite fallbackSprite;
     
     public CustomPagButton(MenuGrid.Pagina pag, CustomPaginaAction action, Supplier<Boolean> toggleState) {
 	super(pag);
@@ -27,18 +26,6 @@ public class CustomPagButton extends MenuGrid.PagButton {
 	}
     }
 
-    /** Clear-Cut intentionally reuses Log Cutter's icon without duplicating a binary asset. */
-    @Override
-    public GSprite spr() {
-	if(res.layer(Resource.imgc) != null) return super.spr();
-	if(!"paginae/add/clear-cut".equals(res.name)) return super.spr();
-	if(fallbackSprite == null) {
-	    Resource fallback = Resource.local().loadwait("paginae/add/log-cutter");
-	    fallbackSprite = GSprite.create(this, fallback, Message.nil);
-	}
-	return fallbackSprite;
-    }
-    
     @Override
     public void drawmain(GOut g, GSprite spr) {
 	super.drawmain(g, spr);
