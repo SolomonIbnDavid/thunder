@@ -35,8 +35,8 @@ public class CellarDiggerRulesTest {
     }
 
     @Test public void meterBoundariesAreExact() {
-        assertTrue(CellarDiggerRules.energyTooLow(0.2499));
-        assertFalse(CellarDiggerRules.energyTooLow(0.25));
+        assertTrue(CellarDiggerRules.energyTooLow(0.3999));
+        assertFalse(CellarDiggerRules.energyTooLow(0.40));
         assertTrue(CellarDiggerRules.staminaNeedsRecovery(0.3999));
         assertFalse(CellarDiggerRules.staminaNeedsRecovery(0.40));
         assertFalse(CellarDiggerRules.staminaRecovered(0.7999));

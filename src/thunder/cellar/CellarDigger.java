@@ -463,7 +463,7 @@ public final class CellarDigger {
 
             double energy = meter("nrj");
             if(energy < 0.0) fail("energy meter became unavailable");
-            if(CellarDiggerRules.energyTooLow(energy)) fail("energy fell below 25%");
+            if(CellarDiggerRules.energyTooLow(energy)) fail("energy fell below 4,000");
 
             ScanState water = waterState();
             if(water == ScanState.EMPTY) fail("carried water ran out");
@@ -486,7 +486,7 @@ public final class CellarDigger {
                 if(inCombat()) fail("combat started while waiting for auto-drink");
                 double energy = meter("nrj");
                 if(energy < 0.0) fail("energy meter became unavailable while waiting for auto-drink");
-                if(CellarDiggerRules.energyTooLow(energy)) fail("energy fell below 25%");
+                if(CellarDiggerRules.energyTooLow(energy)) fail("energy fell below 4,000");
                 ScanState water = waterState();
                 if(water == ScanState.EMPTY) fail("carried water ran out while waiting for auto-drink");
                 double stamina = meter("stam");
