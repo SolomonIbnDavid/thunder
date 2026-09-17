@@ -1,0 +1,116 @@
+package thunder.combat;
+
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+
+/** Pure decision rules for the first, small-animal combat profile. */
+public final class CombatAutomationRules {
+    public static final int ENEMY_RED_TARGET = 55;
+    public static final int OWN_OPENING_LIMIT = 40;
+
+    public enum Opening {
+        GREEN,
+        YELLOW,
+        RED,
+        BLUE
+    }
+
+    public enum Decision {
+        WAIT,
+        UNSUPPORTED_TARGET,
+        RESTORE_GREEN,
+        RESTORE_YELLOW,
+        RESTORE_RED,
+        RESTORE_BLUE,
+        QUICK_BARRAGE,
+        FULL_CIRCLE
+    }
+
+    public static final class Snapshot {
+        public final boolean combatActive;
+        public final boolean supportedTarget;
+        public final boolean globalCooldownReady;
+        public final int ownGreen;
+        public final int ownYellow;
+        public final int ownRed;
+        public final int ownBlue;
+        public final int enemyRed;
+
+        public Snapshot(boolean combatActive, boolean supportedTarget, boolean globalCooldownReady,
+                        int ownGreen, int ownYellow, int ownRed, int ownBlue, int enemyRed) {
+            this.combatActive = combatActive;
+            this.supportedTarget = supportedTarget;
+            this.globalCooldownReady = globalCooldownReady;
+            this.ownGreen = ownGreen;
+            this.ownYellow = ownYellow;
+            this.ownRed = ownRed;
+            this.ownBlue = ownBlue;
+            this.enemyRed = enemyRed;
+        }
+    }
+
+    private CombatAutomationRules() {
+    }
+
+    public static Decision decide(Snapshot state) {
+        if(state == null || !state.combatActive)
+            return Decision.WAIT;
+        if(!state.supportedTarget)
+            return Decision.UNSUPPORTED_TARGET;
+        if(!state.globalCooldownReady)
+            return Decision.WAIT;
+
+        Opening unsafe = worstUnsafeOpening(state);
+        if(unsafe != null)
+            return restorationDecision(unsafe);
+        return (state.enemyRed < ENEMY_RED_TARGET) ? Decision.QUICK_BARRAGE : Decision.FULL_CIRCLE;
+    }
+
+    public static Opening worstUnsafeOpening(Snapshot state) {
+        if(state == null)
+            return null;
+        int highest = OWN_OPENING_LIMIT - 1;
+        Opening result = null;
+
+        /* Resolve ties toward red/yellow first because Zig-Zag can lower both. */
+        int[] values = {state.ownRed, state.ownYellow, state.ownBlue, state.ownGreen};
+        Opening[] openings = {Opening.RED, Opening.YELLOW, Opening.BLUE, Opening.GREEN};
+        for(int i = 0; i < values.length; i++) {
+            if(values[i] > highest) {
+                highest = values[i];
+                result = openings[i];
+            }
+        }
+        return result;
+    }
+
+    public static List<String> restorationCandidates(Opening opening) {
+        if(opening == null)
+            return Collections.emptyList();
+        switch(opening) {
+        case RED:
+            return Arrays.asList("paginae/atk/zigzag", "paginae/atk/artevade");
+        case YELLOW:
+            return Arrays.asList("paginae/atk/zigzag", "paginae/atk/regain",
+                                 "paginae/atk/jump", "paginae/atk/artevade");
+        case BLUE:
+            return Arrays.asList("paginae/atk/regain", "paginae/atk/qdodge",
+                                 "paginae/atk/artevade");
+        case GREEN:
+            return Arrays.asList("paginae/atk/sidestep", "paginae/atk/artevade");
+        default:
+            return Collections.emptyList();
+        }
+    }
+
+    private static Decision restorationDecision(Opening opening) {
+        switch(opening) {
+        case GREEN: return Decision.RESTORE_GREEN;
+        case YELLOW: return Decision.RESTORE_YELLOW;
+        case RED: return Decision.RESTORE_RED;
+        case BLUE: return Decision.RESTORE_BLUE;
+        default: throw new IllegalArgumentException("Unknown opening: " + opening);
+        }
+    }
+}

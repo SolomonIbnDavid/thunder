@@ -3,3 +3,4 @@
 # zips them from a Linux runner).
 *.bat text eol=crlf
 *.sh  text eol=lf
+resources/src/local/paginae/add/auto/combat_automation.res/** text eol=crlf

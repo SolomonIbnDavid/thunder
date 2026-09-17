@@ -565,6 +565,17 @@ public class Fightsess extends Widget {
 
     /* XXX: This is a bit ugly, but release message do need to be
      * properly sequenced with use messages in some way. */
+    public boolean triggerAction(int n, Coord2d mc) {
+	if((n < 0) || (n >= actions.length) || (actions[n] == null))
+	    return(false);
+	if(mc == null)
+	    wdgmsg("use", n, 1, 0);
+	else
+	    wdgmsg("use", n, 1, 0, mc.floor(OCache.posres));
+	new Release(n);
+	return(true);
+    }
+
     private class Release implements Runnable {
 	final int n;
 

@@ -36,6 +36,8 @@ import me.ender.GobInfoOpts;
 import me.ender.GobInfoOpts.InfoPart;
 import me.ender.TileMeasure;
 import me.ender.minimap.Minesweeper;
+import thunder.combat.CombatAutomation;
+import thunder.combat.CombatAutomationMenuButton;
 
 import javax.swing.*;
 import java.awt.*;
@@ -937,6 +939,7 @@ public class MenuGrid extends Widget implements KeyBinding.Bindable {
 	makeLocal("paginae/add/auto/aggro_one_pvp", Action.AGGRO_ONE_PVP);
 	makeLocal("paginae/add/auto/aggro_all", Action.AGGRO_ALL);
 	makeLocal("paginae/add/auto/distance_tool_wnd", Action.COMBAT_DISTANCE_TOOL);
+	makeCombatAutomation();
 	makeLocal("paginae/add/auto/mount_horse", Action.BOT_MOUNT_HORSE);
 	makeLocal("paginae/add/auto/fill_cheese_tray", Action.FILL_CHEESE_TRAY);
 	makeLocal("paginae/add/info/plant-growth", Action.TOGGLE_GOB_INFO_PLANTS, () -> GobInfoOpts.enabled(InfoPart.PLANT_GROWTH));
@@ -976,6 +979,16 @@ public class MenuGrid extends Widget implements KeyBinding.Bindable {
 	    thunder.DocWnd.toggle(ctx.context(UI.class), topic, title);
 	    return true;
 	}, null);
+    }
+
+    private void makeCombatAutomation() {
+	Resource.Named res = Resource.local().loadwait("paginae/add/auto/combat_automation").indir();
+	CustomPagina pagina = new CustomPagina(this, res, CombatAutomation::paginaAction,
+		CombatAutomation::enabled);
+	pagina.button(new CombatAutomationMenuButton(pagina, CombatAutomation::paginaAction,
+		CombatAutomation::enabled));
+	synchronized (pmap) {pmap.put(res, pagina);}
+	synchronized (paginae) {paginae.add(pagina);}
     }
 
     private void makeLocal(String path, CustomPaginaAction action, Supplier<Boolean> toggleState) {

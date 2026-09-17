@@ -1,0 +1,13 @@
+#ABUTTON LAYER
+#String pr
+paginae/act/automation
+#uint16 pver
+2
+#String name
+Combat Automation
+#String preq
+
+#uint16 hk
+0
+#uint16 ad length
+0
