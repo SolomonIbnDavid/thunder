@@ -1,5 +1,6 @@
 package thunder.cellar;
 
+import haven.Coord2d;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -68,5 +69,34 @@ public class CellarDiggerRulesTest {
         assertFalse(CellarDiggerRules.groundedBoulderStable(2));
         assertTrue(CellarDiggerRules.groundedBoulderStable(3));
         assertTrue(CellarDiggerRules.groundedBoulderStable(4));
+    }
+
+    @Test public void chipProtocolRequiresTheExactServerMenuOption() {
+        assertEquals(1, CellarDiggerRules.exactMenuOption(
+            new String[]{"Inspect", "Chip stone"}, "Chip stone"));
+        assertEquals(-1, CellarDiggerRules.exactMenuOption(
+            new String[]{"Inspect", "Chip Stone"}, "Chip stone"));
+        assertEquals(-1, CellarDiggerRules.exactMenuOption(null, "Chip stone"));
+    }
+
+    @Test public void boulderDropTargetsTheOpenApproachSide() {
+        Coord2d target = CellarDiggerRules.boulderDropTarget(
+            Coord2d.of(10.0, 20.0), Coord2d.of(13.0, 24.0), 0.0, 10.0, 1);
+        assertEquals(16.0, target.x, 1e-9);
+        assertEquals(28.0, target.y, 1e-9);
+        assertEquals(10.0, target.dist(Coord2d.of(10.0, 20.0)), 1e-9);
+    }
+
+    @Test public void coincidentApproachFallsBackOppositeFacingAndFansRetries() {
+        Coord2d door = Coord2d.of(4.0, 7.0);
+        Coord2d first = CellarDiggerRules.boulderDropTarget(door, door, 0.0, 10.0, 1);
+        Coord2d second = CellarDiggerRules.boulderDropTarget(door, door, 0.0, 10.0, 2);
+        Coord2d third = CellarDiggerRules.boulderDropTarget(door, door, 0.0, 10.0, 3);
+        assertEquals(-6.0, first.x, 1e-9);
+        assertEquals(7.0, first.y, 1e-9);
+        assertTrue(second.y < door.y);
+        assertTrue(third.y > door.y);
+        assertEquals(10.0, second.dist(door), 1e-9);
+        assertEquals(10.0, third.dist(door), 1e-9);
     }
 }

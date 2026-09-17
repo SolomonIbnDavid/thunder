@@ -1,5 +1,7 @@
 package thunder.cellar;
 
+import haven.Coord2d;
+
 import java.util.Locale;
 
 /** Pure resource and safety rules for the Cellar Digger state machine. */
@@ -65,6 +67,37 @@ public final class CellarDiggerRules {
      * ground position has remained unchanged across several client samples. */
     public static boolean groundedBoulderStable(int stableSamples) {
         return stableSamples >= GROUNDED_STABLE_SAMPLES;
+    }
+
+    static int exactMenuOption(String[] options, String wanted) {
+        if(options == null || wanted == null) return -1;
+        for(int i = 0; i < options.length; i++) if(wanted.equals(options[i])) return i;
+        return -1;
+    }
+
+    /** Chooses the ground-right-click used to release a cellar bumling. The
+     * preferred direction points back toward the open side from which the
+     * player approached the cellar door. If excavation has already pulled the
+     * player exactly onto the door, the opposite of the facing direction is the
+     * same fallback. Later attempts fan 30 degrees to either side. */
+    static Coord2d boulderDropTarget(Coord2d door, Coord2d approach,
+                                     double facing, double distance, int attempt) {
+        if(door == null || !(distance > 0.0) || !Double.isFinite(distance) ||
+           !Double.isFinite(facing) || attempt < 1 || attempt > MAX_ATTEMPTS) return null;
+        double dx = approach == null ? 0.0 : approach.x - door.x;
+        double dy = approach == null ? 0.0 : approach.y - door.y;
+        double length = Math.hypot(dx, dy);
+        if(length < 0.25) {
+            dx = -Math.cos(facing);
+            dy = -Math.sin(facing);
+            length = 1.0;
+        }
+        dx /= length;
+        dy /= length;
+        double turn = attempt == 2 ? Math.PI / 6.0 : attempt == 3 ? -Math.PI / 6.0 : 0.0;
+        double cs = Math.cos(turn), sn = Math.sin(turn);
+        return door.add((dx * cs - dy * sn) * distance,
+                        (dx * sn + dy * cs) * distance);
     }
 
     public static DoorOutcome doorOutcome(boolean bumlingVisible, boolean doorVisible,

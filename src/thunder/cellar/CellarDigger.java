@@ -21,7 +21,6 @@ import haven.UI;
 import haven.WItem;
 import haven.Widget;
 import haven.pathfinding.BotMovement;
-import haven.pathfinding.PlacementExecutor;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -45,6 +44,8 @@ public final class CellarDigger {
     private static final long BOULDER_STATE_SETTLE = 2000L;
     private static final long BOULDER_GROUND_TIMEOUT = 9000L;
     private static final double BOULDER_APPROACH_RADIUS = MCache.tilesz.x * 1.25;
+    private static final double BOULDER_DROP_DISTANCE = MCache.tilesz.x * 2.5;
+    private static final double DOOR_DIRECT_CLICK_RADIUS = MCache.tilesz.x * 5.0;
     private static final int MAX_ROCK_DROPS = 600;
 
     private static volatile boolean running;
@@ -180,6 +181,9 @@ public final class CellarDigger {
         private final Bot bot;
         private String phase = "startup";
         private int doorCycles;
+        private Coord2d pendingDoorPosition;
+        private Coord2d pendingDoorApproach;
+        private double pendingDoorFacing;
 
         Run(GameUI gui, Bot bot) {
             this.gui = gui;
@@ -314,13 +318,13 @@ public final class CellarDigger {
             return currentBumling(id);
         }
 
-        /** Place the overhead bumling onto the player's current, known-walkable
-         * position. PlacementExecutor first stages the player beside that anchor,
-         * opens the carried-object placement ghost with a gob-targeted click, and
-         * commits the live ghost. A rejected commit is retried from the next
-         * position the player successfully occupied. */
+        /** Release the overhead bumling with the exact four-argument ground
+         * right-click seen in the successful manual protocol recording. The
+         * server performs its own short carrying walk and grounds the object;
+         * cellar bumlings do not use the placement-ghost/place-message flow. */
         private void placeCarriedBoulder(Gob bumling) throws InterruptedException, Abort {
             long id = bumling.id;
+            ensureBoulderDropPlan();
             for(int attempt = 1; attempt <= CellarDiggerRules.MAX_ATTEMPTS; attempt++) {
                 checkSafety();
                 Gob current = currentBumling(id);
@@ -334,19 +338,20 @@ public final class CellarDigger {
                 Gob player = gui.map.player();
                 if(player == null || player.rc == null)
                     fail("player position is unavailable while placing boulder " + id);
-                Coord2d target = Coord2d.of(player.rc.x, player.rc.y);
+                Coord2d target = CellarDiggerRules.boulderDropTarget(
+                    pendingDoorPosition, pendingDoorApproach, pendingDoorFacing,
+                    BOULDER_DROP_DISTANCE, attempt);
+                if(target == null) fail("could not choose a safe drop point for boulder " + id);
                 setPhase("placing boulder " + (bouldersRemoved + 1));
                 diag("BOULDER-PLACE begin id=%d resid=%s attempt=%d carried-pos=%s target=%s player=%s",
                     id, resid(current), attempt, current.rc, target, player.rc);
 
-                PlacementExecutor.Result result = PlacementExecutor.commitLifted(
-                    gui, bot, current, null, target, current.a,
-                    STEP_TIMEOUT, STEP_TIMEOUT, null);
-                diag("BOULDER-PLACE command id=%d attempt=%d outcome=%s detail=%s target=%s",
-                    id, attempt, result.outcome, result.detail, target);
+                Coord mc = target.floor(OCache.posres);
+                gui.map.wdgmsg("click", Coord.z, mc, 3, 0);
+                diag("BOULDER-PLACE ground-click id=%d attempt=%d mc=%s args=4 target=%s",
+                    id, attempt, mc, target);
 
-                Gob grounded = waitForGroundedBumling(id,
-                    result.sent() ? BOULDER_GROUND_TIMEOUT : 750L);
+                Gob grounded = waitForGroundedBumling(id, BOULDER_GROUND_TIMEOUT);
                 if(grounded != null) {
                     diag("BOULDER-PLACE grounded id=%d resid=%s attempt=%d pos=%s angle=%.6f",
                         id, resid(grounded), attempt, grounded.rc, grounded.a);
@@ -362,6 +367,27 @@ public final class CellarDigger {
                     fail("boulder " + id + " was released without a stable ground position");
             }
             fail("could not place carried boulder " + id + " after three attempts");
+        }
+
+        private void ensureBoulderDropPlan() throws Abort {
+            if(pendingDoorPosition != null) return;
+            Gob door = nearestCellarDoor();
+            Gob player = gui.map.player();
+            if(door == null || player == null || player.rc == null)
+                fail("cellar door or player position is unavailable while planning boulder placement");
+            rememberBoulderDropPlan(door, player);
+        }
+
+        private void rememberBoulderDropPlan(Gob door, Gob player) {
+            pendingDoorPosition = Coord2d.of(door.rc.x, door.rc.y);
+            pendingDoorApproach = Coord2d.of(player.rc.x, player.rc.y);
+            pendingDoorFacing = player.a;
+            Coord2d target = CellarDiggerRules.boulderDropTarget(
+                pendingDoorPosition, pendingDoorApproach, pendingDoorFacing,
+                BOULDER_DROP_DISTANCE, 1);
+            diag("BOULDER-PLACE plan door=%d door-pos=%s approach=%s facing=%.6f target=%s distance=%.3f",
+                door.id, pendingDoorPosition, pendingDoorApproach, pendingDoorFacing,
+                target, BOULDER_DROP_DISTANCE);
         }
 
         private Gob waitForGroundedBumling(long id, long timeout)
@@ -514,15 +540,16 @@ public final class CellarDigger {
                     if(currentBumling(id) == null) continue;
                     fail("Chip stone menu did not appear for boulder " + id);
                 }
-                FlowerMenu.Petal chip = petal(menu, "Chip stone");
-                if(chip == null) {
+                int chip = optionIndex(menu, "Chip stone");
+                if(chip < 0) {
                     diag("CHIP id=%d options=%s missing=Chip stone", id, menuOptions(menu));
-                    menu.choose(null);
+                    menu.wdgmsg("cl", -1, 0);
                     if(currentBumling(id) == null) continue;
                     fail("Chip stone action is unavailable for boulder " + id);
                 }
-                diag("CHIP choose id=%d option=%s action=%d", id, chip.name, completedChips + 1);
-                menu.choose(chip);
+                diag("CHIP protocol id=%d widget-option=%d option=Chip stone mods=0 action=%d",
+                    id, chip, completedChips + 1);
+                menu.wdgmsg("cl", chip, 0);
                 ChipDropResult result = waitForChipAndDropRocks(id);
                 diag("CHIP result id=%d started=%s produced=%s gone=%s", id,
                     result.started, result.produced, result.gone);
@@ -566,6 +593,10 @@ public final class CellarDigger {
                     fail("cellar excavation exceeded the 128-cycle safety limit");
 
                 doorCycles++;
+                Gob player = gui.map.player();
+                if(player == null || player.rc == null)
+                    fail("player position is unavailable before cellar excavation");
+                rememberBoulderDropPlan(door, player);
                 setPhase("excavating cellar cycle " + doorCycles);
                 diag("DOOR click id=%d resid=%s pos=%s cycle=%d attempt=%d", door.id,
                     resid(door), door.rc, doorCycles, attempt);
@@ -719,6 +750,14 @@ public final class CellarDigger {
             for(int attempt = 1; attempt <= CellarDiggerRules.MAX_ATTEMPTS; attempt++) {
                 door = currentCellarDoor(door.id);
                 if(door == null) return false;
+                Gob player = gui.map.player();
+                double distance = player == null || player.rc == null ? Double.POSITIVE_INFINITY :
+                    player.rc.dist(door.rc);
+                if(distance <= DOOR_DIRECT_CLICK_RADIUS) {
+                    diag("DOOR-APPROACH id=%d resid=%s attempt=%d status=DIRECT_PROTOCOL distance=%.3f",
+                        door.id, resid(door), attempt, distance);
+                    return true;
+                }
                 BotMovement.Result result = BotMovement.approach(gui, bot, door, BotMovement.Mode.LAND);
                 diag("DOOR-APPROACH id=%d resid=%s attempt=%d status=%s detail=%s", door.id,
                     resid(door), attempt, result == null ? null : result.status,
@@ -785,17 +824,14 @@ public final class CellarDigger {
             return null;
         }
 
-        private FlowerMenu.Petal petal(FlowerMenu menu, String name) {
-            if(menu.opts != null) {
-                for(FlowerMenu.Petal option : menu.opts) if(name.equals(option.name)) return option;
-            }
-            return null;
+        private int optionIndex(FlowerMenu menu, String name) {
+            return CellarDiggerRules.exactMenuOption(menu == null ? null : menu.options, name);
         }
 
         private String menuOptions(FlowerMenu menu) {
-            if(menu == null || menu.opts == null) return "[]";
+            if(menu == null || menu.options == null) return "[]";
             List<String> names = new ArrayList<>();
-            for(FlowerMenu.Petal option : menu.opts) names.add(option.name);
+            for(String option : menu.options) names.add(option);
             return names.toString();
         }
 
