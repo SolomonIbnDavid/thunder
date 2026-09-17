@@ -85,9 +85,9 @@ public class CombatAutomationRulesTest {
             CombatAutomationRules.decide(state));
     }
 
-    @Test void queuesActionsDuringTheLastHundredMillisecondsOfCooldown() {
-        assertFalse(CombatAutomationRules.cooldownReadyToQueue(10.0, 10.101));
-        assertTrue(CombatAutomationRules.cooldownReadyToQueue(10.0, 10.100));
+    @Test void queuesActionsDuringTheLastFourHundredMillisecondsOfCooldown() {
+        assertFalse(CombatAutomationRules.cooldownReadyToQueue(10.0, 10.401));
+        assertTrue(CombatAutomationRules.cooldownReadyToQueue(10.0, 10.400));
         assertTrue(CombatAutomationRules.cooldownReadyToQueue(10.0, 9.0));
         assertFalse(CombatAutomationRules.cooldownReadyToQueue(Double.NaN, 10.0));
         assertFalse(CombatAutomationRules.cooldownReadyToQueue(10.0, Double.NaN));

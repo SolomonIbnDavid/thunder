@@ -8,7 +8,7 @@ import java.util.Set;
 public final class CombatAutomationRules {
     public static final int ENEMY_RED_TARGET = 55;
     public static final int OWN_OPENING_LIMIT = 40;
-    public static final double ACTION_QUEUE_LEAD = 0.100;
+    public static final double ACTION_QUEUE_LEAD = 0.400;
     public static final double MAX_ACTION_DISTANCE = 55.0;
     public static final int MAX_CONSECUTIVE_ACK_TIMEOUTS = 3;
 
@@ -107,7 +107,7 @@ public final class CombatAutomationRules {
 
     public static boolean cooldownReadyToQueue(double now, double cooldownEnd) {
         return Double.isFinite(now) && Double.isFinite(cooldownEnd) &&
-            cooldownEnd - now <= ACTION_QUEUE_LEAD;
+            cooldownEnd <= now + ACTION_QUEUE_LEAD;
     }
 
     public static boolean shouldRetryMissingAcknowledgement(int consecutiveTimeouts,
