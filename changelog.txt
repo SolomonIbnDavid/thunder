@@ -24,8 +24,9 @@ $size[14]{$u{experimental update on 16.09.2026:}
 * Added experimental Fish Spit-Roast, Log Cutter, and guided Rustroot prospecting tools. These are test features and may still need live-world tuning.
 `
 $size[14]{$u{update on 17.09.2026:}
-* Stack all now keeps item qualities as close together as possible, rebuilds existing stacks, and sorts the finished container into a compact layout. Shift-click the Stack button to merge loose items without rebuilding or sorting. Non-stackable liquid containers are ignored, and failed merges stop instead of repeatedly picking items up and putting them down.
+* Stack all now keeps item qualities as close together as possible, reorganizes existing stacks, and sorts the finished container into a compact layout. Shift-click the Stack button to merge loose items without reorganizing or sorting. Non-stackable liquid containers are ignored, and failed merges stop instead of repeatedly picking items up and putting them down.
 * Large mixed cupboards no longer test every possible pair of full stacks, and stacks already separated into sensible quality bands are left intact on later runs.
+* Full cupboards now reorganize qualities in place by exchanging individual stack contents through one free inventory square. Stack capacity is remembered after the first server rejection, and shorter event-driven waits make large cupboards finish faster.
 `
 $size[14]{$u{update on 02.09.2026:}
 * Inventory and container windows get Stack all / Unstack all buttons next to Sort (Hurricane-style). Stack merges matching items; Unstack unpacks every "stack of" pile. Bindable as "Stack all opened inventories" / "Unstack all opened inventories" in Options -> Shortcuts.
