@@ -36,6 +36,8 @@ public class CFG<T> {
     public static final CFG<Map<String, Integer>> SFX_VOLUMES = new CFG<>("audio.sfx_volumes", new HashMap<>(), new TypeToken<Map<String, Integer>>(){});
     // Default: everything except the gates that commonly sit in defensive perimeters
     // (palisade, brickwall), where a misclick opening the gate is costly.
+    /** Tags of NearestInteract.NEW_DEFAULTS already folded into a saved kinds list; see NearestInteract.applyNewDefaults. */
+    public static final CFG<Set<String>> INTERACT_NEAREST_DEFAULTS_APPLIED = new CFG<>("general.interact_nearest.defaults_applied", new HashSet<>(), new TypeToken<Set<String>>(){});
     public static final CFG<Set<auto.NearestInteract.Kind>> INTERACT_NEAREST_FOR = new CFG<>("general.interact_nearest.kinds", new HashSet<>(EnumSet.complementOf(EnumSet.of(auto.NearestInteract.Kind.GATE_PALISADE, auto.NearestInteract.Kind.GATE_BRICK))), new TypeToken<Set<auto.NearestInteract.Kind>>(){});
     public static final CFG<Boolean> HIDE_TREES = new CFG<>("display.hide_gobs", false);
     public static final CFG<Boolean> SKIP_HIDING_RADAR_TREES = new CFG<>("display.skip_hide_radar_gobs", true);

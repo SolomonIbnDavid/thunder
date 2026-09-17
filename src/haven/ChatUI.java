@@ -934,10 +934,14 @@ public class ChatUI extends Widget {
 	    public final String text;
 	    public final Color col;
 
+	    /** Captured on receipt: format() re-runs on every re-render (e.g. kin rename), so it cannot stamp lazily. */
+	    private final String stamp;
+
 	    public NamedMessage(int from, String text, Color col) {
 		this.from = from;
 		this.text = text;
 		this.col = col;
+		this.stamp = CFG.SHOW_CHAT_TIMESTAMP.get() ? ClientUtils.timestamp() : null;
 	    }
 
 	    public class Rendered implements Indir<Text> {
@@ -968,7 +972,8 @@ public class ChatUI extends Widget {
 	    }
 	    
 	    String format(String name) {
-		return String.format("%s: %s", name, text);
+		String line = String.format("%s: %s", name, text);
+		return (stamp == null) ? line : String.format("[%s] %s", stamp, line);
 	    }
 	    
 	    @Override

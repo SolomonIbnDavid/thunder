@@ -243,7 +243,13 @@ public class TileQualityWnd extends WindowX {
     private void jumpTo(Entry e) {
 	if(ui == null || ui.gui == null || ui.gui.mapfile == null) {return;}
 	MapFile file = ui.gui.mapfile.file;
-	MapFile.GridInfo info = file.gridinfo.get(e.gridId);
+	MapFile.GridInfo info;
+	file.lock.readLock().lock();
+	try {
+	    info = file.gridinfo.get(e.gridId);
+	} finally {
+	    file.lock.readLock().unlock();
+	}
 	if(info == null) {return;}
 	int tx = e.tileIdx % cmaps.x;
 	int ty = e.tileIdx / cmaps.x;

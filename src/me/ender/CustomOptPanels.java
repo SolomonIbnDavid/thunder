@@ -134,7 +134,7 @@ public class CustomOptPanels {
 	panel.add(new CFGBox("Show archery range circle", CFG.SHOW_ARCHERY_RADIUS, "While someone holds an aiming pose (bow, sling or thrown spear), shows a red circle of their weapon's reach. Toggling applies from the next aim."), x, y);
 
 	y += STEP;
-	panel.add(new CFGBox("Block attacks on tamed horses", CFG.BLOCK_ATTACK_TAMED_HORSE, "Prevents the attack-cursor click from being sent when the target is a tamed horse - useful to avoid hitting party members' horses during hunts."), x, y);
+	panel.add(new CFGBox("Block attacks on tamed horses", CFG.BLOCK_ATTACK_TAMED_HORSE, "Prevents the attack-cursor click from being sent when the target is a tamed horse, and skips tamed horses for the aggro-closest hotkeys - useful to avoid hitting party members' horses during hunts."), x, y);
 
 	y += STEP;
 	panel.add(new CFGBox("Always mark current target", CFG.ALWAYS_MARK_COMBAT_TARGET , "Usually current target only marked when there's more than one"), x, y);

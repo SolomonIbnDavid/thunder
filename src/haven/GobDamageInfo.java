@@ -25,12 +25,7 @@ public class GobDamageInfo extends GobInfo {
 	super(owner);
 	up(12);
 	center = new Pair<>(0.5, 1.0);
-	if(gobDamage.containsKey(gob.id)) {
-	    damage = gobDamage.get(gob.id);
-	} else {
-	    damage = new DamageVO();
-	    gobDamage.put(gob.id, damage);
-	}
+	damage = record(gob.id);
     }
     
     @Override
@@ -79,11 +74,28 @@ public class GobDamageInfo extends GobInfo {
 	return gobDamage.containsKey(gob.id);
     }
     
+    /**
+     * The damage record for a gob id, created if absent. Atomic on purpose:
+     * "Clear damage" removes ids on the UI thread while gobs are constructed
+     * on the session thread (gob re-entering view, or a damage number
+     * arriving for a cleared gob). A containsKey/get pair here handed
+     * render() a null record when the removal landed in between.
+     * Never returns null.
+     */
+    static DamageVO record(long id) {
+	return gobDamage.computeIfAbsent(id, k -> new DamageVO());
+    }
+
+    /** Drop the record for a gob id; the next record(id) starts empty. */
+    static void forget(long id) {
+	gobDamage.remove(id);
+    }
+
     private static void clearDamage(Gob gob, long id) {
 	if(gob != null) {
 	    gob.clearDmg();
 	}
-	gobDamage.remove(id);
+	forget(id);
     }
     
     public static void clearPlayerDamage(GameUI gui) {
@@ -98,7 +110,7 @@ public class GobDamageInfo extends GobInfo {
 	}
     }
     
-    private static class DamageVO {
+    static class DamageVO {
 	int shp = 0, hhp = 0, armor = 0;
 	
 	boolean isEmpty() {return shp == 0 && hhp == 0 && armor == 0;}

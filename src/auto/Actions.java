@@ -224,11 +224,11 @@ public class Actions {
 	
 	PositionHelper.mapPosOfMouse(gui)
 	    .thenAccept(mc -> aggro(gui, getNearestToPoint(gui, 1, mc, 33,
-		gobIsAny(GobTag.AGGRO_TARGET, GobTag.IN_COMBAT), filter, GobHelper::isNotFriendlySteed)));
+		gobIsAny(GobTag.AGGRO_TARGET, GobTag.IN_COMBAT), filter, GobHelper::isNotFriendlySteed, GobHelper::isNotBlockedTamedHorse)));
     }
     
     public static void aggroAll(GameUI gui) {
-	aggro(gui, getNearest(gui, Integer.MAX_VALUE, 165, gobIs(GobTag.PLAYER), gobIs(GobTag.AGGRO_TARGET), GobHelper::isNotFriendlySteed));
+	aggro(gui, getNearest(gui, Integer.MAX_VALUE, 165, gobIs(GobTag.PLAYER), gobIs(GobTag.AGGRO_TARGET), GobHelper::isNotFriendlySteed, GobHelper::isNotBlockedTamedHorse));
     }
     
     public static void reAggroKritter(GameUI gui, long gobId) {
