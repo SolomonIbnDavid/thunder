@@ -125,6 +125,7 @@ public class FishSpitRoastBot {
         private final Area fire;
         private final Area output;
         private final int batch;
+        private BotMovement.Result lastApproachResult;
 
         Run(GameUI gui, Bot bot, Area input, Area fire, Area output, int batch) {
             this.gui = gui;
@@ -173,7 +174,7 @@ public class FishSpitRoastBot {
             // Turned/Carved before the first loadFish ever runs.
             Gob spitGob = fireGob(spit);
             if (spitGob == null || spitOverlay(spit) == null) {fail("no roasting spit found in fire area.");}
-            if (!approachAndSettle(spitGob)) {fail("could not reach fire target.");}
+            if (!approachAndSettle(spitGob)) {fail(approachFailure("fire target"));}
 
             int completed = 0;
             while (completed < batch) {
@@ -312,7 +313,7 @@ public class FishSpitRoastBot {
                     retrieveFromContainer(gob);
                 }
             }
-            if (!reached) {fail("could not reach input target.");}
+            if (!reached) {fail(approachFailure("input target"));}
             return countRawFish();
         }
 
@@ -532,7 +533,7 @@ public class FishSpitRoastBot {
             Gob fire = fireGob(spit);
             Gob.Overlay ol = spitOverlay(spit);
             if (fire == null || ol == null) {fail("no roasting spit found in fire area.");}
-            if (!approachAndSettle(fire)) {fail("could not reach fire target.");}
+            if (!approachAndSettle(fire)) {fail(approachFailure("fire target"));}
             WItem fish = firstRawFish();
             if (fish == null) {fail("no raw fish available.");}
             if (gui.hand() != null) {returnHeldToInventory(gui);}
@@ -704,8 +705,16 @@ public class FishSpitRoastBot {
         // ---- Navigation / windows ---------------------------------------------
 
         private boolean approachGob(Gob gob) throws InterruptedException {
-            BotMovement.Result r = BotMovement.approach(gui, bot, gob, BotMovement.Mode.LAND);
-            return r != null && r.status == BotMovement.Status.READY_TO_INTERACT;
+            lastApproachResult = BotMovement.approach(gui, bot, gob, BotMovement.Mode.LAND);
+            return lastApproachResult != null && lastApproachResult.status == BotMovement.Status.READY_TO_INTERACT;
+        }
+
+        private String approachFailure(String target) {
+            BotMovement.Result result = lastApproachResult;
+            if (result == null) {return "could not reach " + target + ".";}
+            String detail = result.detail == null ? "" : result.detail.trim();
+            return "could not reach " + target + " (" + result.status
+                    + (detail.isEmpty() ? "" : ": " + detail) + ").";
         }
 
         /** Approach then wait for the server-driven Moving attribute to clear so the

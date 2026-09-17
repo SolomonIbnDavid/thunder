@@ -195,7 +195,8 @@ public final class InteractionGoals {
       // Pick the nearest reachable side by actual route length. Clearance is
       // already enforced as a legality constraint above; its soft planning
       // penalty must not make a substantially longer approach win.
-      double[] costs = LocalPlanner.occupancyRouteLengths(from, occ);
+      double agentRadius = geom != null && geom.enabled() ? LocalPlanner.bodyExtent(geom.playerBody) : 0.0;
+      double[] costs = LocalPlanner.occupancyRouteLengths(from, occ, agentRadius);
       List<Candidate> reachable = new ArrayList<Candidate>();
       for (int i = 0; i < legal.size(); i++) {
          Candidate c = legal.get(i);
@@ -1055,7 +1056,7 @@ public final class InteractionGoals {
    }
 
    private static NavPlan occupancyToPose(Coord2d from, Coord2d pose, Coord2d approach, Geometry geom, OccupancyGrid use) {
-      NavPlan plan = occupancyApproach(from, approach, use);
+      NavPlan plan = occupancyApproach(from, approach, geom, use);
       if (plan == null || plan.status == NavPlanStatus.FAILED || plan.status == NavPlanStatus.PARTIAL || plan.status == NavPlanStatus.CLIPPED) {
          return plan;
       }
@@ -1068,8 +1069,9 @@ public final class InteractionGoals {
       return plan;
    }
 
-   private static NavPlan occupancyApproach(Coord2d from, Coord2d approach, OccupancyGrid occ) {
-      return LocalPlanner.planFromOccupancy(from, approach, false, 0.0, occ, 0, new PlanningTrace());
+   private static NavPlan occupancyApproach(Coord2d from, Coord2d approach, Geometry geom, OccupancyGrid occ) {
+      double agentRadius = geom != null && geom.enabled() ? LocalPlanner.bodyExtent(geom.playerBody) : 0.0;
+      return LocalPlanner.planFromOccupancy(from, approach, false, agentRadius, occ, 0, new PlanningTrace());
    }
 
    private static boolean poseReached(NavPlan plan, Coord2d pose, InteractionSpec spec, OccupancyGrid occ) {
@@ -1087,7 +1089,10 @@ public final class InteractionGoals {
       }
       List<Coord2d> route = plan.smoothedRoute;
       if (route != null) {
-         for (int i = 0; i < route.size(); i++) {
+         // Interactions can leave the authoritative player position slightly
+         // inside the target footprint. Permit that first point only; every
+         // traversed point must still remain outside the target.
+         for (int i = 1; i < route.size(); i++) {
             Coord2d p = (Coord2d) route.get(i);
             if (insideTarget(p, spec)) {
                return false;

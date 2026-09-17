@@ -241,7 +241,7 @@ public final class LocalPlanner {
     * {@link #planFromOccupancy} with radius 0.
     */
    public static double[] occupancyCosts(Coord2d start, OccupancyGrid occ) {
-      return occupancyDistances(start, occ, true);
+      return occupancyDistances(start, occ, true, 0.0);
    }
 
    /**
@@ -250,11 +250,20 @@ public final class LocalPlanner {
     * near an obstacle. Dilated/body-blocked cells remain impassable.
     */
    public static double[] occupancyRouteLengths(Coord2d start, OccupancyGrid occ) {
-      return occupancyDistances(start, occ, false);
+      return occupancyRouteLengths(start, occ, 0.0);
+   }
+
+   /**
+    * Shortest legal route length with a start pocket sized for the agent.
+    * This mirrors {@link #planFromOccupancy}'s overlap-egress behavior so
+    * approach scoring does not reject every pose before executable planning.
+    */
+   public static double[] occupancyRouteLengths(Coord2d start, OccupancyGrid occ, double agentRadius) {
+      return occupancyDistances(start, occ, false, agentRadius);
    }
 
    private static double[] occupancyDistances(Coord2d start, OccupancyGrid occ,
-                                               boolean penalizeLowClearance) {
+                                               boolean penalizeLowClearance, double agentRadius) {
       if (start == null || occ == null || occ.w <= 0 || occ.h <= 0 || occ.occ == null) {
          return new double[0];
       }
@@ -278,7 +287,7 @@ public final class LocalPlanner {
          Arrays.fill(miss, Double.POSITIVE_INFINITY);
          return miss;
       }
-      int dil = dilationCells(0.0);
+      int dil = dilationCells(agentRadius);
       if (penalizeLowClearance) {
          applyClearanceCost(grid.cost, solid, w, h);
       }

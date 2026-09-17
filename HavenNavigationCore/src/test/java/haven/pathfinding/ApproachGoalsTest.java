@@ -263,6 +263,46 @@ public class ApproachGoalsTest {
    }
 
    @Test
+   void postRoastFireOverlapEscapesToAStableApproachPort() {
+      Coord2d[] fire = rect(28.5, 17.5, 39.5, 28.5);
+      List<Coord2d[]> body = Collections.singletonList(new Coord2d[]{
+         Coord2d.of(-4.237844593590125, -0.2016759791658842),
+         Coord2d.of(-0.2016759791658842, 4.237844593590125),
+         Coord2d.of(4.237844593590125, 0.2016759791658842),
+         Coord2d.of(0.2016759791658842, -4.237844593590125)
+      });
+      boolean[] solid = new boolean[W * H];
+      LocalPlanner.rasterPolygon(solid, ORIGIN, W, H, fire, LocalPlanner.OVERLAP);
+      boolean[] dilated = new boolean[W * H];
+      LocalPlanner.rasterPolygon(dilated, ORIGIN, W, H, fire, body);
+      Coord2d from = Coord2d.of(29.251953125, 17.7685546875);
+      Coord start = Coord.of((int)Math.floor(from.x / CELL), (int)Math.floor(from.y / CELL));
+      OccupancyGrid occ = OccupancyGrid.capture(
+         ORIGIN, W, H, CELL, solid, dilated, dilated, start, start, start, Collections.<Coord>emptyList()
+      );
+      InteractionSpec target = new InteractionSpec(
+         "pow", Coord2d.of(34.0, 23.0), Coord2d.of(5.5, 5.5), InteractionSpec.ALL_SIDES,
+         0.5, 16.5, 0, null, "", Collections.singletonList(fire), CollisionGeom.FALLBACK
+      ).withStablePorts();
+      InteractionGoals.Geometry geom = new InteractionGoals.Geometry(Collections.singletonList(fire), body);
+
+      Assertions.assertTrue(LocalPlanner.bodyHitsAny(from, body, Collections.singletonList(fire), null),
+         "captured post-carve position overlaps the fireplace footprint");
+      ApproachGoals.Result result = ApproachGoals.plan(from, target, occ, geom);
+
+      Assertions.assertEquals(ApproachGoals.Status.POSE_OK, result.status,
+         result.pose == null ? "" : result.pose.dominantReject() + " " + result.pose.rejectCounts);
+      Assertions.assertTrue(result.pose.plan.smoothedRoute.size() >= 2,
+         "the approach must first leave the overlapping start pocket");
+      Assertions.assertTrue(result.pose.plan.smoothedRoute.get(0).dist(from) <= LocalPlanner.CELL,
+         "the route starts at the captured post-carve position");
+      Assertions.assertFalse(LocalPlanner.bodyHitsAny(
+         result.pose.selected.world, body, Collections.singletonList(fire), null
+      ));
+      Assertions.assertTrue(InteractionGoals.routePolygonClear(result.pose.plan.smoothedRoute, target, geom));
+   }
+
+   @Test
    void deskBesideWallUsesTheOpenSide() {
       Coord2d[][] solids = new Coord2d[][]{wall(), desk()};
       OccupancyGrid occ = raster(solids);
