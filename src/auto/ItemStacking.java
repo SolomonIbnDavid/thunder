@@ -95,6 +95,35 @@ public final class ItemStacking {
     }
 
     /**
+     * Marks existing stacks whose quality ranges overlap. Stacks in separated
+     * quality bands are already organized and should not be unpacked again.
+     */
+    public static boolean[] rangesNeedingRebuild(double[] mins, double[] maxs) {
+	if(mins == null || maxs == null || mins.length != maxs.length)
+	    return new boolean[0];
+	boolean[] rebuild = new boolean[mins.length];
+	for(int i = 0; i < mins.length; i++) {
+	    if(!Double.isFinite(mins[i]) || !Double.isFinite(maxs[i]))
+		continue;
+	    for(int j = i + 1; j < mins.length; j++) {
+		if(!Double.isFinite(mins[j]) || !Double.isFinite(maxs[j]))
+		    continue;
+		boolean separated = maxs[i] <= mins[j] || maxs[j] <= mins[i];
+		if(!separated) {
+		    rebuild[i] = true;
+		    rebuild[j] = true;
+		}
+	    }
+	}
+	return rebuild;
+    }
+
+    /** On a failed same-type merge, the larger destination is full. */
+    public static boolean failedSourceIsAlsoFull(int sourceAmount, int destinationAmount) {
+	return sourceAmount >= destinationAmount;
+    }
+
+    /**
      * Indices of the two smallest amounts in {@code amounts}. Null if fewer
      * than two entries. Ties keep earlier indices, matching a stable
      * smallest-then-next-smallest pick.
