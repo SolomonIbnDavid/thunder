@@ -1,5 +1,6 @@
 $size[14]{$u{update on 17.09.2026:}
 * Stack all now keeps item qualities as close together as possible, rebuilds existing stacks, and sorts the finished container into a compact layout. Shift-click the Stack button to merge loose items without rebuilding or sorting. Non-stackable liquid containers are ignored, and failed merges stop instead of repeatedly picking items up and putting them down.
+* Large mixed cupboards no longer test every possible pair of full stacks, and stacks already separated into sensible quality bands are left intact on later runs.
 `
 $size[14]{$u{update on 02.09.2026:}
 * Inventory and container windows get Stack all / Unstack all buttons next to Sort (Hurricane-style). Stack merges matching items; Unstack unpacks every "stack of" pile. Bindable as "Stack all opened inventories" / "Unstack all opened inventories" in Options -> Shortcuts.
