@@ -28,7 +28,7 @@ public enum Action {
     FILTER(GameUI::toggleFilter, "Show item filter"),
     SEARCH_GOBS(GameUI::toggleGobSearch, "Search gobs by resource ID", "Opens a window that highlights gobs in render distance whose resource ID contains the entered substring."),
     SORT_INVENTORY(InventorySorter::sortAll, "Sort all opened inventories"),
-    STACK_INVENTORIES(StackAllItems::stackOpened, "Stack and sort all opened inventories", "Rebuilds stacks by closest quality, then sorts every open inventory and container."),
+    STACK_INVENTORIES(StackAllItems::stackOpened, "Stack and sort all opened inventories", "Merges partial piles, reorganizes stack contents in place by closest quality, then sorts every open inventory and container."),
     UNSTACK_INVENTORIES(UnstackAllItems::unstackOpened, "Unstack all opened inventories", "Unpacks every stack-of pile in open inventories and containers."),
     TOGGLE_GOB_INFO(CFG.DISPLAY_GOB_INFO, "Display info", "Display crop/tree growth and object health overlay."),
     TOGGLE_GOB_HITBOX(Hitbox::toggle, "Display hitboxes"),

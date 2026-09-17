@@ -94,33 +94,62 @@ public final class ItemStacking {
 	return Math.max(maxA, maxB) - Math.min(minA, minB);
     }
 
-    /**
-     * Marks existing stacks whose quality ranges overlap. Stacks in separated
-     * quality bands are already organized and should not be unpacked again.
-     */
-    public static boolean[] rangesNeedingRebuild(double[] mins, double[] maxs) {
-	if(mins == null || maxs == null || mins.length != maxs.length)
-	    return new boolean[0];
-	boolean[] rebuild = new boolean[mins.length];
-	for(int i = 0; i < mins.length; i++) {
-	    if(!Double.isFinite(mins[i]) || !Double.isFinite(maxs[i]))
-		continue;
-	    for(int j = i + 1; j < mins.length; j++) {
-		if(!Double.isFinite(mins[j]) || !Double.isFinite(maxs[j]))
-		    continue;
-		boolean separated = maxs[i] <= mins[j] || maxs[j] <= mins[i];
-		if(!separated) {
-		    rebuild[i] = true;
-		    rebuild[j] = true;
-		}
-	    }
-	}
-	return rebuild;
-    }
-
     /** On a failed same-type merge, the larger destination is full. */
     public static boolean failedSourceIsAlsoFull(int sourceAmount, int destinationAmount) {
 	return sourceAmount >= destinationAmount;
+    }
+
+    /**
+     * Find the largest quality inversion between stacks that are already in
+     * low-to-high average-quality order. The result is
+     * {lower stack, high item, higher stack, low item}; swapping those two
+     * items strictly improves the quality bands without changing stack sizes.
+     */
+    public static int[] nextQualitySwap(double[][] qualities) {
+	if(qualities == null || qualities.length < 2)
+	    return null;
+	int[] best = null;
+	double bestGap = 0;
+	for(int lower = 0; lower < qualities.length; lower++) {
+	    double[] lowStack = qualities[lower];
+	    if(lowStack == null)
+		continue;
+	    int highItem = finiteMaxIndex(lowStack);
+	    if(highItem < 0)
+		continue;
+	    for(int higher = lower + 1; higher < qualities.length; higher++) {
+		double[] highStack = qualities[higher];
+		if(highStack == null)
+		    continue;
+		int lowItem = finiteMinIndex(highStack);
+		if(lowItem < 0)
+		    continue;
+		double gap = lowStack[highItem] - highStack[lowItem];
+		if(gap > bestGap) {
+		    bestGap = gap;
+		    best = new int[] {lower, highItem, higher, lowItem};
+		}
+	    }
+	}
+	return best;
+    }
+
+    private static int finiteMinIndex(double[] values) {
+	int best = -1;
+	for(int i = 0; i < values.length; i++) {
+	    if(Double.isFinite(values[i]) && (best < 0 || values[i] < values[best]))
+		best = i;
+	}
+	return best;
+    }
+
+    private static int finiteMaxIndex(double[] values) {
+	int best = -1;
+	for(int i = 0; i < values.length; i++) {
+	    if(Double.isFinite(values[i]) && (best < 0 || values[i] > values[best]))
+		best = i;
+	}
+	return best;
     }
 
     /**

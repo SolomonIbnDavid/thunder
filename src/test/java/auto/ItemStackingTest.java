@@ -82,20 +82,60 @@ public class ItemStackingTest {
     }
 
     @Test
-    void rebuildsOnlyOverlappingQualityRanges() {
-	assertArrayEquals(new boolean[] {true, true, false},
-	    ItemStacking.rangesNeedingRebuild(
-		new double[] {10, 15, 31},
-		new double[] {20, 25, 40}));
-	assertArrayEquals(new boolean[] {false, false, false},
-	    ItemStacking.rangesNeedingRebuild(
-		new double[] {10, 20, 30},
-		new double[] {20, 30, 40}));
-    }
-
-    @Test
     void failedEqualPilesAreBothKnownFull() {
 	assertTrue(ItemStacking.failedSourceIsAlsoFull(4, 4));
 	assertFalse(ItemStacking.failedSourceIsAlsoFull(2, 4));
+    }
+
+    @Test
+    void plansTheLargestInPlaceQualitySwap() {
+	assertArrayEquals(new int[] {0, 1, 2, 0},
+	    ItemStacking.nextQualitySwap(new double[][] {
+		{10, 40},
+		{20, 21},
+		{15, 30}
+	    }));
+	assertNull(ItemStacking.nextQualitySwap(new double[][] {
+		{10, 20},
+		{20, 30},
+		{31, 40}
+	    }));
+    }
+
+    @Test
+    void qualitySwapIgnoresUnknownQualities() {
+	assertArrayEquals(new int[] {0, 1, 1, 1},
+	    ItemStacking.nextQualitySwap(new double[][] {
+		{Double.NaN, 30},
+		{Double.NaN, 20}
+	    }));
+	assertNull(ItemStacking.nextQualitySwap(new double[][] {
+		{Double.NaN},
+		{Double.NaN}
+	    }));
+    }
+
+    @Test
+    void repeatedQualitySwapsConvergeToSeparateBands() {
+	double[][] qualities = {
+	    {10, 60, 30, 40},
+	    {55, 15, 45, 25},
+	    {20, 50, 35, 65}
+	};
+	int swaps = 0;
+	int[] move;
+	while((move = ItemStacking.nextQualitySwap(qualities)) != null) {
+	    double held = qualities[move[0]][move[1]];
+	    qualities[move[0]][move[1]] = qualities[move[2]][move[3]];
+	    qualities[move[2]][move[3]] = held;
+	    assertTrue(++swaps < 50, "quality planner did not converge");
+	}
+	for(int lower = 0; lower < qualities.length; lower++) {
+	    for(int higher = lower + 1; higher < qualities.length; higher++) {
+		for(double lowBand : qualities[lower])
+		    for(double highBand : qualities[higher])
+			assertTrue(lowBand <= highBand);
+	    }
+	}
     }
 }
