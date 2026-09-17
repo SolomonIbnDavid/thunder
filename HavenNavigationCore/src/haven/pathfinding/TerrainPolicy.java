@@ -5,9 +5,14 @@ public final class TerrainPolicy {
    }
 
    public static boolean terrainBlocks(String tileName) {
-      return tileName == null
-         ? false
-         : tileName.contains("tiles/nil") || tileName.contains("tiles/cave") || tileName.contains("tiles/deep") || tileName.contains("tiles/rocks/");
+      if (tileName == null) {
+         return false;
+      }
+      return tileName.contains("tiles/nil")
+         || tileName.contains("tiles/cavewall")
+         || tileName.contains("tiles/caveobsidian")
+         || tileName.contains("tiles/deep")
+         || tileName.contains("tiles/rocks/");
    }
 
    public static boolean isWaterTile(String tileName) {
@@ -34,6 +39,12 @@ public final class TerrainPolicy {
          return !waterTravelLegal(mob);
       }
       return terrainBlocks(tileName);
+   }
+
+   /** Broken ridge geometry is a server-side wall even when the underlying
+    * terrain resource is otherwise walkable cave or surface floor. */
+   public static boolean terrainBlocks(String tileName, haven.nav.MobilityProfile mob, boolean brokenRidge) {
+      return brokenRidge || terrainBlocks(tileName, mob);
    }
 
    /** A strict boating corridor: unknown tiles, shores, and ordinary land are
