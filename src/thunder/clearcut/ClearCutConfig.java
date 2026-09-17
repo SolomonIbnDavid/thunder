@@ -12,6 +12,11 @@ public final class ClearCutConfig {
     public static final int TREES_PER_HAUL = 4;
     public static final int SURVEY_LANE_TILES = 20;
     public static final int MAX_ATTEMPTS = 3;
+    public static final int MAX_PRODUCT_ACTIONS_PER_SOURCE = 100;
+    public static final int PRODUCT_MENU_ATTEMPTS = 1;
+    public static final long PRODUCT_MENU_TIMEOUT_MS = 3000L;
+    public static final long PRODUCT_ACTION_TIMEOUT_MS = 10000L;
+    public static final int MAX_LOG_PLACEMENT_ANCHORS = 4;
 
     public final Area clearCut;
     public final Area water;

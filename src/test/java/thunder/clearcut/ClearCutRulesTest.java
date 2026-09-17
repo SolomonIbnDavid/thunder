@@ -50,9 +50,17 @@ public class ClearCutRulesTest {
         assertTrue(ClearCutRules.isTreeProductAction("Take bark"));
         assertTrue(ClearCutRules.isTreeProductAction("Pick leaf"));
         assertTrue(ClearCutRules.isTreeProductAction("Pick apple"));
+        assertTrue(ClearCutRules.isTreeProductAction("Pick cone"));
         assertFalse(ClearCutRules.isTreeProductAction("Pick up"));
+        assertFalse(ClearCutRules.isTreeProductAction("Pick mushroom"));
+        assertFalse(ClearCutRules.isTreeProductAction("Pick sprout"));
         assertFalse(ClearCutRules.isTreeProductAction("Chop"));
         assertTrue(ClearCutRules.productPriority("Take bough") < ClearCutRules.productPriority("Pick apple"));
+        assertEquals(100, ClearCutConfig.MAX_PRODUCT_ACTIONS_PER_SOURCE);
+        assertEquals(1, ClearCutConfig.PRODUCT_MENU_ATTEMPTS);
+        assertEquals(3000L, ClearCutConfig.PRODUCT_MENU_TIMEOUT_MS);
+        assertEquals(10000L, ClearCutConfig.PRODUCT_ACTION_TIMEOUT_MS);
+        assertEquals(4, ClearCutConfig.MAX_LOG_PLACEMENT_ANCHORS);
     }
 
     @Test public void decodesAllSixCartSlots() {

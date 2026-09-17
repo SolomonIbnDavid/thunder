@@ -23,7 +23,9 @@ public final class ExactPlacementPlanner {
         /** Preserve the generic organizer's historical player-facing edge order. */
         FRONT_EDGE,
         /** For long objects, fill across the narrow axis before starting the next row. */
-        SIDE_BY_SIDE
+        SIDE_BY_SIDE,
+        /** Fill fixed rows from the edge farthest from the source, advancing toward it. */
+        SIDE_BY_SIDE_BACK_TO_FRONT
     }
 
     private ExactPlacementPlanner() {}
@@ -150,14 +152,35 @@ public final class ExactPlacementPlanner {
         Coord2d source = entrance == null ? Coord2d.of(areaMinX, areaMinY) : entrance;
         double xPitch = footprint.width() + gap;
         double yPitch = footprint.height() + gap;
-        List<Double> xs = order == FillOrder.SIDE_BY_SIDE
-            ? axisShelvesFromSide(lowX, highX, xPitch, source.x > (areaMinX + areaMaxX) * 0.5)
-            : axisShelves(lowX, highX, xPitch);
-        List<Double> ys = order == FillOrder.SIDE_BY_SIDE
-            ? axisShelvesFromSide(lowY, highY, yPitch, source.y > (areaMinY + areaMaxY) * 0.5)
-            : axisShelves(lowY, highY, yPitch);
+        boolean fixedRows = order == FillOrder.SIDE_BY_SIDE_BACK_TO_FRONT;
+        boolean sideBySide = order == FillOrder.SIDE_BY_SIDE;
+        double centerX = (areaMinX + areaMaxX) * 0.5;
+        double centerY = (areaMinY + areaMaxY) * 0.5;
+        boolean depthAlongX = Math.abs(source.x - centerX) >= Math.abs(source.y - centerY);
+        boolean sourceXHigh = source.x > centerX;
+        boolean sourceYHigh = source.y > centerY;
+        List<Double> xs;
+        List<Double> ys;
+        if(fixedRows) {
+            // Rows run parallel to the nearest edge of the clear-cut area. Start
+            // at the opposite edge, fill one row from its low-coordinate end,
+            // then advance one footprint toward the clear-cut area.
+            xs = depthAlongX
+                ? axisGridFromSide(lowX, highX, xPitch, !sourceXHigh)
+                : axisGridFromSide(lowX, highX, xPitch, false);
+            ys = depthAlongX
+                ? axisGridFromSide(lowY, highY, yPitch, false)
+                : axisGridFromSide(lowY, highY, yPitch, !sourceYHigh);
+        } else {
+            xs = sideBySide
+                ? axisShelvesFromSide(lowX, highX, xPitch, sourceXHigh)
+                : axisShelves(lowX, highX, xPitch);
+            ys = sideBySide
+                ? axisShelvesFromSide(lowY, highY, yPitch, sourceYHigh)
+                : axisShelves(lowY, highY, yPitch);
+        }
         for(double x : xs) for(double y : ys) addCandidate(candidates, Coord2d.of(x, y));
-        if(obstacles != null) for(Shape obstacle : obstacles) {
+        if(!fixedRows && obstacles != null) for(Shape obstacle : obstacles) {
             if(obstacle == null || obstacle.bounds == null) continue;
             addContactCandidates(candidates, footprintAtOrigin, obstacle,
                 lowX, highX, lowY, highY, gap);
@@ -168,7 +191,10 @@ public final class ExactPlacementPlanner {
             Shape placed = footprintAtOrigin.move(anchor);
             if(!placed.inside(tiles, tileSize, 0.0)) continue;
             boolean blocked = false;
-            if(obstacles != null) for(Shape obstacle : obstacles) if(placed.conflicts(obstacle, gap)) {
+            double collisionGap = fixedRows
+                ? gap - PlacementGeometry.SERVER_POSITION_TOLERANCE
+                : gap;
+            if(obstacles != null) for(Shape obstacle : obstacles) if(placed.conflicts(obstacle, collisionGap)) {
                 blocked = true;
                 break;
             }
@@ -220,24 +246,33 @@ public final class ExactPlacementPlanner {
         double lowX = areaMinX - footprint.minX, highX = areaMaxX - footprint.maxX;
         double lowY = areaMinY - footprint.minY, highY = areaMaxY - footprint.maxY;
         boolean nearXHigh = source.x > centerX, nearYHigh = source.y > centerY;
-        boolean xPrimary = fillOrder == FillOrder.SIDE_BY_SIDE
-            ? footprint.width() >= footprint.height()
-            : Math.abs(source.x - centerX) >= Math.abs(source.y - centerY);
+        boolean sideBySide = fillOrder == FillOrder.SIDE_BY_SIDE;
+        boolean backToFront = fillOrder == FillOrder.SIDE_BY_SIDE_BACK_TO_FRONT;
+        boolean xPrimary = backToFront
+            ? Math.abs(source.x - centerX) >= Math.abs(source.y - centerY)
+            : sideBySide
+                ? footprint.width() >= footprint.height()
+                : Math.abs(source.x - centerX) >= Math.abs(source.y - centerY);
 
         Comparator<Coord2d> order = Comparator
-            .comparingDouble((Coord2d c) -> xPrimary
-                ? inward(c.x, lowX, highX, nearXHigh)
-                : inward(c.y, lowY, highY, nearYHigh))
-            .thenComparingDouble(c -> xPrimary
-                ? inward(c.y, lowY, highY, nearYHigh)
-                : inward(c.x, lowX, highX, nearXHigh))
+            .comparingDouble((Coord2d c) -> {
+                double depth = xPrimary
+                    ? inward(c.x, lowX, highX, nearXHigh)
+                    : inward(c.y, lowY, highY, nearYHigh);
+                return backToFront ? -depth : depth;
+            })
+            .thenComparingDouble(c -> backToFront
+                ? (xPrimary ? c.y : c.x)
+                : (xPrimary
+                    ? inward(c.y, lowY, highY, nearYHigh)
+                    : inward(c.x, lowX, highX, nearXHigh)))
             .thenComparingDouble(c -> c.y)
             .thenComparingDouble(c -> c.x);
         legal.sort(order);
     }
 
-    private static double inward(double coordinate, double low, double high, boolean farIsHigh) {
-        return farIsHigh ? high - coordinate : coordinate - low;
+    private static double inward(double coordinate, double low, double high, boolean nearIsHigh) {
+        return nearIsHigh ? high - coordinate : coordinate - low;
     }
 
     private static List<Coord2d[]> copyPolygons(Collection<Coord2d[]> source, Coord2d delta,
@@ -294,6 +329,21 @@ public final class ExactPlacementPlanner {
             }
         }
         if(last != first) out.add(last);
+        return out;
+    }
+
+    /** Regular slots from one edge only; unlike contact packing, this never
+     * creates a new slot relative to an arbitrarily positioned obstacle. */
+    private static List<Double> axisGridFromSide(double low, double high, double pitch,
+                                                  boolean fromHigh) {
+        List<Double> out = new ArrayList<>();
+        out.add(fromHigh ? high : low);
+        if(pitch <= 0.0) return out;
+        if(fromHigh) {
+            for(double value = high - pitch; value >= low; value -= pitch) out.add(value);
+        } else {
+            for(double value = low + pitch; value <= high; value += pitch) out.add(value);
+        }
         return out;
     }
 

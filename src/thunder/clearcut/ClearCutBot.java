@@ -157,6 +157,7 @@ public final class ClearCutBot {
         private final Map<Long, GobRef> discoveredCarts = new LinkedHashMap<>();
         private final Map<Long, ExactPlacementPlanner.Shape> observedDropObstacles = new LinkedHashMap<>();
         private final Set<GItem> collectedProducts = Collections.newSetFromMap(new IdentityHashMap<GItem, Boolean>());
+        private boolean productCollectionEnabled;
         private int treesInBatch;
         private String phase = "startup";
         private Coord2d cartOrderOrigin;
@@ -164,6 +165,7 @@ public final class ClearCutBot {
 
         Run(GameUI gui, Bot bot, ClearCutConfig config) {
             this.gui = gui; this.bot = bot; this.config = config;
+            this.productCollectionEnabled = config.collectTreeProducts;
             this.dropLayoutOrigin = areaCenter(config.clearCut);
         }
 
@@ -258,44 +260,6 @@ public final class ClearCutBot {
             if(!config.hasWaterArea() && !hasWater()) {
                 fail("no water remains in carried drink containers and no water area was selected");
             }
-            if(config.collectTreeProducts) {
-                observeArea(config.productDropOff, "tree-product area");
-                if(!hasAccessibleInventoryContainer(config.productDropOff, false))
-                    fail("no accessible inventory container found in the tree-product drop-off area");
-                if(gui.maininv == null || gui.maininv.findPlaceFor(Coord.of(2, 1)) == null)
-                    fail("main inventory needs an empty 2x1 space for tree products");
-            }
-        }
-
-        private boolean hasAccessibleInventoryContainer(Area area, boolean requireFood)
-                throws InterruptedException {
-            List<Gob> candidates = requireFood ? foodContainerGobs(area) : containerGobs(area);
-            for(Gob container : candidates) {
-                if(!approachWithRetries(container)) continue;
-                Window window = null;
-                for(int attempt = 1; attempt <= ClearCutConfig.MAX_ATTEMPTS && window == null; attempt++)
-                    window = openContainerWindow(container);
-                if(window == null) continue;
-                try {
-                    Inventory inventory = largestInventory(window);
-                    if(inventory == null) continue;
-                    if(!requireFood) return true;
-                    final Inventory foodInventory = inventory;
-                    if(waitFor(2000L, () -> hasRecognizedFood(foodInventory))) return true;
-                } finally {
-                    window.reqdestroy();
-                }
-            }
-            return false;
-        }
-
-        private boolean hasRecognizedFood(Inventory inventory) {
-            if(inventory == null) return false;
-            for(WItem item : inventory.children(WItem.class)) {
-                try {if(ItemData.hasFoodInfo(item.item)) return true;}
-                catch(Loading ignored) {}
-            }
-            return false;
         }
 
         private boolean hasDrinkVessel() {
@@ -469,7 +433,7 @@ public final class ClearCutBot {
         private boolean processTree(Gob tree) throws InterruptedException, Abort {
             ensureSupplies();
             Coord2d origin = tree.rc;
-            if(config.collectTreeProducts) collectProducts(tree, Kind.TREE, "tree");
+            if(productCollectionEnabled) collectProducts(tree, Kind.TREE, "tree");
             if(!Equip.ensureTwoHanded(gui, bot, Equip.WOODCUT_AXE)) fail("could not equip a woodcutting axe");
             tree = currentGob(tree.id, Kind.TREE);
             if(tree == null) return false;
@@ -495,7 +459,7 @@ public final class ClearCutBot {
                 Gob bush = resolve(ref);
                 if(bush == null || kindOf(bush) != Kind.BUSH) continue;
                 ensureSupplies();
-                if(config.collectTreeProducts) collectProducts(bush, Kind.BUSH, "bush");
+                if(productCollectionEnabled) collectProducts(bush, Kind.BUSH, "bush");
                 if(!Equip.ensureTwoHanded(gui, bot, Equip.WOODCUT_AXE))
                     fail("could not equip a woodcutting axe");
                 bush = currentGob(bush.id, Kind.BUSH);
@@ -576,39 +540,74 @@ public final class ClearCutBot {
         }
 
         private void collectProducts(Gob source, Kind sourceKind, String sourceName)
-                throws InterruptedException, Abort {
-            int collected = 0;
-            while(collected < 100) {
-                ensureSupplies();
-                ensureProductSpace();
-                source = currentGob(source.id, sourceKind);
-                if(source == null) return;
-                // Bushes can lack usable movement geometry. Product collection
-                // happens before chopping, so it must use the same bounded ring
-                // fallback as the later bush-chop approach.
-                boolean approached = sourceKind == Kind.BUSH
-                    ? approachBushWithRetries(source)
-                    : approachWithRetries(source);
-                if(!approached)
-                    fail("could not reach " + sourceName + " " + source.id + " for product collection");
-                FlowerMenu menu = openMenu(source);
-                if(menu == null) fail(sourceName + " product menu did not appear for " + sourceName + " " + source.id);
+                throws InterruptedException {
+            if(!productCollectionEnabled || source == null) return;
+            TargetRef sourceRef = new TargetRef(sourceKind, source, resid(source));
+            if(!ensureProductSpace()) return;
+            source = resolve(sourceRef);
+            if(source == null || !approachProductSource(source, sourceKind)) {
+                diag("PRODUCT skip source=%s id=%d reason=approach-failed", sourceName, sourceRef.id);
+                return;
+            }
+
+            int actions = 0;
+            while(productCollectionEnabled && actions < ClearCutConfig.MAX_PRODUCT_ACTIONS_PER_SOURCE) {
+                bot.checkCancelled();
+                if(!hasProductSpace()) {
+                    if(!ensureProductSpace()) return;
+                    source = resolve(sourceRef);
+                    if(source == null || !approachProductSource(source, sourceKind)) {
+                        diag("PRODUCT skip source=%s id=%d reason=return-approach-failed", sourceName, sourceRef.id);
+                        return;
+                    }
+                } else {
+                    source = currentGob(sourceRef.id, sourceKind);
+                    if(source == null) return;
+                }
+
+                FlowerMenu menu = openProductMenu(source);
+                if(menu == null) {
+                    diag("PRODUCT skip source=%s id=%d reason=menu-unavailable", sourceName, sourceRef.id);
+                    return;
+                }
                 List<FlowerMenu.Petal> products = productPetals(menu);
-                if(products.isEmpty()) {menu.choose(null); return;}
+                if(products.isEmpty()) {
+                    menu.choose(null);
+                    return;
+                }
+
                 FlowerMenu.Petal product = products.get(0);
                 Set<GItem> before = inventoryItemIdentities();
+                setPhase("collecting " + product.name);
                 menu.choose(product);
-                boolean appeared = waitFor(15000L, () -> hasNewInventoryItem(before) || gui.hand() != null);
-                waitForProgressToFinish();
+                boolean completed = waitForProductProgressToFinish();
+                Thread.sleep(250L);
                 registerNewProducts(before);
-                if(gui.hand() != null) returnHeldProduct();
-                if(!appeared || trackedProductItems().isEmpty() && collectedProducts.isEmpty())
-                    fail("tree product action ‘" + product.name + "’ produced no item");
-                collected++;
+                if(gui.hand() != null && !returnHeldProduct()) {
+                    disableProductCollection("a collected product could not be returned to inventory");
+                    if(!dropHeldProduct()) waitForProductCursorClear();
+                    return;
+                }
+                if(!completed) {
+                    diag("PRODUCT skip action=%s source=%s id=%d reason=action-not-completed",
+                        product.name, sourceName, sourceRef.id);
+                    return;
+                }
+                actions++;
                 productsDone++;
-                setPhase("collected " + product.name);
+                setPhase("finished " + product.name);
             }
-            fail(sourceName + " product collection exceeded its safety limit");
+            if(actions >= ClearCutConfig.MAX_PRODUCT_ACTIONS_PER_SOURCE) {
+                diag("PRODUCT stop source=%s id=%d reason=action-limit", sourceName, sourceRef.id);
+                gui.msg("Clear-Cut warning: product action limit reached for one " + sourceName +
+                    "; continuing with clearing.", GameUI.MsgType.INFO);
+            }
+        }
+
+        private boolean approachProductSource(Gob source, Kind sourceKind) throws InterruptedException {
+            return sourceKind == Kind.BUSH
+                ? approachBushWithRetries(source)
+                : approachWithRetries(source);
         }
 
         private List<FlowerMenu.Petal> productPetals(FlowerMenu menu) {
@@ -619,11 +618,16 @@ public final class ClearCutBot {
             return out;
         }
 
-        private void ensureProductSpace() throws InterruptedException, Abort {
-            if(gui.maininv != null && gui.maininv.findPlaceFor(Coord.of(2, 1)) != null) return;
+        private boolean hasProductSpace() {
+            return gui.maininv != null && gui.maininv.findPlaceFor(Coord.of(2, 1)) != null;
+        }
+
+        private boolean ensureProductSpace() throws InterruptedException {
+            if(hasProductSpace()) return true;
             depositProducts();
-            if(gui.maininv == null || gui.maininv.findPlaceFor(Coord.of(2, 1)) == null)
-                fail("main inventory has no 2x1 space for the next tree product");
+            if(hasProductSpace()) return true;
+            disableProductCollection("main inventory has no 2x1 space for another tree product");
+            return false;
         }
 
         private void digRefs(List<TargetRef> refs) throws InterruptedException, Abort {
@@ -741,7 +745,7 @@ public final class ClearCutBot {
         }
 
         private void flushBatch() throws InterruptedException, Abort {
-            if(config.collectTreeProducts) depositProducts();
+            if(productCollectionEnabled) depositProducts();
             capturePendingLogs(null);
             haulPendingLogs();
             treesInBatch = 0;
@@ -861,56 +865,97 @@ public final class ClearCutBot {
                 lastWidth = footprint.bounds.width();
                 lastHeight = footprint.bounds.height();
                 List<ExactPlacementPlanner.Shape> obstacles = dropObstacles(carried);
-                double plannedGap = gap;
-                ObjectOrganizer.ExactPlan plan = ObjectOrganizer.planExact(
-                    footprint, config.logDropOff, dropLayoutOrigin, 1, plannedAngle,
-                    plannedGap, obstacles, "live-placement",
-                    ExactPlacementPlanner.FillOrder.SIDE_BY_SIDE);
-                Coord2d point = plan.placements.isEmpty() ? null : plan.placements.get(0).anchor;
-                if(point == null) {
-                    diag("DROP no-slot log=%d carried-angle=%.6f planned-angle=%.6f footprint=%.3fx%.3f area=%dx%d-tiles gap=%.3f obstacles=%d reason=%s",
-                        carried.id, carried.a, plannedAngle, lastWidth, lastHeight, config.logDropOff.sz().x,
-                        config.logDropOff.sz().y, gap, obstacles.size(), plan.reason);
-                    continue;
-                }
-                foundGeometricSlot = true;
-                Coord2d before = carried.rc == null ? null : Coord2d.of(carried.rc.x, carried.rc.y);
-                PlacementExecutor.Result commit = PlacementExecutor.commitLifted(
-                    gui, bot, carried, config.logDropOff, point, plannedAngle,
-                    20000L, STEP_TIMEOUT, MovementListeners.NOOP);
-                if(!commit.sent()) {
-                    diag("DROP commit-failed log=%d anchor=%s gap=%.3f outcome=%s detail=%s",
-                        carried.id, point, gap, commit.outcome, commit.detail);
-                    continue;
-                }
-                diag("DROP command log=%d from=%s anchor=%s carried-angle=%.6f planned-angle=%.6f gap=%.3f obstacles=%d",
-                    carried.id, before, point, carried.a, plannedAngle, gap, obstacles.size());
-                Gob grounded = waitForGroundedPose(carried, before, STEP_TIMEOUT + 3000L);
-                if(grounded != null) {
-                    String problem = groundDropProblem(grounded);
-                    diag("DROP observed log=%d actual=%s angle=%.6f intended=%s result=%s",
-                        grounded.id, grounded.rc, grounded.a, point, problem == null ? "accepted" : problem);
-                    if(problem == null) {
-                        ObjectSpatialProfiles.confirmPlacementGap(resid(grounded), gap);
-                        ExactPlacementPlanner.Shape placed = worldShape(grounded);
-                        if(placed != null) observedDropObstacles.put(grounded.id, placed);
-                        if(!stepClearOfDroppedLog(grounded, placed))
-                            fail("log was placed, but the character could not step clear of its collision area");
-                        return;
+                List<ExactPlacementPlanner.Shape> planningObstacles = new ArrayList<>(obstacles);
+                for(int anchorAttempt = 1;
+                    anchorAttempt <= ClearCutConfig.MAX_LOG_PLACEMENT_ANCHORS;
+                    anchorAttempt++) {
+                    ObjectOrganizer.ExactPlan plan = ObjectOrganizer.planExact(
+                        footprint, config.logDropOff, dropLayoutOrigin, 1, plannedAngle,
+                        gap, planningObstacles, "live-placement",
+                        ExactPlacementPlanner.FillOrder.SIDE_BY_SIDE_BACK_TO_FRONT);
+                    Coord2d point = plan.placements.isEmpty() ? null : plan.placements.get(0).anchor;
+                    if(point == null) {
+                        diag("DROP no-slot log=%d carried-angle=%.6f planned-angle=%.6f footprint=%.3fx%.3f area=%dx%d-tiles gap=%.3f obstacles=%d reason=%s",
+                            carried.id, carried.a, plannedAngle, lastWidth, lastHeight,
+                            config.logDropOff.sz().x, config.logDropOff.sz().y, gap,
+                            obstacles.size(), plan.reason);
+                        if(anchorAttempt > 1) {
+                            pauseForLogDropOffHelp(carried, true);
+                            return;
+                        }
+                        break;
                     }
-                    Gob lifted = liftDroppedAgain(grounded);
-                    if(lifted == null) fail("server placed log illegally (" + problem + ") and it could not be lifted again");
-                    carried = lifted;
-                } else if(!isCarried(carried)) {
-                    fail("log " + carried.id + " was released but its authoritative ground position never arrived");
-                } else {
-                    diag("DROP rejected log=%d anchor=%s gap=%.3f", carried.id, point, gap);
+                    foundGeometricSlot = true;
+                    Coord2d before = carried.rc == null ? null : Coord2d.of(carried.rc.x, carried.rc.y);
+                    PlacementExecutor.Result commit = PlacementExecutor.commitLifted(
+                        gui, bot, carried, config.logDropOff, point, plannedAngle,
+                        20000L, STEP_TIMEOUT, MovementListeners.NOOP);
+                    if(!commit.sent()) {
+                        diag("DROP commit-failed log=%d anchor=%s gap=%.3f candidate=%d/%d outcome=%s detail=%s",
+                            carried.id, point, gap, anchorAttempt,
+                            ClearCutConfig.MAX_LOG_PLACEMENT_ANCHORS, commit.outcome, commit.detail);
+                        if(commit.outcome == PlacementExecutor.Outcome.STAGING_FAILED) {
+                            planningObstacles.add(footprint.move(point));
+                            if(anchorAttempt == ClearCutConfig.MAX_LOG_PLACEMENT_ANCHORS) {
+                                pauseForLogDropOffHelp(carried, true);
+                                return;
+                            }
+                            continue;
+                        }
+                        break;
+                    }
+                    diag("DROP command log=%d from=%s anchor=%s carried-angle=%.6f planned-angle=%.6f gap=%.3f obstacles=%d",
+                        carried.id, before, point, carried.a, plannedAngle, gap, obstacles.size());
+                    Gob grounded = waitForGroundedPose(carried, before, STEP_TIMEOUT + 3000L);
+                    if(grounded != null) {
+                        String problem = groundDropProblem(grounded);
+                        diag("DROP observed log=%d actual=%s angle=%.6f intended=%s result=%s",
+                            grounded.id, grounded.rc, grounded.a, point,
+                            problem == null ? "accepted" : problem);
+                        if(problem == null) {
+                            ObjectSpatialProfiles.confirmPlacementGap(resid(grounded), gap);
+                            ExactPlacementPlanner.Shape placed = worldShape(grounded);
+                            if(placed != null) observedDropObstacles.put(grounded.id, placed);
+                            if(!stepClearOfDroppedLog(grounded, placed))
+                                fail("log was placed, but the character could not step clear of its collision area");
+                            return;
+                        }
+                        Gob lifted = liftDroppedAgain(grounded);
+                        if(lifted == null)
+                            fail("server placed log illegally (" + problem + ") and it could not be lifted again");
+                        carried = lifted;
+                    } else if(!isCarried(carried)) {
+                        fail("log " + carried.id + " was released but its authoritative ground position never arrived");
+                    } else {
+                        diag("DROP rejected log=%d anchor=%s gap=%.3f", carried.id, point, gap);
+                    }
+                    break;
                 }
             }
             if(!foundGeometricSlot)
-                fail(String.format("log %.1fx%.1f units cannot fit inside the selected %dx%d-tile log drop-off area",
-                    lastWidth, lastHeight, config.logDropOff.sz().x, config.logDropOff.sz().y));
-            fail("no legal ground-log placement remains in the log drop-off area");
+                diag("DROP full log=%d footprint=%.3fx%.3f area=%dx%d-tiles",
+                    carried.id, lastWidth, lastHeight, config.logDropOff.sz().x,
+                    config.logDropOff.sz().y);
+            pauseForLogDropOffHelp(carried, foundGeometricSlot);
+        }
+
+        private void pauseForLogDropOffHelp(Gob carried, boolean blocked)
+                throws InterruptedException {
+            String reason = blocked ? "blocked" : "full";
+            diag("DROP paused log=%d reason=%s", carried.id, reason);
+            setPhase("PAUSED — log drop-off " + reason);
+            gui.error("Clear-Cut paused: the log drop-off is " + reason +
+                ". Move existing logs or manually place the carried log; Clear-Cut will continue when it is released.");
+            while(isCarried(carried)) {
+                bot.checkCancelled();
+                Thread.sleep(500L);
+            }
+            Gob grounded = gui.ui.sess.glob.oc.getgob(carried.id);
+            ExactPlacementPlanner.Shape placed = worldShape(grounded);
+            if(placed != null && boundsTouchArea(placed.bounds, config.logDropOff))
+                observedDropObstacles.put(grounded.id, placed);
+            setPhase("hauling log " + (logsDone + 1));
+            gui.msg("Clear-Cut: carried log released; resuming.", GameUI.MsgType.GOOD);
         }
 
         private List<ExactPlacementPlanner.Shape> dropObstacles(Gob carried) {
@@ -1087,11 +1132,19 @@ public final class ClearCutBot {
             return null;
         }
 
-        private void depositProducts() throws InterruptedException, Abort {
-            if(!config.collectTreeProducts || collectedProducts.isEmpty()) return;
-            observeArea(config.productDropOff, "tree-product drop-off");
+        private void depositProducts() throws InterruptedException {
+            if(!productCollectionEnabled || collectedProducts.isEmpty()) return;
+            try {
+                observeArea(config.productDropOff, "tree-product drop-off");
+            } catch(Abort abort) {
+                disableProductCollection("tree-product storage could not be reached");
+                return;
+            }
             List<Gob> containers = containerGobs(config.productDropOff);
-            if(containers.isEmpty()) fail("no tree-product container is available");
+            if(containers.isEmpty()) {
+                disableProductCollection("no tree-product container is available");
+                return;
+            }
             boolean opened = false;
             for(Gob container : containers) {
                 if(collectedProducts.isEmpty()) break;
@@ -1105,13 +1158,27 @@ public final class ClearCutBot {
                     while(true) {
                         WItem item = firstTrackedProduct();
                         if(item == null) break;
-                        if(!depositOne(item, inventory)) break;
+                        if(!depositOne(item, inventory)) {
+                            if(gui.hand() != null && !returnHeldProduct() && !dropHeldProduct())
+                                waitForProductCursorClear();
+                            break;
+                        }
                         collectedProducts.remove(item.item);
                     }
                 } finally {window.reqdestroy();}
             }
             purgeDisposedProducts();
-            if(!collectedProducts.isEmpty()) fail(opened ? "all tree-product containers are full" : "could not open a tree-product container");
+            if(!collectedProducts.isEmpty())
+                disableProductCollection(opened ? "all tree-product containers are full" :
+                    "tree-product containers could not be opened");
+        }
+
+        private void disableProductCollection(String reason) {
+            if(!productCollectionEnabled) return;
+            productCollectionEnabled = false;
+            diag("PRODUCT disabled reason=%s", reason);
+            gui.msg("Clear-Cut warning: " + reason + "; continuing without tree products.",
+                GameUI.MsgType.INFO);
         }
 
         private boolean depositOne(WItem item, Inventory inventory) throws InterruptedException {
@@ -1130,13 +1197,6 @@ public final class ClearCutBot {
             return null;
         }
 
-        private List<WItem> trackedProductItems() {
-            List<WItem> out = new ArrayList<>();
-            if(gui.maininv != null) for(WItem item : gui.maininv.children(WItem.class))
-                if(collectedProducts.contains(item.item)) out.add(item);
-            return out;
-        }
-
         private void purgeDisposedProducts() {
             Set<GItem> present = inventoryItemIdentities();
             collectedProducts.removeIf(item -> item == null || item.disposed() || !present.contains(item));
@@ -1146,12 +1206,6 @@ public final class ClearCutBot {
             Set<GItem> out = Collections.newSetFromMap(new IdentityHashMap<GItem, Boolean>());
             if(gui.maininv != null) for(WItem item : gui.maininv.children(WItem.class)) out.add(item.item);
             return out;
-        }
-
-        private boolean hasNewInventoryItem(Set<GItem> before) {
-            if(gui.maininv == null) return false;
-            for(WItem item : gui.maininv.children(WItem.class)) if(!before.contains(item.item)) return true;
-            return false;
         }
 
         private void registerNewProducts(Set<GItem> before) {
@@ -1265,18 +1319,42 @@ public final class ClearCutBot {
             return new ChipDropResult(started, produced, gone);
         }
 
-        private void returnHeldProduct() throws InterruptedException, Abort {
+        private boolean returnHeldProduct() throws InterruptedException {
             GameUI.DraggedItem held = gui.hand();
-            if(held == null) return;
-            if(!collectedProducts.contains(held.item)) fail("cursor holds an unrelated item during product collection");
+            if(held == null) return true;
+            if(!collectedProducts.contains(held.item)) return false;
             Coord slot = gui.maininv == null ? null : gui.maininv.findPlaceFor(Coord.of(2, 1));
             if(slot == null && gui.maininv != null) slot = gui.maininv.findPlaceFor(Coord.of(1, 1));
-            if(slot == null) fail("collected tree product could not fit in main inventory");
+            if(slot == null) return false;
             gui.maininv.wdgmsg("drop", slot);
-            if(!waitFor(STEP_TIMEOUT, () -> gui.hand() == null)) fail("could not return collected tree product to inventory");
+            return waitFor(STEP_TIMEOUT, () -> gui.hand() == null);
         }
 
-        private Gob resolve(TargetRef ref) throws InterruptedException, Abort {
+        private boolean dropHeldProduct() throws InterruptedException {
+            GameUI.DraggedItem held = gui.hand();
+            Gob player = gui.map.player();
+            if(held == null) return true;
+            if(!collectedProducts.contains(held.item) || player == null || player.rc == null) return false;
+            GItem item = held.item;
+            gui.map.wdgmsg("drop", Coord.z, player.rc.floor(OCache.posres), UI.MOD_CTRL);
+            boolean dropped = waitFor(STEP_TIMEOUT, () -> gui.hand() == null);
+            if(dropped) collectedProducts.remove(item);
+            return dropped;
+        }
+
+        private void waitForProductCursorClear() throws InterruptedException {
+            if(gui.hand() == null) return;
+            disableProductCollection("a collected product is still on the cursor");
+            setPhase("PAUSED — clear held tree product");
+            gui.error("Clear-Cut paused: clear the held tree product to continue.");
+            while(gui.hand() != null) {
+                bot.checkCancelled();
+                Thread.sleep(500L);
+            }
+            gui.msg("Clear-Cut: cursor cleared; resuming without tree products.", GameUI.MsgType.GOOD);
+        }
+
+        private Gob resolve(TargetRef ref) throws InterruptedException {
             Gob direct = currentGob(ref.id, ref.kind);
             if(direct != null) return direct;
             if(!walkNear(ref.position)) return null;
@@ -1474,12 +1552,21 @@ public final class ClearCutBot {
         }
 
         private FlowerMenu openMenu(Gob gob) throws InterruptedException {
-            for(int attempt = 1; attempt <= ClearCutConfig.MAX_ATTEMPTS; attempt++) {
+            return openMenu(gob, ClearCutConfig.MAX_ATTEMPTS, STEP_TIMEOUT);
+        }
+
+        private FlowerMenu openProductMenu(Gob gob) throws InterruptedException {
+            return openMenu(gob, ClearCutConfig.PRODUCT_MENU_ATTEMPTS,
+                ClearCutConfig.PRODUCT_MENU_TIMEOUT_MS);
+        }
+
+        private FlowerMenu openMenu(Gob gob, int attempts, long timeout) throws InterruptedException {
+            for(int attempt = 1; attempt <= attempts; attempt++) {
                 Set<Widget> before = widgets(gui.ui.root);
                 FlowerMenu.lastGob(gob);
                 clickGob(gob, 3);
                 final FlowerMenu[] found = new FlowerMenu[1];
-                if(waitFor(STEP_TIMEOUT, () -> {
+                if(waitFor(timeout, () -> {
                     found[0] = newWidget(gui.ui.root, FlowerMenu.class, before);
                     return found[0] != null;
                 })) return found[0];
@@ -1541,22 +1628,12 @@ public final class ClearCutBot {
             return out;
         }
 
-        private List<Gob> foodContainerGobs(Area area) {
-            List<Gob> out = gobsIn(area, MiningMaterials::isFoodInventorySource);
-            sortGobs(out);
-            return out;
-        }
-
         private boolean isContainer(Gob gob) {
             try {
                 return gob.is(GobTag.CONTAINER) || MiningMaterials.isInventoryBasketResid(gob.resid());
             } catch(Exception e) {
                 return false;
             }
-        }
-
-        private boolean isWaterSource(Gob gob) {
-            try {return gob.is(GobTag.HAS_WATER);} catch(Exception e) {return false;}
         }
 
         private interface GobFilter {boolean accept(Gob gob);}
@@ -1624,9 +1701,15 @@ public final class ClearCutBot {
             return player != null && following != null && following.tgt == player.id;
         }
 
-        private void waitForProgressToFinish() throws InterruptedException {
-            waitFor(1200L, () -> gui.prog != null);
-            if(gui.prog != null) waitFor(ACTION_TIMEOUT, () -> gui.prog == null);
+        private boolean waitForProductProgressToFinish() throws InterruptedException {
+            if(!waitFor(1200L, () -> gui.prog != null)) return false;
+            boolean completed = waitFor(ClearCutConfig.PRODUCT_ACTION_TIMEOUT_MS,
+                () -> gui.prog == null);
+            if(!completed) {
+                cancelMapAction();
+                waitFor(3000L, () -> gui.prog == null);
+            }
+            return completed;
         }
 
         private boolean boundsTouchArea(WorldFootprint.Bounds b, Area area) {

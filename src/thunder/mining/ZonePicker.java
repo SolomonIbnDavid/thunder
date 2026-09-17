@@ -22,8 +22,8 @@ import java.util.function.Consumer;
  * instead of a single click. Purely local -- nothing is sent to the server,
  * unlike the mine-tile Selector this is modeled on.
  *
- * Also owns the visual feedback: a live-updating colored rectangle (fill +
- * border) while dragging, and per-role persistent highlights for already-
+ * Also owns the visual feedback: a live-updating tinted rectangle while
+ * dragging, and per-role persistent highlights for already-
  * designated zones (shown/hidden by MiningBotSetupWnd while it's open).
  */
 public class ZonePicker implements MapView.Grabber {
@@ -51,47 +51,22 @@ public class ZonePicker implements MapView.Grabber {
         };
     }
 
-    /** Bundles a translucent fill + four opaque edge strips so a flat-fill-only overlay system still reads as a bordered box. */
+    /** A translucent area highlight without a separate border. */
     private static class ZoneVisual {
-        private final MapView map;
-        private final MCache.Overlay fill, top, bottom, left, right;
+        private final MCache.Overlay fill;
 
         ZoneVisual(MapView map, Integer[] rgb, Area a) {
-            this.map = map;
             MCache.OverlayInfo fillColor = colorInfo(rgb[0], rgb[1], rgb[2], 45);
-            MCache.OverlayInfo borderColor = colorInfo(rgb[0], rgb[1], rgb[2], 220);
             MCache mc = map.glob.map;
             fill = mc.new RectOverlay(fillColor, a);
-            top = mc.new RectOverlay(borderColor, edge(a, 0));
-            bottom = mc.new RectOverlay(borderColor, edge(a, 1));
-            left = mc.new RectOverlay(borderColor, edge(a, 2));
-            right = mc.new RectOverlay(borderColor, edge(a, 3));
         }
 
         void update(Area a) {
             fill.update(a);
-            top.update(edge(a, 0));
-            bottom.update(edge(a, 1));
-            left.update(edge(a, 2));
-            right.update(edge(a, 3));
         }
 
         void destroy() {
             fill.destroy();
-            top.destroy();
-            bottom.destroy();
-            left.destroy();
-            right.destroy();
-        }
-
-        private static Area edge(Area a, int side) {
-            Coord ul = a.ul, br = a.br;
-            switch(side) {
-            case 0: return new Area(ul, Coord.of(br.x, Math.min(br.y, ul.y + 1)));         // top strip
-            case 1: return new Area(Coord.of(ul.x, Math.max(ul.y, br.y - 1)), br);         // bottom strip
-            case 2: return new Area(ul, Coord.of(Math.min(br.x, ul.x + 1), br.y));         // left strip
-            default: return new Area(Coord.of(Math.max(ul.x, br.x - 1), ul.y), br);        // right strip
-            }
         }
     }
 

@@ -220,6 +220,58 @@ public class TightLogLayoutTest {
         assertEquals(4.125, Math.abs(anchors.get(1).y - anchors.get(0).y), 1e-9);
     }
 
+    @Test public void backToFrontLogRowsKeepTheApproachSideOpen() {
+        Area area = new Area(Coord.z, Coord.of(5, 4));
+        ExactPlacementPlanner.Shape log = ExactPlacementPlanner.Shape.rectangle(
+            new ExactPlacementPlanner.Rect(-10, -2, 10, 2));
+        Coord2d source = Coord2d.of(-100, 22);
+        List<Coord2d> anchors = ExactPlacementPlanner.planExact(
+            area, TILE, log, new ArrayList<>(), source, 0.125, 12,
+            ExactPlacementPlanner.FillOrder.SIDE_BY_SIDE_BACK_TO_FRONT);
+
+        assertEquals(12, anchors.size());
+        double farRowX = anchors.get(0).x;
+        assertTrue(farRowX > area.br.x * TILE.x * 0.5,
+            "the first row must be on the edge farthest from the clear-cut source");
+        int nextRow = -1;
+        for(int i = 1; i < anchors.size(); i++) {
+            if(Math.abs(anchors.get(i).x - farRowX) > 1e-9) {
+                nextRow = i;
+                break;
+            }
+        }
+        assertTrue(nextRow > 0, "the fixture must fill more than one row");
+        assertTrue(anchors.get(nextRow).x < farRowX,
+            "later rows must advance toward the source instead of walling them off");
+    }
+
+    @Test public void verticalDropAreaFillsLeftToRightThenMovesTowardClearCut() {
+        Area area = new Area(Coord.z, Coord.of(6, 5));
+        ExactPlacementPlanner.Shape log = ExactPlacementPlanner.Shape.rectangle(
+            new ExactPlacementPlanner.Rect(-10, -2, 10, 2));
+        Coord2d clearCutAbove = Coord2d.of(33, -100);
+        double farRowY = 53.0;
+        double rightSlotX = 50.25;
+        List<ExactPlacementPlanner.Shape> existingRightColumn = new ArrayList<>();
+        existingRightColumn.add(log.move(Coord2d.of(rightSlotX, farRowY)));
+        existingRightColumn.add(log.move(Coord2d.of(rightSlotX, farRowY - 4.125)));
+
+        List<Coord2d> anchors = ExactPlacementPlanner.planExact(
+            area, TILE, log, existingRightColumn, clearCutAbove, 0.125, 3,
+            ExactPlacementPlanner.FillOrder.SIDE_BY_SIDE_BACK_TO_FRONT);
+
+        assertEquals(3, anchors.size());
+        assertEquals(farRowY, anchors.get(0).y, 1e-9);
+        assertEquals(farRowY, anchors.get(1).y, 1e-9,
+            "the far row must be filled before moving toward the clear-cut area");
+        assertTrue(anchors.get(0).x < anchors.get(1).x,
+            "open slots in a row must be filled from left to right");
+        assertEquals(anchors.get(0).x, anchors.get(2).x, 1e-9,
+            "the next row must restart at the left edge");
+        assertTrue(anchors.get(2).y < farRowY,
+            "after a full row, the next row must move toward the clear-cut area");
+    }
+
     @Test public void serverRoundedLogContinuesAtRecordedTightGap() {
         Area area = new Area(Coord.z, Coord.of(5, 5));
         ExactPlacementPlanner.Shape log = ExactPlacementPlanner.Shape.rectangle(

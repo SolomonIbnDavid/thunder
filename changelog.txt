@@ -1,3 +1,8 @@
+$size[14]{$u{experimental Clear-Cut placement and product recovery on 16.09.2026:}
+* Optional tree-product collection now disables itself and lets clearing continue when products, inventory space, or storage become unavailable.
+* Log drop-offs now fill orderly rows from the far edge toward the clear-cut area, try alternate legal anchors when an approach is blocked, and pause for manual help instead of aborting the run.
+* Area-selection overlays now use a clean translucent fill without heavy border strips.
+`
 $size[14]{$u{experimental Clear-Cut follow-up on 16.09.2026:}
 * Clear-Cut survey walks now give the pathfinder nearby alternatives instead of failing when one exact survey tile is blocked.
 * Interaction staging now lets the exact live pathfinder choose among every valid staging pose when the preferred position does not fit.
