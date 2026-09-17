@@ -7,7 +7,7 @@ import java.util.Set;
 /** Pure decision rules for the first, small-animal combat profile. */
 public final class CombatAutomationRules {
     public static final int ENEMY_RED_TARGET = 55;
-    public static final int OWN_OPENING_LIMIT = 40;
+    public static final int OWN_OPENING_LIMIT = 60;
 
     public enum Opening {
         GREEN,

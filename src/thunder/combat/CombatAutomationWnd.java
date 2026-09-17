@@ -24,7 +24,8 @@ public final class CombatAutomationWnd extends WindowX {
         y += UI.scale(20);
         add(new Label("Quick Barrage to 55% enemy red; then Full Circle."), 0, y);
         y += UI.scale(20);
-        add(new Label("At 40% own opening, use a matching restoration first."), 0, y);
+        add(new Label(String.format("At %d%% own opening, use a matching restoration first.",
+            CombatAutomationRules.OWN_OPENING_LIMIT)), 0, y);
         y += UI.scale(20);
         add(new Label("Bears and rage mode are intentionally excluded."), 0, y);
         y += UI.scale(28);
