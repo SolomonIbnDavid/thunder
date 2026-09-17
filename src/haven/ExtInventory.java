@@ -64,8 +64,8 @@ public class ExtInventory extends Widget {
 	    .settip("LClick to toggle extra info\nRClick to hide inventory when info is visible", true);
 	btn_sort.action(() -> InventorySorter.sort(inv));
 	btn_sort.settip("Sort");
-	btn_stack.action(() -> StackAllItems.stack(inv));
-	btn_stack.settip("Stack all matching items in this window");
+	btn_stack.action(() -> StackAllItems.stack(inv, !ui.modshift));
+	btn_stack.settip("Stack matching qualities and sort\nShift+click: stack only");
 	btn_unstack.action(() -> UnstackAllItems.unstack(inv));
 	btn_unstack.settip("Unstack all piles in this window");
 	
