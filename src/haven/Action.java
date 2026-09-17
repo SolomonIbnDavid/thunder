@@ -36,6 +36,7 @@ public enum Action {
     FISH_SPIT_ROAST(gui -> thunder.fish.FishSpitRoastSetupWnd.toggle(gui), "Fish Spit-Roast", "Designate raw-fish input, fire/spit, and cooked-fish output areas, then auto-roast whole fish in batches."),
     LOG_CUTTER(gui -> thunder.woodcut.WoodCutSetupWnd.toggle(gui), "Log Cutter", "Turn loose or cart-loaded logs into board or block stockpiles in selected areas."),
     CLEAR_CUT(gui -> thunder.clearcut.ClearCutSetupWnd.toggle(gui), "Clear-Cut", "Clear trees and stumps from an area, collect optional tree products, and haul logs to carts or a tightly packed drop-off."),
+    CELLAR_DIGGER(gui -> thunder.cellar.CellarDiggerWnd.toggle(gui), "Cellar Digger", "Excavate a cellar, chip each spawned boulder, drop the stone or ore, and enter when complete."),
     DIRECTIONAL_FORAGER(gui -> thunder.DirectionalForagerWnd.toggle(gui), "Directional Forager", "Walk in a compass direction and collect only the selected forageables."),
     RIVER_MUSSELER(gui -> thunder.MusselBotWnd.toggle(gui), "River Musseler", "Plan a long saved-map water route, follow it by boat, and collect visible River Pearl Mussels."),
     RUSTROOT_PROSPECTOR(gui -> thunder.rustroot.RustrootProspectorWnd.toggle(gui), "Rustroot Prospector", "Triangulate ore below from retained Rustroot Extract readings and suggest the next scan tile."),

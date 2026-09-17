@@ -930,6 +930,7 @@ public class MenuGrid extends Widget implements KeyBinding.Bindable {
 	makeLocal("paginae/add/fish-spitroast", Action.FISH_SPIT_ROAST);
 	makeLocal("paginae/add/log-cutter", Action.LOG_CUTTER);
 	makeLocal("paginae/add/clear-cut", Action.CLEAR_CUT);
+	makeLocal("paginae/add/cellar-digger", Action.CELLAR_DIGGER);
 	makeLocal("paginae/add/directional-forager", Action.DIRECTIONAL_FORAGER);
 	makeLocal("paginae/add/river-musseler", Action.RIVER_MUSSELER);
 	makeLocal("paginae/add/auto/aggro_one", Action.AGGRO_ONE_PVE);
