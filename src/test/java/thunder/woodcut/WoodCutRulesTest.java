@@ -1,5 +1,6 @@
 package thunder.woodcut;
 
+import haven.Area;
 import haven.Coord;
 import haven.Coord2d;
 import org.junit.jupiter.api.Assertions;
@@ -41,5 +42,13 @@ public class WoodCutRulesTest {
         Assertions.assertTrue(WoodCutBot.pileFootprintsConflict(Coord2d.of(22, 0), existing, 22));
         Assertions.assertTrue(WoodCutBot.pileFootprintsConflict(Coord2d.of(22.005, 0), existing, 22));
         Assertions.assertFalse(WoodCutBot.pileFootprintsConflict(Coord2d.of(33, 0), existing, 22));
+    }
+
+    @Test public void cartUnloadUsesOutputAreaBeforeUnselectedGround() {
+        Area logs = new Area(new Coord(10, 10), new Coord(12, 14));
+        Area output = new Area(new Coord(4, 10), new Coord(9, 14));
+        Assertions.assertEquals(0, WoodCutBot.temporaryDropTier(new Coord(11, 12), logs, output));
+        Assertions.assertEquals(1, WoodCutBot.temporaryDropTier(new Coord(7, 12), logs, output));
+        Assertions.assertEquals(2, WoodCutBot.temporaryDropTier(new Coord(2, 12), logs, output));
     }
 }

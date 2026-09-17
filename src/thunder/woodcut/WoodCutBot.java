@@ -129,6 +129,13 @@ public final class WoodCutBot {
             Math.abs(candidate.y - existing.y) <= fullWidth + epsilon;
     }
 
+    /** Prefer the source area, then the selected output area, then nearby ground. */
+    static int temporaryDropTier(Coord tile, Area logs, Area output) {
+        if(tile != null && logs != null && logs.contains(tile)) return 0;
+        if(tile != null && output != null && output.contains(tile)) return 1;
+        return 2;
+    }
+
     private static final class StopRun extends Exception {
         final boolean success;
         StopRun(String message, boolean success) {super(message); this.success = success;}
@@ -304,56 +311,65 @@ public final class WoodCutBot {
         private Coord2d walkToOpenDropPoint(Gob cart, Gob carried) throws InterruptedException {
             Gob player = gui.map.player();
             if(player == null || player.rc == null) return null;
-            List<Coord2d> candidates = nearbyDropCandidates(cart.rc, player.rc);
-            diag("CART drop-search cart=%d carried=%d origin=%s candidates=%d", cart.id, carried.id, player.rc, candidates.size());
-            for(Coord2d point : candidates) {
+            List<List<Coord2d>> tiers = nearbyDropCandidateTiers(cart.rc, player.rc);
+            int total = tiers.stream().mapToInt(List::size).sum();
+            diag("CART drop-search cart=%d carried=%d origin=%s candidates=%d", cart.id, carried.id, player.rc, total);
+            String[] names = {"source", "output", "nearby"};
+            for(int tier = 0; tier < tiers.size(); tier++) {
                 bot.checkCancelled();
-                if(!dropPointClear(point, cart, carried)) {
-                    diag("CART drop-candidate point=%s clear=false", point);
-                    continue;
+                List<Coord2d> clear = new ArrayList<>();
+                for(Coord2d point : tiers.get(tier)) {
+                    if(dropPointClear(point, cart, carried)) clear.add(point);
                 }
-                boolean walked = plannedWalkTo(point, 8000L, MCache.tilesz.x * 0.65);
-                diag("CART drop-candidate point=%s clear=true walked=%b player=%s", point, walked,
-                    gui.map.player() == null ? "unavailable" : gui.map.player().rc);
-                if(walked) {
-                    Gob now = gui.map.player();
+                diag("CART drop-tier name=%s candidates=%d clear=%d", names[tier], tiers.get(tier).size(), clear.size());
+                if(clear.isEmpty()) continue;
+                BotMovement.Result movement = BotMovement.moveToAny(
+                    gui, bot, clear, BotMovement.Avoidance.NONE, BotMovement.Mode.LAND, 8000L);
+                Gob now = gui.map.player();
+                boolean arrived = movement.status == BotMovement.Status.ARRIVED &&
+                    movement.selectedGoal != null && now != null && now.rc != null &&
+                    now.rc.dist(movement.selectedGoal) <= MCache.tilesz.x * 0.65;
+                diag("CART drop-tier name=%s result=%s detail=%s goal=%s arrived=%b player=%s",
+                    names[tier], movement.status, movement.detail, movement.selectedGoal, arrived,
+                    now == null ? "unavailable" : now.rc);
+                if(arrived) {
+                    now = gui.map.player();
                     long end = System.currentTimeMillis() + 3000L;
                     while(now != null && now.getattr(Moving.class) != null && System.currentTimeMillis() < end) {
                         bot.checkCancelled();
                         Thread.sleep(50L);
                     }
-                    return point;
+                    return movement.selectedGoal;
                 }
             }
             return null;
         }
 
-        private List<Coord2d> nearbyDropCandidates(Coord2d cart, Coord2d player) {
-            List<Coord2d> inside = new ArrayList<>();
+        private List<List<Coord2d>> nearbyDropCandidateTiers(Coord2d cart, Coord2d player) {
+            List<Coord2d> source = new ArrayList<>();
+            List<Coord2d> stagedOutput = new ArrayList<>();
             List<Coord2d> nearby = new ArrayList<>();
-            // Prefer the designated source area. If carts occupy most of that
-            // rectangle, allow a bounded temporary drop just outside it; the log is
-            // processed immediately, so the source-area scan does not need to find it.
+            // Prefer the designated source area. The selected output area is a
+            // safe temporary fallback because this log is fully cut before any
+            // stockpile placement is planned. Only then try other nearby ground.
             double tile = MCache.tilesz.x;
             for(int radiusTiles = 3; radiusTiles <= 10; radiusTiles++) {
                 double r = radiusTiles * tile;
                 for(int i = 0; i < 16; i++) {
                     double a = (Math.PI * 2.0 * i) / 16.0;
                     Coord2d p = cart.add(Math.cos(a) * r, Math.sin(a) * r);
-                    if(logs.contains(p.floor(MCache.tilesz))) {
-                        inside.add(p);
-                    } else if(!output.contains(p.floor(MCache.tilesz))) {
-                        nearby.add(p);
-                    }
+                    int tier = temporaryDropTier(p.floor(MCache.tilesz), logs, output);
+                    if(tier == 0) source.add(p);
+                    else if(tier == 1) stagedOutput.add(p);
+                    else nearby.add(p);
                 }
             }
-            inside.sort(Comparator.comparingDouble(player::dist));
+            source.sort(Comparator.comparingDouble(player::dist));
+            stagedOutput.sort(Comparator.comparingDouble(player::dist));
             nearby.sort(Comparator.comparingDouble(player::dist));
-            List<Coord2d> out = new ArrayList<>(inside.size() + nearby.size());
-            out.addAll(inside);
-            out.addAll(nearby);
-            diag("CART drop-candidates inside-source=%d nearby-fallback=%d", inside.size(), nearby.size());
-            return out;
+            diag("CART drop-candidates source=%d output=%d nearby=%d",
+                source.size(), stagedOutput.size(), nearby.size());
+            return Arrays.asList(source, stagedOutput, nearby);
         }
 
         private boolean dropPointClear(Coord2d point, Gob cart, Gob carried) {
