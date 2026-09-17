@@ -81,6 +81,8 @@ public class CustomCursors {
 		tm.clear();
 	    } else if(modflags == UI.MOD_CTRL) {
 		tm.undo();
+	    } else if(modflags == UI.MOD_META) {
+		tm.mark(mc.floor(tilesz), true);
 	    } else if(modflags == 0) {
 		tm.mark(mc.floor(tilesz));
 	    }
@@ -140,7 +142,7 @@ public class CustomCursors {
 			return;
 		    TileMeasure tm = map.ui.gui.tileMeasure;
 		    tm.setHover(mc.floor(tilesz));
-		    map.ttip(tm.hoverTip());
+		    map.ttip(tm.hoverTip(map.ui.modflags() == UI.MOD_META));
 		}
 		@Override
 		protected void nohit(Coord pc) {
