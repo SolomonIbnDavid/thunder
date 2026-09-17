@@ -163,15 +163,26 @@ public class MiningMaterials {
 
     /** Picks up loose stone (any STONE_NAMES rock type) dropped nearby until `need` is reached or none remain in range. */
     public static boolean pickUpLooseStone(GameUI gui, Bot bot, int need) throws InterruptedException {
+        Set<Long> tried = new HashSet<>();
         while(stoneCount(gui) < need) {
             bot.checkCancelled();
             Gob nearest = gui.ui.sess.glob.oc.stream()
                 .filter(gobIs(GobTag.PICKUP))
                 .filter(MiningMaterials::looksLikeStone)
                 .filter(g -> PositionHelper.distanceToPlayer(g) <= CFG.AUTO_PICK_RADIUS.get())
+                .filter(g -> !tried.contains(g.id))
                 .sorted(PositionHelper.byDistanceToPlayer)
                 .findFirst().orElse(null);
             if(nearest == null) {return false;}
+            tried.add(nearest.id);
+            String resid = nearest.resid();
+            BotMovement.Result movement = MiningBot.moveToPoint(gui, bot, nearest.rc,
+                "nearby loose stone " + resid + " #" + nearest.id);
+            if(movement == null || !movement.arrived() || nearest.disposed()) {
+                MiningBot.diag("[minebot-diag] pickUpLooseStone: navcore could not reach %s #%d, skipping",
+                    resid, nearest.id);
+                continue;
+            }
             new GobTarget(nearest).rclick_shift();
             try {
                 nearest.waitRemoval();
@@ -238,16 +249,27 @@ public class MiningMaterials {
      * real containers in them minutes earlier at a closer frontier) -- the scan
      * was never wrong about what's loaded, it just never walked anywhere first to
      * load the zone before asking what's in it. Call this once when a scan comes
-     * back empty, then redo the scan -- walking to the zone's own center (not any
-     * specific gob, since by definition none were found) is enough to bring its
-     * grid back into the client's loaded/render range.
+     * back empty, then redo the scan. The center and its eight neighboring tile
+     * centers are equivalent loading targets: giving all of them to NavCore lets
+     * it select a legal cave-floor endpoint if a container becomes visible and
+     * blocks the nominal center while the route is in progress.
      */
     private static boolean ensureZoneLoaded(GameUI gui, Bot bot, Area zone) throws InterruptedException {
         Coord centerTile = zone.ul.add(zone.br).div(2);
         Coord2d center = MCache.tilesz.mul(centerTile.x, centerTile.y).add(5, 5);
-        BotMovement.Result result = BotMovement.moveTo(gui, bot, center, BotMovement.Mode.LAND);
+        double dx = MCache.tilesz.x;
+        double dy = MCache.tilesz.y;
+        List<Coord2d> candidates = Arrays.asList(
+            center,
+            center.add(dx, 0), center.add(-dx, 0),
+            center.add(0, dy), center.add(0, -dy),
+            center.add(dx, dy), center.add(dx, -dy),
+            center.add(-dx, dy), center.add(-dx, -dy)
+        );
+        BotMovement.Result result = MiningBot.moveToAnyPoint(gui, bot, candidates,
+            "load supply zone centered at " + centerTile);
         boolean walked = result != null && result.arrived();
-        MiningBot.diag("[minebot-diag] ensureZoneLoaded: zone empty on first scan, walked to zone center %s -> %b", centerTile, walked);
+        MiningBot.diag("[minebot-diag] ensureZoneLoaded: zone empty on first scan, NavCore near zone center %s -> %b", centerTile, walked);
         return walked;
     }
 
@@ -315,15 +337,12 @@ public class MiningMaterials {
                 MiningBot.diag("[minebot-diag] fetchFromZone: container %s disposed, skipping", container.resid());
                 continue;
             }
-            boolean walked = MapHelper.walkTo(gui, container.rc, 6000, MapHelper.GOB_ARRIVE_RADIUS);
-            MiningBot.diag("[minebot-diag] fetchFromZone: walkTo container %s -> %b", container.resid(), walked);
-            if(!walked) {continue;}
-            // walkTo's distance-based "arrived" can fire while the character is still
-            // mid-stride (not yet stopped server-side) -- itemact() fired immediately
-            // after, with no other action in between to naturally absorb that gap
-            // (unlike refillWaterFromZone's take()+waitHeldChanged before its own
-            // itemact()), may be rejected/ignored by the server while still moving.
-            MiningBot.waitForMovementSettled(gui, bot, 3000);
+            String resid = container.resid();
+            BotMovement.Result movement = MiningBot.approachGob(gui, bot, container,
+                "supply container " + resid + " #" + container.id);
+            boolean approached = movement != null && movement.readyToInteract();
+            MiningBot.diag("[minebot-diag] fetchFromZone: NavCore approach container %s -> %b", resid, approached);
+            if(!approached) {continue;}
 
             Window win = openContainerWindow(gui, bot, container, 3000);
             MiningBot.diag("[minebot-diag] fetchFromZone: openContainerWindow -> %s", win != null ? win.caption() : "null");
@@ -416,8 +435,10 @@ public class MiningMaterials {
             String resid = nearest.resid(); // captured before pickup -- resid() on an already-removed gob is unsafe
             MiningBot.diag("[minebot-diag] pickUpLooseFromZone: trying %s", resid);
             tried.add(nearest.id);
-            if(nearest.disposed() || !MapHelper.walkTo(gui, nearest.rc, 6000)) {
-                MiningBot.diag("[minebot-diag] pickUpLooseFromZone: couldn't walk to %s, skipping", resid);
+            BotMovement.Result movement = nearest.disposed() ? null : MiningBot.moveToPoint(gui, bot, nearest.rc,
+                "loose supply item " + resid + " #" + nearest.id);
+            if(movement == null || !movement.arrived() || nearest.disposed()) {
+                MiningBot.diag("[minebot-diag] pickUpLooseFromZone: NavCore couldn't reach %s, skipping", resid);
                 continue;
             }
             new GobTarget(nearest).rclick_shift();
@@ -434,7 +455,7 @@ public class MiningMaterials {
 
     /**
      * Detects the container window that just opened by diffing GameUI's children
-     * before/after a real left-click on the gob. Traced live: a real click on a gob
+     * before/after a real interaction click on the gob. Traced live: a real click on a gob
      * (Gob.click -> MapView.click) sends wdgmsg("click", ...) -- itemact() sends a
      * DIFFERENT message, wdgmsg("itemact", ...), which is "use the item in hand on
      * this gob," not "open this." That mismatch (an unverified assumption from
@@ -446,7 +467,7 @@ public class MiningMaterials {
      * that path, for a plain left click with CFG.QUEUE_PATHS on (the default),
      * ALSO calls ui.gui.pathQueue.start(mc) as a side effect -- restarting movement
      * toward the container's own (collision-blocked, unreachable) center the
-     * instant the click fires, undoing waitForMovementSettled's work immediately
+     * instant the click fires, undoing NavCore's confirmed-stop guarantee immediately
      * before the server sees the interact request. This sends the identical
      * wdgmsg("click", ...) content MapView.click ultimately sends, minus that
      * side effect.
@@ -493,9 +514,12 @@ public class MiningMaterials {
             MiningBot.diag("[minebot-diag] refillWaterFromZone: no GobTag.HAS_WATER gob in zone");
             return false;
         }
-        boolean walked = MapHelper.walkTo(gui, barrel.rc, 6000, MapHelper.GOB_ARRIVE_RADIUS);
-        MiningBot.diag("[minebot-diag] refillWaterFromZone: found barrel %s, walkTo -> %b", barrel.resid(), walked);
-        if(!walked) {return false;}
+        String resid = barrel.resid();
+        BotMovement.Result movement = MiningBot.approachGob(gui, bot, barrel,
+            "water barrel " + resid + " #" + barrel.id);
+        boolean approached = movement != null && movement.readyToInteract();
+        MiningBot.diag("[minebot-diag] refillWaterFromZone: found barrel %s, NavCore approach -> %b", resid, approached);
+        if(!approached) {return false;}
 
         List<InvHelper.ContainedItem> targets = Stream.of(
                 InvHelper.POUCHES_CONTAINED(gui).get().stream().filter(InvHelper::isDrinkContainer),
@@ -582,10 +606,12 @@ public class MiningMaterials {
             bot.checkCancelled();
             if(container.disposed()) {continue;}
 
-            boolean walked = MapHelper.walkTo(gui, container.rc, 6000, MapHelper.GOB_ARRIVE_RADIUS);
-            MiningBot.diag("[minebot-diag] eatFromZone: walkTo container %s -> %b", container.resid(), walked);
-            if(!walked) {continue;}
-            MiningBot.waitForMovementSettled(gui, bot, 3000);
+            String resid = container.resid();
+            BotMovement.Result movement = MiningBot.approachGob(gui, bot, container,
+                "food container " + resid + " #" + container.id);
+            boolean approached = movement != null && movement.readyToInteract();
+            MiningBot.diag("[minebot-diag] eatFromZone: NavCore approach container %s -> %b", resid, approached);
+            if(!approached) {continue;}
 
             Window win = openContainerWindow(gui, bot, container, 3000);
             MiningBot.diag("[minebot-diag] eatFromZone: openContainerWindow -> %s", win != null ? win.caption() : "null");
