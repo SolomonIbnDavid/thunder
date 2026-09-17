@@ -62,4 +62,11 @@ public class CellarDiggerRulesTest {
         assertEquals(500, CellarDiggerRules.MAX_CHIPS_PER_BOULDER);
         assertEquals(128, CellarDiggerRules.MAX_DOOR_CYCLES);
     }
+
+    @Test public void groundedBoulderRequiresThreeStableSamples() {
+        assertFalse(CellarDiggerRules.groundedBoulderStable(0));
+        assertFalse(CellarDiggerRules.groundedBoulderStable(2));
+        assertTrue(CellarDiggerRules.groundedBoulderStable(3));
+        assertTrue(CellarDiggerRules.groundedBoulderStable(4));
+    }
 }

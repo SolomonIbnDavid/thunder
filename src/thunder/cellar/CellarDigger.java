@@ -9,6 +9,7 @@ import haven.Coord;
 import haven.Coord2d;
 import haven.Debug;
 import haven.FlowerMenu;
+import haven.Following;
 import haven.GItem;
 import haven.GameUI;
 import haven.Gob;
@@ -20,6 +21,7 @@ import haven.UI;
 import haven.WItem;
 import haven.Widget;
 import haven.pathfinding.BotMovement;
+import haven.pathfinding.PlacementExecutor;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -30,7 +32,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/** Excavates a cellar, chips each spawned bumling in place, drops its output,
+/** Excavates a cellar, grounds and chips each spawned bumling, drops its output,
  * and enters the completed cellar. */
 public final class CellarDigger {
     private static final String DEBUG_LOG = "logs/cellar-digger-debug.log";
@@ -40,6 +42,8 @@ public final class CellarDigger {
     private static final long POST_ACTION_SETTLE = 2000L;
     private static final long TRANSITION_TIMEOUT = 15000L;
     private static final long STAMINA_TIMEOUT = 30000L;
+    private static final long BOULDER_STATE_SETTLE = 2000L;
+    private static final long BOULDER_GROUND_TIMEOUT = 9000L;
     private static final double BOULDER_APPROACH_RADIUS = MCache.tilesz.x * 1.25;
     private static final int MAX_ROCK_DROPS = 600;
 
@@ -123,6 +127,9 @@ public final class CellarDigger {
         if(gui == null) return;
         try {
             if(gui.pathQueue != null) gui.pathQueue.clear();
+        } catch(Exception ignored) {}
+        try {
+            if(gui.map != null) gui.map.cancelPlacement();
         } catch(Exception ignored) {}
         if(closeMenus) {
             try {
@@ -215,7 +222,7 @@ public final class CellarDigger {
 
                 Gob bumling = nearestBumling();
                 if(bumling != null) {
-                    chipBoulder(bumling);
+                    handleBumling(bumling);
                     continue;
                 }
 
@@ -224,7 +231,7 @@ public final class CellarDigger {
                 bot.checkCancelled();
                 bumling = nearestBumling();
                 if(bumling != null) {
-                    chipBoulder(bumling);
+                    handleBumling(bumling);
                     continue;
                 }
 
@@ -245,6 +252,7 @@ public final class CellarDigger {
             if(gui.getIMeter("stam") == null) fail("stamina meter is unavailable");
             if(inCombat()) fail("cannot start while in combat");
             if(gui.hand() != null) fail("clear the cursor before starting");
+            if(gui.map.isPlacing()) fail("cancel the active placement cursor before starting");
             if(!CFG.AUTO_DRINK_ENABLED.get()) fail("global auto-drink must be enabled");
             if(!CellarDiggerRules.autoDrinkThresholdSafe(CFG.AUTO_DRINK_THRESHOLD.get()))
                 fail("global auto-drink threshold must be at least 40%");
@@ -280,6 +288,102 @@ public final class CellarDigger {
                 return state[0] != ScanState.LOADING;
             });
             return state[0];
+        }
+
+        /** A cellar excavation first creates a bumling attached to the player.
+         * The resource can enter the object cache slightly before its Following
+         * attribute, so do not mistake that short interval for a grounded rock. */
+        private void handleBumling(Gob bumling) throws InterruptedException, Abort {
+            bumling = settledBumling(bumling.id);
+            if(bumling == null) return;
+            if(isCarried(bumling)) {
+                placeCarriedBoulder(bumling);
+                return;
+            }
+            chipBoulder(bumling);
+        }
+
+        private Gob settledBumling(long id) throws InterruptedException, Abort {
+            long end = System.currentTimeMillis() + BOULDER_STATE_SETTLE;
+            while(System.currentTimeMillis() < end) {
+                checkSafety();
+                Gob current = currentBumling(id);
+                if(current == null || isCarried(current)) return current;
+                Thread.sleep(75L);
+            }
+            return currentBumling(id);
+        }
+
+        /** Place the overhead bumling onto the player's current, known-walkable
+         * position. PlacementExecutor first stages the player beside that anchor,
+         * opens the carried-object placement ghost with a gob-targeted click, and
+         * commits the live ghost. A rejected commit is retried from the next
+         * position the player successfully occupied. */
+        private void placeCarriedBoulder(Gob bumling) throws InterruptedException, Abort {
+            long id = bumling.id;
+            for(int attempt = 1; attempt <= CellarDiggerRules.MAX_ATTEMPTS; attempt++) {
+                checkSafety();
+                Gob current = currentBumling(id);
+                if(current == null) fail("carried boulder " + id + " disappeared before placement");
+                if(!isCarried(current)) {
+                    Gob grounded = waitForGroundedBumling(id, 750L);
+                    if(grounded != null) return;
+                    fail("boulder " + id + " was released without a stable ground position");
+                }
+
+                Gob player = gui.map.player();
+                if(player == null || player.rc == null)
+                    fail("player position is unavailable while placing boulder " + id);
+                Coord2d target = Coord2d.of(player.rc.x, player.rc.y);
+                setPhase("placing boulder " + (bouldersRemoved + 1));
+                diag("BOULDER-PLACE begin id=%d resid=%s attempt=%d carried-pos=%s target=%s player=%s",
+                    id, resid(current), attempt, current.rc, target, player.rc);
+
+                PlacementExecutor.Result result = PlacementExecutor.commitLifted(
+                    gui, bot, current, null, target, current.a,
+                    STEP_TIMEOUT, STEP_TIMEOUT, null);
+                diag("BOULDER-PLACE command id=%d attempt=%d outcome=%s detail=%s target=%s",
+                    id, attempt, result.outcome, result.detail, target);
+
+                Gob grounded = waitForGroundedBumling(id,
+                    result.sent() ? BOULDER_GROUND_TIMEOUT : 750L);
+                if(grounded != null) {
+                    diag("BOULDER-PLACE grounded id=%d resid=%s attempt=%d pos=%s angle=%.6f",
+                        id, resid(grounded), attempt, grounded.rc, grounded.a);
+                    setPhase("placed boulder " + (bouldersRemoved + 1));
+                    return;
+                }
+
+                current = currentBumling(id);
+                diag("BOULDER-PLACE retry id=%d attempt=%d exists=%s carried=%s placing=%s",
+                    id, attempt, current != null, isCarried(current), gui.map.isPlacing());
+                if(current == null) fail("boulder " + id + " disappeared during placement");
+                if(!isCarried(current))
+                    fail("boulder " + id + " was released without a stable ground position");
+            }
+            fail("could not place carried boulder " + id + " after three attempts");
+        }
+
+        private Gob waitForGroundedBumling(long id, long timeout)
+                throws InterruptedException, Abort {
+            long end = System.currentTimeMillis() + timeout;
+            Coord2d last = null;
+            int stable = 0;
+            while(System.currentTimeMillis() < end) {
+                checkSafety();
+                Gob current = currentBumling(id);
+                if(current != null && !isCarried(current) && current.rc != null) {
+                    boolean same = last != null && current.rc.dist(last) <= OCache.posres.x * 1.5;
+                    stable = same ? stable + 1 : 1;
+                    last = Coord2d.of(current.rc.x, current.rc.y);
+                    if(CellarDiggerRules.groundedBoulderStable(stable)) return current;
+                } else {
+                    stable = 0;
+                    last = null;
+                }
+                Thread.sleep(75L);
+            }
+            return null;
         }
 
         private ScanState waterState() {
@@ -385,6 +489,11 @@ public final class CellarDigger {
                     bouldersRemoved++;
                     setPhase("removed boulder " + bouldersRemoved);
                     diag("BOULDER complete id=%d chips=%d", id, completedChips);
+                    return;
+                }
+                if(isCarried(bumling)) {
+                    diag("BOULDER chip deferred id=%d reason=carried", id);
+                    placeCarriedBoulder(bumling);
                     return;
                 }
                 if(!Equip.ensureTwoHanded(gui, bot, Equip.PICKAXE))
@@ -733,6 +842,13 @@ public final class CellarDigger {
         private Gob currentBumling(long id) {
             Gob gob = gui.ui.sess.glob.oc.getgob(id);
             return validGob(gob) && CellarDiggerRules.isBumling(resid(gob)) ? gob : null;
+        }
+
+        private boolean isCarried(Gob gob) {
+            if(gob == null || gob.disposed()) return false;
+            Gob player = gui.map.player();
+            Following following = gob.getattr(Following.class);
+            return player != null && following != null && following.tgt == player.id;
         }
 
         private boolean cellarTransitionVisible() {

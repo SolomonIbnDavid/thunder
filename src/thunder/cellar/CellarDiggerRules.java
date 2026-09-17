@@ -11,6 +11,7 @@ public final class CellarDiggerRules {
     public static final int MAX_ATTEMPTS = 3;
     public static final int MAX_CHIPS_PER_BOULDER = 500;
     public static final int MAX_DOOR_CYCLES = 128;
+    public static final int GROUNDED_STABLE_SAMPLES = 3;
 
     private static final String CELLAR_DOOR = "gfx/terobjs/arch/cellardoor";
     private static final String BUMLING_PREFIX = "gfx/terobjs/bumlings/";
@@ -58,6 +59,12 @@ public final class CellarDiggerRules {
 
     public static boolean autoDrinkThresholdSafe(int thresholdPercent) {
         return thresholdPercent >= MIN_AUTO_DRINK_THRESHOLD;
+    }
+
+    /** A released bumling is safe to interact with only after its authoritative
+     * ground position has remained unchanged across several client samples. */
+    public static boolean groundedBoulderStable(int stableSamples) {
+        return stableSamples >= GROUNDED_STABLE_SAMPLES;
     }
 
     public static DoorOutcome doorOutcome(boolean bumlingVisible, boolean doorVisible,
