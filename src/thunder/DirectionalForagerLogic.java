@@ -1,5 +1,6 @@
 package thunder;
 
+import haven.Coord;
 import haven.Coord2d;
 import java.util.*;
 
@@ -32,6 +33,55 @@ public final class DirectionalForagerLogic {
         return from.add(x * distance, y * distance);
     }
 
+    /**
+     * Exact goals spread around the preferred compass heading. The movement
+     * boundary deliberately does not snap blocked destinations, so exploratory
+     * bots must offer their own equally valid alternatives.
+     */
+    public static List<Coord2d> forwardProbes(Coord2d from, Direction direction,
+                                               double distance, double... angles) {
+        List<Coord2d> probes = new ArrayList<>();
+        if(from == null || direction == null || distance <= 0.0 || angles == null) return probes;
+        for(double angle : angles) probes.add(probe(from, direction, distance, angle));
+        return probes;
+    }
+
+    /** Exact goals spread around the heading from {@code from} to {@code target}. */
+    public static List<Coord2d> towardProbes(Coord2d from, Coord2d target,
+                                              double distance, double... angles) {
+        List<Coord2d> probes = new ArrayList<>();
+        if(from == null || target == null || distance <= 0.0 || angles == null) return probes;
+        double heading = Math.atan2(target.y - from.y, target.x - from.x);
+        for(double offset : angles) {
+            double angle = heading + offset;
+            probes.add(from.add(Math.cos(angle) * distance, Math.sin(angle) * distance));
+        }
+        return probes;
+    }
+
+    /**
+     * Stand points on a ring around a collision-free point target. Angle zero
+     * is the near side facing the player; later angles are fallback sides.
+     */
+    public static List<Coord2d> approachProbes(Coord2d from, Coord2d target,
+                                                double standoff, double... angles) {
+        List<Coord2d> probes = new ArrayList<>();
+        if(from == null || target == null || standoff <= 0.0 || angles == null) return probes;
+        double dx = from.x - target.x;
+        double dy = from.y - target.y;
+        double length = Math.sqrt(dx * dx + dy * dy);
+        if(length <= 1.0e-9) {dx = 1.0; dy = 0.0; length = 1.0;}
+        dx /= length;
+        dy /= length;
+        for(double angle : angles) {
+            double cs = Math.cos(angle), sn = Math.sin(angle);
+            double x = dx * cs - dy * sn;
+            double y = dx * sn + dy * cs;
+            probes.add(target.add(x * standoff, y * standoff));
+        }
+        return probes;
+    }
+
     public static double forwardProgress(Coord2d from, Coord2d to, Direction direction) {
         return (to.x - from.x) * direction.dx + (to.y - from.y) * direction.dy;
     }
@@ -43,6 +93,51 @@ public final class DirectionalForagerLogic {
             if(danger != null && point.dist(danger) < radius) return false;
         }
         return true;
+    }
+
+    /**
+     * Target disappearance is the authoritative completion signal for a
+     * forage pickup. Inventory changes are useful diagnostics, but are not a
+     * reliable gate when the server merges or represents the picked item in a
+     * way that leaves the inventory signature unchanged.
+     */
+    public static boolean pickupConfirmed(boolean targetRemoved, boolean storageChanged) {
+        return targetRemoved;
+    }
+
+    /** The first strategic route tile beyond the point where live movement
+     * stopped. Used to remember walls/ridges missing from the saved map. */
+    public static Coord firstBlockedRouteTile(List<Coord> route, Coord stopped,
+                                               int fromIndex, int throughIndex) {
+        if(route == null || route.isEmpty() || stopped == null) return null;
+        int from = Math.max(0, Math.min(fromIndex, route.size() - 1));
+        int through = Math.max(from, Math.min(throughIndex, route.size() - 1));
+        int nearest = Math.max(0, from - 1);
+        double nearestDistance = Double.POSITIVE_INFINITY;
+        for(int i = nearest; i <= through; i++) {
+            Coord tile = route.get(i);
+            double distance = Math.hypot(tile.x - stopped.x, tile.y - stopped.y);
+            if(distance < nearestDistance || (distance == nearestDistance && i > nearest)) {
+                nearest = i;
+                nearestDistance = distance;
+            }
+        }
+        return new Coord(route.get(Math.min(through, Math.max(from, nearest + 1))));
+    }
+
+    /** Previously completed cave-route tiles are walls for future chunks.
+     * Covered terrain is also closed outside a small exit bubble around the
+     * new start, preventing a route from circling through the old scene merely
+     * to reach a little unseen floor at its far end. */
+    public static boolean caveRouteBlocked(Coord tile, Coord start,
+                                            Set<Coord> blocked, Set<Coord> traversed,
+                                            Set<Coord> covered, double coveredExitRadius) {
+        if(tile == null) return true;
+        if(blocked != null && blocked.contains(tile)) return true;
+        if(tile.equals(start)) return false;
+        if(traversed != null && traversed.contains(tile)) return true;
+        return covered != null && covered.contains(tile) && coveredExitRadius >= 0.0
+            && Math.hypot(tile.x - start.x, tile.y - start.y) > coveredExitRadius;
     }
 
     public static Candidate nearest(Coord2d player, Collection<Candidate> candidates, Set<String> selected, Set<Long> failed) {

@@ -10,9 +10,10 @@ import org.junit.jupiter.api.Test;
 
 public class BotMovementTest {
    @Test
-   void exposesOnlyTheFourMovementModes() {
+   void exposesTheSupportedMovementModes() {
       Assertions.assertArrayEquals(new BotMovement.Mode[]{
          BotMovement.Mode.LAND,
+         BotMovement.Mode.CAVE,
          BotMovement.Mode.BOAT_ROUTE,
          BotMovement.Mode.BOAT_LOCAL,
          BotMovement.Mode.BOAT_APPROACH
