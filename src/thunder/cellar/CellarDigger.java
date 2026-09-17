@@ -537,6 +537,12 @@ public final class CellarDigger {
 
                 GameUI.DraggedItem held = gui.hand();
                 if(held != null) {
+                    try {
+                        held.item.info();
+                    } catch(Loading loading) {
+                        Thread.sleep(25L);
+                        continue;
+                    }
                     if(!MiningMaterials.isRockMaterial(held.item))
                         fail("an unexpected non-rock item appeared on the cursor");
                     Gob player = gui.map.player();
