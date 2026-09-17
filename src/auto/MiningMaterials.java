@@ -1,5 +1,6 @@
 package auto;
 
+import haven.pathfinding.BotMovement;
 import haven.pathfinding.WorldObjectRegistry;
 
 import haven.*;
@@ -227,6 +228,30 @@ public class MiningMaterials {
     }
 
     /**
+     * Every zone scan (fetchFromZone/refillWaterFromZone/eatFromZone) reads
+     * gui.ui.sess.glob.oc -- the CLIENT's currently-loaded object cache, not the
+     * actual game world -- and gives up the instant it comes back empty. That's
+     * silently wrong once the mining frontier has moved far enough away that the
+     * supply room's own grid has been unloaded from that cache (confirmed live:
+     * a whole run logged "0 container(s) in zone" for water/food/stone/bars from
+     * its very first resupply attempt to its last, despite the same zones having
+     * real containers in them minutes earlier at a closer frontier) -- the scan
+     * was never wrong about what's loaded, it just never walked anywhere first to
+     * load the zone before asking what's in it. Call this once when a scan comes
+     * back empty, then redo the scan -- walking to the zone's own center (not any
+     * specific gob, since by definition none were found) is enough to bring its
+     * grid back into the client's loaded/render range.
+     */
+    private static boolean ensureZoneLoaded(GameUI gui, Bot bot, Area zone) throws InterruptedException {
+        Coord centerTile = zone.ul.add(zone.br).div(2);
+        Coord2d center = MCache.tilesz.mul(centerTile.x, centerTile.y).add(5, 5);
+        BotMovement.Result result = BotMovement.moveTo(gui, bot, center, BotMovement.Mode.LAND);
+        boolean walked = result != null && result.arrived();
+        MiningBot.diag("[minebot-diag] ensureZoneLoaded: zone empty on first scan, walked to zone center %s -> %b", centerTile, walked);
+        return walked;
+    }
+
+    /**
      * Walks to each GobTag.CONTAINER gob inside `zone` in turn, opens it, and
      * transfers every item matching `want` into main inventory; then, if still
      * short, walks to and picks up every loose GobTag.PICKUP item-gob in the
@@ -273,6 +298,15 @@ public class MiningMaterials {
             .map(e -> e.gob)
             .collect(Collectors.toList());
         MiningBot.diag("[minebot-diag] fetchFromZone: %d container(s) in zone", containers.size());
+
+        if(containers.isEmpty() && ensureZoneLoaded(gui, bot, zone)) {
+            containers = gui.ui.sess.glob.oc.stream()
+                .filter(gobIs(GobTag.CONTAINER))
+                .filter(g -> zone.contains(g.rc.floor(MCache.tilesz)))
+                .sorted(PositionHelper.byDistanceToPlayer)
+                .collect(Collectors.toList());
+            MiningBot.diag("[minebot-diag] fetchFromZone: %d container(s) in zone after loading it", containers.size());
+        }
 
         for(Gob container : containers) {
             bot.checkCancelled();
@@ -332,7 +366,12 @@ public class MiningMaterials {
                 MiningBot.diag("[minebot-diag] fetchFromZone: crate-style, inventory widget found=%b", inv != null);
                 if(inv != null) {
                     int matched = 0;
+                    // Stop once `need` is satisfied -- unlike the Stockpile "Take" branch
+                    // above, nothing here bounds this loop otherwise, so it grabs every
+                    // matching item in the crate regardless of `need` (confirmed live: a
+                    // bars_target of 10 still emptied an entire crate of bars).
                     for(WItem w : inv.children(WItem.class)) {
+                        if(countMatching(gui, want) >= need) {break;}
                         if(want.test(w)) {
                             matched++;
                             w.item.wdgmsg("transfer", Coord.z);
@@ -443,6 +482,13 @@ public class MiningMaterials {
             .filter(g -> zone.contains(g.rc.floor(MCache.tilesz)))
             .sorted(PositionHelper.byDistanceToPlayer)
             .findFirst().orElse(null);
+        if((barrel == null) && ensureZoneLoaded(gui, bot, zone)) {
+            barrel = gui.ui.sess.glob.oc.stream()
+                .filter(gobIs(GobTag.HAS_WATER))
+                .filter(g -> zone.contains(g.rc.floor(MCache.tilesz)))
+                .sorted(PositionHelper.byDistanceToPlayer)
+                .findFirst().orElse(null);
+        }
         if(barrel == null) {
             MiningBot.diag("[minebot-diag] refillWaterFromZone: no GobTag.HAS_WATER gob in zone");
             return false;
@@ -519,6 +565,15 @@ public class MiningMaterials {
             .sorted(PositionHelper.byDistanceToPlayer)
             .collect(Collectors.toList());
         MiningBot.diag("[minebot-diag] eatFromZone: %d container(s) in zone", containers.size());
+
+        if(containers.isEmpty() && ensureZoneLoaded(gui, bot, zone)) {
+            containers = gui.ui.sess.glob.oc.stream()
+                .filter(gobIs(GobTag.CONTAINER))
+                .filter(g -> zone.contains(g.rc.floor(MCache.tilesz)))
+                .sorted(PositionHelper.byDistanceToPlayer)
+                .collect(Collectors.toList());
+            MiningBot.diag("[minebot-diag] eatFromZone: %d container(s) in zone after loading it", containers.size());
+        }
 
         int bites = 0;
         for(Gob container : containers) {
