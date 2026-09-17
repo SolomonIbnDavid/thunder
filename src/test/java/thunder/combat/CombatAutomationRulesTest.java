@@ -95,4 +95,19 @@ public class CombatAutomationRulesTest {
         assertEquals(CombatAutomationRules.Decision.QUICK_BARRAGE,
             CombatAutomationRules.decide(build));
     }
+
+    @Test void waitsUntilTheTargetIsInsideMeleeActionRange() {
+        assertTrue(CombatAutomationRules.canAttemptAction(0));
+        assertTrue(CombatAutomationRules.canAttemptAction(55));
+        assertFalse(CombatAutomationRules.canAttemptAction(55.01));
+        assertFalse(CombatAutomationRules.canAttemptAction(Double.NaN));
+        assertFalse(CombatAutomationRules.canAttemptAction(Double.POSITIVE_INFINITY));
+    }
+
+    @Test void retriesTransientOrOutOfRangeAcknowledgementTimeouts() {
+        assertTrue(CombatAutomationRules.shouldRetryMissingAcknowledgement(1, 30));
+        assertTrue(CombatAutomationRules.shouldRetryMissingAcknowledgement(2, 30));
+        assertFalse(CombatAutomationRules.shouldRetryMissingAcknowledgement(3, 30));
+        assertTrue(CombatAutomationRules.shouldRetryMissingAcknowledgement(3, 80));
+    }
 }

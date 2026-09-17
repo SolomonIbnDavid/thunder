@@ -34,6 +34,7 @@ public final class CombatAutomation extends Widget {
     private static final String QUICK_BARRAGE = "paginae/atk/barrage";
     private static final String FULL_CIRCLE = "paginae/atk/fullcircle";
     private static final double ACK_TIMEOUT = 3.0;
+    private static final double ACK_RETRY_DELAY = 0.75;
     private static final DateTimeFormatter LOG_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
     private static final DateTimeFormatter FILE_TIME = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
@@ -47,6 +48,8 @@ public final class CombatAutomation extends Widget {
     private double pendingLastUse;
     private String pendingAction;
     private String pendingName;
+    private int consecutiveAckTimeouts;
+    private double retryNotBefore;
     private String lastLoggedState;
     private String lastDefenseDeck;
 
@@ -56,7 +59,8 @@ public final class CombatAutomation extends Widget {
         setStatus("Enabled; waiting for combat");
         log("enabled profile=small-animal enemy-red-target=" +
             CombatAutomationRules.ENEMY_RED_TARGET + " own-opening-limit=" +
-            CombatAutomationRules.OWN_OPENING_LIMIT);
+            CombatAutomationRules.OWN_OPENING_LIMIT + " max-action-distance=" +
+            CombatAutomationRules.MAX_ACTION_DISTANCE);
     }
 
     public static boolean paginaAction(OwnerContext ctx, MenuGrid.Interaction iact) {
@@ -105,17 +109,33 @@ public final class CombatAutomation extends Widget {
         if(pendingAction != null) {
             if(fv == null || fsess == null || fv.current == null) {
                 log("combat ended while awaiting acknowledgement action=" + pendingAction);
-                pendingAction = null;
-                pendingName = null;
+                clearPending();
                 targetId = -1;
+                consecutiveAckTimeouts = 0;
+                retryNotBefore = 0;
                 updateState("Enabled; waiting for combat");
                 return;
             } else if(fv.lastuse > pendingLastUse) {
                 log("ack action=" + pendingAction);
-                pendingAction = null;
-                pendingName = null;
+                clearPending();
+                consecutiveAckTimeouts = 0;
+                retryNotBefore = 0;
             } else if(now - pendingSince >= ACK_TIMEOUT) {
-                disableWithError("No server acknowledgement for " + pendingName + ".");
+                String timedOutAction = pendingAction;
+                String timedOutName = pendingName;
+                double distance = currentTargetDistance(fv);
+                int timeout = ++consecutiveAckTimeouts;
+                clearPending();
+                if(CombatAutomationRules.shouldRetryMissingAcknowledgement(timeout, distance)) {
+                    retryNotBefore = now + ACK_RETRY_DELAY;
+                    log(String.format("ack timeout action=%s name=%s attempt=%d distance=%.1f retry",
+                        timedOutAction, timedOutName, timeout, distance));
+                    updateState(String.format("Waiting to retry %s; target distance %.1f",
+                        timedOutName, distance));
+                    return;
+                }
+                disableWithError("No server acknowledgement for " + timedOutName +
+                    " after " + timeout + " in-range attempts.");
                 return;
             } else {
                 return;
@@ -124,6 +144,8 @@ public final class CombatAutomation extends Widget {
 
         if(fv == null || fsess == null || fv.current == null) {
             targetId = -1;
+            consecutiveAckTimeouts = 0;
+            retryNotBefore = 0;
             updateState("Enabled; waiting for combat");
             return;
         }
@@ -136,6 +158,8 @@ public final class CombatAutomation extends Widget {
         }
         if(targetId != target.id) {
             targetId = target.id;
+            consecutiveAckTimeouts = 0;
+            retryNotBefore = 0;
             log("target id=" + target.id + " resource=" + target.resid());
         }
 
@@ -143,6 +167,21 @@ public final class CombatAutomation extends Widget {
         if(support != TargetSupport.SUPPORTED) {
             updateState(support == TargetSupport.BEAR ?
                 "Paused: bears are not supported yet" : "Paused: target is not a supported wild animal");
+            return;
+        }
+
+        double targetDistance = targetDistance(target);
+        if(!Double.isFinite(targetDistance)) {
+            updateState("Waiting for player and target position data");
+            return;
+        }
+        if(!CombatAutomationRules.canAttemptAction(targetDistance)) {
+            updateState(String.format("Approaching target; distance %.1f (need %.1f or less)",
+                targetDistance, CombatAutomationRules.MAX_ACTION_DISTANCE));
+            return;
+        }
+        if(now < retryNotBefore) {
+            updateState(String.format("Waiting to retry; target distance %.1f", targetDistance));
             return;
         }
 
@@ -235,12 +274,30 @@ public final class CombatAutomation extends Widget {
         pendingName = choice.name;
         log("send slot=" + choice.slot + " action=" + choice.resource + " name=" + choice.name +
             " enemy-red=" + enemyRed + " own=" + ownGreen + "/" + ownYellow +
-            "/" + ownRed + "/" + ownBlue);
+            "/" + ownRed + "/" + ownBlue + String.format(" distance=%.1f", targetDistance));
         if(!fsess.triggerAction(choice.slot, target.rc)) {
-            pendingAction = null;
-            pendingName = null;
+            clearPending();
             disableWithError("Combat action slot became unavailable.");
         }
+    }
+
+    private double currentTargetDistance(Fightview fv) {
+        if(fv == null || fv.current == null)
+            return(Double.NaN);
+        Gob target = gui.ui.sess.glob.oc.getgob(fv.current.gobid);
+        return(targetDistance(target));
+    }
+
+    private double targetDistance(Gob target) {
+        Gob player = (gui.map == null) ? null : gui.map.player();
+        if(player == null || player.rc == null || target == null || target.rc == null)
+            return(Double.NaN);
+        return(player.rc.dist(target.rc));
+    }
+
+    private void clearPending() {
+        pendingAction = null;
+        pendingName = null;
     }
 
     private static Integer opening(Bufflist list, String resource) {
