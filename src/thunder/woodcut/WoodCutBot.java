@@ -420,15 +420,18 @@ public final class WoodCutBot {
         private void requireInventorySpace(String context) throws StopRun {
             if(gui.maininv == null) fail("main inventory is unavailable");
             int free = gui.maininv.free();
-            if(free < product.inventoryCells) {
-                diag("INVENTORY blocked context=%s free=%d products=%d", context, free, countProducts());
+            Coord fit = gui.maininv.findPlaceFor(product.inventorySize);
+            if(fit == null) {
+                diag("INVENTORY blocked context=%s free=%d required=%dx%d products=%d", context, free,
+                    product.inventorySize.x, product.inventorySize.y, countPendingProducts());
                 fail("not enough inventory space for " + product.name().toLowerCase(Locale.ROOT) +
-                    "; clear at least " + product.inventoryCells + " cells before " + context);
+                    "; clear a contiguous " + product.inventorySize.x + "x" + product.inventorySize.y +
+                    " space before " + context);
             }
         }
 
         private boolean hasProductSpace() {
-            return gui.maininv != null && gui.maininv.free() >= product.inventoryCells;
+            return gui.maininv != null && gui.maininv.findPlaceFor(product.inventorySize) != null;
         }
 
         /** Chopping can replace a shortened log with a new gob id at the same point. */

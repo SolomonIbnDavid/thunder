@@ -1,5 +1,6 @@
 package thunder.woodcut;
 
+import haven.Coord;
 import haven.Coord2d;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -21,6 +22,8 @@ public class WoodCutRulesTest {
     @Test public void usesObservedStockpileResources() {
         Assertions.assertEquals("gfx/terobjs/stockpile-board", WoodCutRules.Product.BOARDS.stockpile);
         Assertions.assertEquals("gfx/terobjs/stockpile-wblock", WoodCutRules.Product.BLOCKS.stockpile);
+        Assertions.assertEquals(new Coord(1, 4), WoodCutRules.Product.BOARDS.inventorySize);
+        Assertions.assertEquals(new Coord(2, 1), WoodCutRules.Product.BLOCKS.inventorySize);
         Assertions.assertEquals(4, WoodCutRules.Product.BOARDS.inventoryCells);
         Assertions.assertEquals(2, WoodCutRules.Product.BLOCKS.inventoryCells);
     }

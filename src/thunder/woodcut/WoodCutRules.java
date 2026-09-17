@@ -1,5 +1,7 @@
 package thunder.woodcut;
 
+import haven.Coord;
+
 import java.util.Locale;
 import java.util.ArrayList;
 import java.util.List;
@@ -9,17 +11,19 @@ public final class WoodCutRules {
     private WoodCutRules() {}
 
     public enum Product {
-        BLOCKS("Chop into blocks", "gfx/terobjs/stockpile-wblock", 2),
-        BOARDS("Make boards", "gfx/terobjs/stockpile-board", 4);
+        BLOCKS("Chop into blocks", "gfx/terobjs/stockpile-wblock", new Coord(2, 1)),
+        BOARDS("Make boards", "gfx/terobjs/stockpile-board", new Coord(1, 4));
 
         public final String flower;
         public final String stockpile;
-        /** Minimum empty inventory cells needed for one produced item. */
+        /** Exact inventory footprint needed for one produced item. */
+        public final Coord inventorySize;
         public final int inventoryCells;
-        Product(String flower, String stockpile, int inventoryCells) {
+        Product(String flower, String stockpile, Coord inventorySize) {
             this.flower = flower;
             this.stockpile = stockpile;
-            this.inventoryCells = inventoryCells;
+            this.inventorySize = inventorySize;
+            this.inventoryCells = inventorySize.x * inventorySize.y;
         }
     }
 
