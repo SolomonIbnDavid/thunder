@@ -87,14 +87,23 @@ public class MapHelper {
 
     /** True if tc is already open, walkable cave/mine floor -- nothing left to mine there. */
     public static boolean isMinedFloorTile(GameUI gui, Coord tc) {
-	MCache mcache = gui.ui.sess.glob.map;
-	int t = mcache.gettile(tc);
-	Resource res = mcache.tilesetr(t);
-	if(res == null) {
+	try {
+	    MCache mcache = gui.ui.sess.glob.map;
+	    int t = mcache.gettile(tc);
+	    Resource res = mcache.tilesetr(t);
+	    return res != null && isMinedFloorName(res.name);
+	} catch(Loading loading) {
+	    /* A newly exposed tile can reference a resource that the loader has not
+	     * resolved yet. Treat it as unknown/closed for this polling pass; V3 will
+	     * probe again instead of letting LoadingIndir terminate the whole run. */
 	    return false;
 	}
+    }
+
+    static boolean isMinedFloorName(String resourceName) {
+	if(resourceName == null) {return false;}
 	for(String name : MINED_FLOOR_TILES) {
-	    if(res.name.equals(name)) {return true;}
+	    if(resourceName.equals(name)) {return true;}
 	}
 	return false;
     }

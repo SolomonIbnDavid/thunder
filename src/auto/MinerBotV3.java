@@ -22,6 +22,7 @@ import thunder.mining.MinerBotV3ZoneStore;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -112,6 +113,19 @@ public final class MinerBotV3 {
             try {
                 MiningBot.prewarmSupportResource(gui, bot);
                 new Run(gui, bot, direction, targetBars, cap, context.segment, start).execute();
+            } catch(InterruptedException interrupted) {
+                String reason = bot.stopMessage();
+                String source = bot.cancellationSource();
+                diag("CANCEL reason=%s source=%s", reason == null ? "Task interrupted" : reason,
+                    source == null ? "unknown" : source);
+                throw interrupted;
+            } catch(Throwable failure) {
+                status = "Status: stopped — task error: " + failure.getClass().getSimpleName()
+                    + (failure.getMessage() == null ? "" : ": " + failure.getMessage());
+                diagThrowable("ERROR", failure);
+                if(failure instanceof RuntimeException) throw (RuntimeException) failure;
+                if(failure instanceof Error) throw (Error) failure;
+                throw new RuntimeException(failure);
             } finally {
                 running = false;
                 active = null;
@@ -142,6 +156,16 @@ public final class MinerBotV3 {
         Debug.log.println(line);
         Debug.log.flush();
         if(log != null) {log.println(line); log.flush();}
+    }
+
+    static synchronized void diagThrowable(String phase, Throwable failure) {
+        StringWriter buffer = new StringWriter();
+        failure.printStackTrace(new PrintWriter(buffer));
+        String text = String.format(Locale.ROOT, "[miner-v3] %s type=%s message=%s%n%s",
+            phase, failure.getClass().getName(), failure.getMessage(), buffer);
+        Debug.log.print(text);
+        Debug.log.flush();
+        if(log != null) {log.print(text); log.flush();}
     }
 
     static void logMovement(String operation, String phase, BotMovement.Result result) {

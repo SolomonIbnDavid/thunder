@@ -13,8 +13,10 @@ public class Bot implements Defer.Callable<Void> {
     private BotAction[] actions;
     private Defer.Future<Void> task;
     private boolean highlight = true;
-    private boolean cancelled = false;
-    private String message = null;
+    private volatile boolean cancelled = false;
+    private volatile String message = null;
+    private volatile String cancellationSource = null;
+    private volatile Throwable failure = null;
     BotAction[] setup = null;
     BotAction[] cleanup = null;
     UI ui;
@@ -26,6 +28,12 @@ public class Bot implements Defer.Callable<Void> {
     public UI ui() {return ui;}
 
     public GameUI gui() {return ui != null ? ui.gui : null;}
+
+    /** Diagnostic context for an owning bot. The first cancellation wins so a
+     * later cleanup call cannot erase the operation that actually stopped it. */
+    public String stopMessage() {return message;}
+    public String cancellationSource() {return cancellationSource;}
+    public Throwable failure() {return failure;}
 
     public Bot actions(BotAction... actions) {
 	this.actions = actions;
@@ -74,6 +82,7 @@ public class Bot implements Defer.Callable<Void> {
 	    if(message == null) { message = "Task interrupted"; }
 	    throw e;
 	} catch (Throwable e) {
+	    failure = e;
 	    if(message == null) {
 		message = "Task error: " + e.getClass().getSimpleName()
 		    + (e.getMessage() != null ? ": " + e.getMessage() : "");
@@ -103,8 +112,10 @@ public class Bot implements Defer.Callable<Void> {
 	task.cancel();
     }
 
-    public void cancel(String message) {
+    public synchronized void cancel(String message) {
+	if(cancelled) {return;}
 	this.message = message;
+	this.cancellationSource = cancellationCaller(Thread.currentThread().getStackTrace());
 	markCancelled();
     }
 
@@ -136,6 +147,16 @@ public class Bot implements Defer.Callable<Void> {
 	    }
 	    current = bot;
 	}
+    }
+
+    static String cancellationCaller(StackTraceElement[] trace) {
+	if(trace == null) {return "unknown";}
+	for(StackTraceElement frame : trace) {
+	    String owner = frame.getClassName();
+	    if(owner.equals(Thread.class.getName()) || owner.equals(Bot.class.getName())) {continue;}
+	    return frame.toString();
+	}
+	return "unknown";
     }
 
     public static Bot process(List<ITarget> targets) {
