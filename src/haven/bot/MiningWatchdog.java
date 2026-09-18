@@ -1,6 +1,7 @@
 package haven.bot;
 
 import auto.MiningBot;
+import auto.MinerBotV3;
 import haven.*;
 
 /**
@@ -26,7 +27,7 @@ public class MiningWatchdog {
     }
 
     public void tick(Gob player) {
-        if(!MiningBot.isRunning()) {return;}
+        if(!MiningBot.isRunning() && !MinerBotV3.isRunning()) {return;}
         if(player.glob == null || player.glob.sess == null || player.glob.sess.ui == null) {return;}
         GameUI gui = player.glob.sess.ui.gui;
         if(gui == null || gui.map == null) {return;}
@@ -38,7 +39,8 @@ public class MiningWatchdog {
         Gob threat = findNearestThreat(gui, player);
         if(threat != null) {
             String label = describe(threat);
-            MiningBot.abort(label + " spotted -- fleeing!");
+            if(MiningBot.isRunning()) MiningBot.abort(label + " spotted -- fleeing!");
+            if(MinerBotV3.isRunning()) MinerBotV3.abort(label + " spotted -- fleeing!");
             flee(gui, player, threat, label);
         }
     }

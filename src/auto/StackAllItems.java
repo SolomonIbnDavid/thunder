@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BooleanSupplier;
+import java.util.function.Predicate;
 
 /**
  * Merge stacks in inventory windows, then organize existing stack contents in
@@ -40,11 +41,14 @@ public class StackAllItems implements Defer.Callable<Void> {
 
     private final List<Inventory> inventories;
     private final boolean rebuildStacks;
+    private final Predicate<WItem> filter;
     private boolean completed = true;
 
-    private StackAllItems(List<Inventory> inventories, boolean rebuildStacks) {
+    private StackAllItems(List<Inventory> inventories, boolean rebuildStacks,
+                          Predicate<WItem> filter) {
 	this.inventories = inventories;
 	this.rebuildStacks = rebuildStacks;
+	this.filter = filter == null ? item -> true : filter;
     }
 
     public static void stack(Inventory inv) {
@@ -56,7 +60,7 @@ public class StackAllItems implements Defer.Callable<Void> {
 	    return;
 	if(InventorySorter.invalidCursor(inv.ui))
 	    return;
-	start(new StackAllItems(Collections.singletonList(inv), organize), inv.ui.gui,
+	start(new StackAllItems(Collections.singletonList(inv), organize, item -> true), inv.ui.gui,
 	      organize ? () -> InventorySorter.sort(inv) : null);
     }
 
@@ -73,7 +77,7 @@ public class StackAllItems implements Defer.Callable<Void> {
 	    targets.add(w.inv);
 	}
 	if(!targets.isEmpty())
-	    start(new StackAllItems(targets, true), gui, () -> InventorySorter.sortAll(gui));
+	    start(new StackAllItems(targets, true, item -> true), gui, () -> InventorySorter.sortAll(gui));
     }
 
     @Override
@@ -82,7 +86,7 @@ public class StackAllItems implements Defer.Callable<Void> {
 	    for(Inventory inv : inventories) {
 		if(inv.disposed())
 		    continue;
-		boolean ok = rebuildStacks ? rebuild(inv) : stackInv(inv, Collections.emptySet());
+		boolean ok = rebuildStacks ? rebuild(inv) : stackInv(inv, Collections.emptySet(), filter);
 		if(!ok) {
 		    completed = false;
 		    break;
@@ -98,12 +102,13 @@ public class StackAllItems implements Defer.Callable<Void> {
     }
 
     private boolean rebuild(Inventory inv) throws InterruptedException {
-	if(!stackInv(inv, Collections.emptySet()))
+	if(!stackInv(inv, Collections.emptySet(), filter))
 	    return false;
 	return organizeStackQualities(inv);
     }
 
-    private boolean stackInv(Inventory inv, Set<Integer> excludedIds) throws InterruptedException {
+    private boolean stackInv(Inventory inv, Set<Integer> excludedIds,
+                             Predicate<WItem> itemFilter) throws InterruptedException {
 	GameUI gui = inv.ui.gui;
 	if(gui == null)
 	    return false;
@@ -117,7 +122,8 @@ public class StackAllItems implements Defer.Callable<Void> {
 	for(int pass = 0; pass < MAX_PASSES; pass++) {
 	    if(inv.disposed() || Thread.currentThread().isInterrupted())
 		return true;
-	    int result = mergeOnePass(gui, inv, stuck, rejectedGroups, fullStacks, excludedIds);
+	    int result = mergeOnePass(gui, inv, stuck, rejectedGroups, fullStacks,
+		                      excludedIds, itemFilter);
 	    if(result < 0)
 		return false;
 	    if(result == 0)
@@ -128,14 +134,16 @@ public class StackAllItems implements Defer.Callable<Void> {
     }
 
     private static int mergeOnePass(GameUI gui, Inventory inv, Set<String> stuck,
-				    Set<String> rejectedGroups, Set<Integer> fullStacks,
-				    Set<Integer> excludedIds)
+			    Set<String> rejectedGroups, Set<Integer> fullStacks,
+			    Set<Integer> excludedIds, Predicate<WItem> itemFilter)
 				    throws InterruptedException {
 	Map<String, List<WItem>> groups = new LinkedHashMap<>();
 	for(Widget wdg = inv.lchild; wdg != null; wdg = wdg.prev) {
 	    if(!wdg.visible || !(wdg instanceof WItem))
 		continue;
 	    WItem w = (WItem) wdg;
+	    if(itemFilter != null && !itemFilter.test(w))
+		continue;
 	    if(excludedIds.contains(w.item.wdgid()) || fullStacks.contains(w.item.wdgid()))
 		continue;
 	    String name = itemName(w);
@@ -212,6 +220,19 @@ public class StackAllItems implements Defer.Callable<Void> {
 	    }
 	}
 	return changed ? 1 : 0;
+    }
+
+    /**
+     * Synchronous, predicate-scoped merge used from an already-running bot.
+     * It does not start another Defer task, sort the inventory, or touch item
+     * groups rejected by the predicate.
+     */
+    public static boolean stackMatchingNow(Inventory inv, Predicate<WItem> filter)
+            throws InterruptedException {
+	if(inv == null || inv.ui == null || inv.ui.gui == null || filter == null)
+	    return false;
+	StackAllItems job = new StackAllItems(Collections.singletonList(inv), false, filter);
+	return job.stackInv(inv, Collections.emptySet(), filter);
     }
 
     private static int merge(GameUI gui, Inventory inv, String key, WItem source,

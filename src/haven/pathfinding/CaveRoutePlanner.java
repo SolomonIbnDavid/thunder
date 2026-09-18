@@ -81,6 +81,25 @@ public final class CaveRoutePlanner {
         }
     }
 
+    private static final class GoalOpen implements Comparable<GoalOpen> {
+        final long key;
+        final double cost;
+        final double estimate;
+
+        GoalOpen(long key, double cost, double estimate) {
+            this.key = key;
+            this.cost = cost;
+            this.estimate = estimate;
+        }
+
+        @Override
+        public int compareTo(GoalOpen other) {
+            int cmp = Double.compare(estimate, other.estimate);
+            if(cmp == 0) cmp = Double.compare(cost, other.cost);
+            return cmp != 0 ? cmp : Long.compare(key, other.key);
+        }
+    }
+
     private CaveRoutePlanner() {}
 
     public static Plan plan(Source source, Coord start) {
@@ -171,6 +190,107 @@ public final class CaveRoutePlanner {
         return new Plan(limited ? Status.LIMIT_REACHED : Status.READY, route, best.coord(),
             best.frontier, frontiers.size(), nodes.size(), visibility,
             unseenVisibility, distance(route));
+    }
+
+    /**
+     * Plans to one caller-selected saved-map cave tile. Unknown and blocked
+     * tiles fail closed, and diagonal travel never cuts between two rock
+     * corners. This is the goal-directed counterpart to {@link #plan}, whose
+     * destination is intentionally chosen by exploration coverage instead.
+     */
+    public static Plan planTo(Source source, Coord start,
+                              Collection<Coord> goals, int maxTiles) {
+        if(source == null || start == null || goals == null || goals.isEmpty() || maxTiles <= 0)
+            return empty(Status.INVALID_START);
+
+        Map<Long, Cell> observed = new HashMap<>();
+        if(cell(source, observed, start.x, start.y) != Cell.OPEN)
+            return empty(Status.INVALID_START);
+
+        Set<Long> goalKeys = new HashSet<>();
+        List<Coord> goalCoords = new ArrayList<>();
+        for(Coord goal : goals) {
+            if(goal == null) continue;
+            Coord copy = new Coord(goal);
+            if(goalKeys.add(key(copy.x, copy.y))) goalCoords.add(copy);
+        }
+        if(goalKeys.isEmpty()) return empty(Status.INVALID_START);
+
+        long startKey = key(start.x, start.y);
+        Map<Long, Double> costs = new HashMap<>();
+        Map<Long, Long> parents = new HashMap<>();
+        Set<Long> closed = new HashSet<>();
+        PriorityQueue<GoalOpen> open = new PriorityQueue<>();
+        costs.put(startKey, 0.0);
+        open.add(new GoalOpen(startKey, 0.0, goalHeuristic(start, goalCoords)));
+        boolean limited = false;
+        long reached = Long.MIN_VALUE;
+
+        while(!open.isEmpty()) {
+            GoalOpen item = open.poll();
+            Double bestKnown = costs.get(item.key);
+            if(bestKnown == null || item.cost > bestKnown + 0.000001 || !closed.add(item.key)) continue;
+            if(goalKeys.contains(item.key)) {
+                reached = item.key;
+                break;
+            }
+            if(closed.size() >= maxTiles) {
+                limited = true;
+                break;
+            }
+            Coord current = coord(item.key);
+            for(int d = 0; d < DX.length; d++) {
+                int nx = current.x + DX[d], ny = current.y + DY[d];
+                long nk = key(nx, ny);
+                if(closed.contains(nk) || cell(source, observed, nx, ny) != Cell.OPEN) continue;
+                if(DX[d] != 0 && DY[d] != 0
+                    && (cell(source, observed, current.x + DX[d], current.y) != Cell.OPEN
+                        || cell(source, observed, current.x, current.y + DY[d]) != Cell.OPEN)) continue;
+                double step = DX[d] != 0 && DY[d] != 0 ? Math.sqrt(2.0) : 1.0;
+                double nextCost = item.cost + step;
+                Double old = costs.get(nk);
+                if(old == null || nextCost < old - 0.000001) {
+                    costs.put(nk, nextCost);
+                    parents.put(nk, item.key);
+                    Coord next = Coord.of(nx, ny);
+                    open.add(new GoalOpen(nk, nextCost,
+                        nextCost + goalHeuristic(next, goalCoords)));
+                }
+            }
+        }
+
+        if(reached == Long.MIN_VALUE)
+            return new Plan(limited ? Status.LIMIT_REACHED : Status.NO_ROUTE,
+                Collections.emptyList(), null, false, 0, closed.size(), 0, 0, 0.0);
+
+        List<Coord> route = new ArrayList<>();
+        for(long at = reached;;) {
+            route.add(coord(at));
+            if(at == startKey) break;
+            Long previous = parents.get(at);
+            if(previous == null) return empty(Status.NO_ROUTE);
+            at = previous;
+        }
+        Collections.reverse(route);
+        Coord destination = coord(reached);
+        return new Plan(Status.READY, route, destination, false, 0,
+            closed.size(), route.size(), route.size(), distance(route));
+    }
+
+    public static Plan planTo(Source source, Coord start, Collection<Coord> goals) {
+        return planTo(source, start, goals, DEFAULT_MAX_TILES);
+    }
+
+    private static double goalHeuristic(Coord at, List<Coord> goals) {
+        double best = Double.POSITIVE_INFINITY;
+        for(Coord goal : goals) {
+            // Octile distance is admissible for the eight-neighbour movement
+            // model used above and keeps long supply routes inexpensive.
+            int dx = Math.abs(at.x - goal.x), dy = Math.abs(at.y - goal.y);
+            double estimate = Math.max(dx, dy) + (Math.sqrt(2.0) - 1.0) * Math.min(dx, dy);
+            if(estimate < best) best = estimate;
+        }
+        return best;
     }
 
     /** Distance from each open tile to the nearest edge of connected floor. */
@@ -300,6 +420,10 @@ public final class CaveRoutePlanner {
 
     private static long key(int x, int y) {
         return ((long)x << 32) ^ (y & 0xffffffffL);
+    }
+
+    private static Coord coord(long key) {
+        return Coord.of((int)(key >> 32), (int)key);
     }
 
     private static List<Coord> copy(Collection<Coord> source) {

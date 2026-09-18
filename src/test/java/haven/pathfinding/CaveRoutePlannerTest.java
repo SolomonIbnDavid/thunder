@@ -156,6 +156,60 @@ public class CaveRoutePlannerTest {
         assertEquals(0, plan.unseenVisibilityScore);
     }
 
+    @Test
+    void goalDirectedPlanReachesTheRequestedSupplyTile() {
+        Tiles map = new Tiles();
+        for(int x = 0; x <= 20; x++) map.open(x, 0);
+        for(int y = 0; y <= 8; y++) map.open(4, y);
+
+        CaveRoutePlanner.Plan plan = CaveRoutePlanner.planTo(map, Coord.of(0, 0),
+            Arrays.asList(Coord.of(20, 0), Coord.of(4, 8)), 10_000);
+
+        assertTrue(plan.usable());
+        assertEquals(Coord.of(4, 8), plan.destination);
+        assertEquals(Coord.of(0, 0), plan.route.get(0));
+        assertEquals(Coord.of(4, 8), plan.route.get(plan.route.size() - 1));
+    }
+
+    @Test
+    void goalDirectedPlanFailsClosedAcrossUnknownTiles() {
+        CaveRoutePlanner.Source map = tile -> {
+            if(tile.equals(Coord.of(0, 0)) || tile.equals(Coord.of(2, 0)))
+                return CaveRoutePlanner.Cell.OPEN;
+            return CaveRoutePlanner.Cell.UNKNOWN;
+        };
+
+        CaveRoutePlanner.Plan plan = CaveRoutePlanner.planTo(map, Coord.of(0, 0),
+            Collections.singletonList(Coord.of(2, 0)), 100);
+
+        assertEquals(CaveRoutePlanner.Status.NO_ROUTE, plan.status);
+        assertTrue(plan.route.isEmpty());
+    }
+
+    @Test
+    void goalDirectedPlanDoesNotCutRockCorners() {
+        Tiles map = new Tiles();
+        map.open(0, 0);
+        map.open(1, 1);
+
+        CaveRoutePlanner.Plan plan = CaveRoutePlanner.planTo(map, Coord.of(0, 0),
+            Collections.singletonList(Coord.of(1, 1)), 100);
+
+        assertEquals(CaveRoutePlanner.Status.NO_ROUTE, plan.status);
+    }
+
+    @Test
+    void goalDirectedPlanReportsItsSearchLimitWithoutClaimingArrival() {
+        Tiles map = new Tiles();
+        for(int x = 0; x <= 100; x++) map.open(x, 0);
+
+        CaveRoutePlanner.Plan plan = CaveRoutePlanner.planTo(map, Coord.of(0, 0),
+            Collections.singletonList(Coord.of(100, 0)), 10);
+
+        assertEquals(CaveRoutePlanner.Status.LIMIT_REACHED, plan.status);
+        assertTrue(plan.route.isEmpty());
+    }
+
     private static final class Tiles implements CaveRoutePlanner.Source {
         private final Set<Coord> open = new HashSet<>();
 
