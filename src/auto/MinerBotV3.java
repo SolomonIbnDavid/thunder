@@ -4,6 +4,7 @@ import haven.Area;
 import haven.Coord;
 import haven.Coord2d;
 import haven.Debug;
+import haven.FlowerMenu;
 import haven.GameUI;
 import haven.GItem;
 import haven.Gob;
@@ -11,6 +12,8 @@ import haven.GobTag;
 import haven.IMeter;
 import haven.Loading;
 import haven.MCache;
+import haven.WItem;
+import haven.Widget;
 import haven.pathfinding.BotMovement;
 import haven.pathfinding.PathfinderLog;
 import haven.rx.Reactor;
@@ -39,6 +42,13 @@ public final class MinerBotV3 {
     private static final long MINE_QUIET_MS = 2500L;
     private static final double LOOSE_STONE_SCAN_RADIUS = MCache.tilesz.x * 8.0;
     private static final int TRAIL_LEG_TILES = 8;
+    private static final int BOULDER_MAX_CHIPS = 500;
+    private static final int BOULDER_MAX_ATTEMPTS = 3;
+    private static final int BOULDER_MAX_ROCK_DROPS = 600;
+    private static final long BOULDER_STEP_TIMEOUT_MS = 6000L;
+    private static final long BOULDER_CHIP_TIMEOUT_MS = 120000L;
+    private static final double BOULDER_DIRECT_CLICK_RADIUS = MCache.tilesz.x * 5.0;
+    private static final double BOULDER_APPROACH_RADIUS = MCache.tilesz.x * 1.25;
 
     private static volatile boolean running;
     private static volatile String status = "Status: idle";
@@ -173,6 +183,7 @@ public final class MinerBotV3 {
 
     private enum LegOutcome {SUCCESS, TOO_HARD, FAILED}
     private enum MineOutcome {STOPPED, TOO_HARD, SUPPLY_NEEDED, ARM_FAILED}
+    private enum BoulderOutcome {NONE, CLEARED, FAILED}
     private enum Service {WATER, FOOD, STORAGE}
 
     private static final class Anchor {
@@ -286,6 +297,11 @@ public final class MinerBotV3 {
                 ensureSupplyCircuit(false);
                 completed = advanceOpenPrefix(anchor, heading, completed);
                 if(completed >= MinerBotV3Logic.LEG_TILES) return LegOutcome.SUCCESS;
+
+                BoulderOutcome boulder = clearFrontierBoulder(anchor, heading, completed);
+                if(boulder == BoulderOutcome.FAILED)
+                    return failLeg("could not clear the boulder at the active mining frontier");
+                if(boulder == BoulderOutcome.CLEARED) continue;
 
                 MinerBotV3Logic.Line line = MinerBotV3Logic.remainingLine(anchor, heading, completed);
                 MineOutcome outcome = submitMineArea(line.start, line.end,
@@ -402,6 +418,309 @@ public final class MinerBotV3 {
                 return candidate;
             }
             return completed;
+        }
+
+        /** Area mining cannot target a boulder gob that occupies the first
+         * unopened tile. Clear only that active-line blocker, then let the
+         * normal remainder calculation redraw toward the original endpoint. */
+        private BoulderOutcome clearFrontierBoulder(Coord anchor,
+                MinerBotV3Logic.Direction heading, int completed) throws InterruptedException {
+            Gob boulder = frontierBoulder(anchor, heading, completed);
+            if(boulder == null) return BoulderOutcome.NONE;
+            status = "Status: clearing boulder on active mining line";
+            diag("BOULDER detected id=%d resid=%s tile=%s anchor=%s heading=%s completed=%d",
+                boulder.id, safeResid(boulder), boulder.rc.floor(MCache.tilesz),
+                anchor, heading, completed);
+            boolean cleared = chipBoulder(boulder);
+            diag("BOULDER result id=%d cleared=%b", boulder.id, cleared);
+            return cleared ? BoulderOutcome.CLEARED : BoulderOutcome.FAILED;
+        }
+
+        private Gob frontierBoulder(Coord anchor, MinerBotV3Logic.Direction heading,
+                                    int completed) {
+            Coord frontier = anchor.add(heading.step().mul(completed + 1));
+            Coord2d frontierWorld = MiningBot.tileCenter(frontier);
+            synchronized(gui.ui.sess.glob.oc) {
+                return gui.ui.sess.glob.oc.stream()
+                    .filter(g -> g != null && !g.disposed() && g.rc != null)
+                    .filter(g -> MinerBotV3Logic.isBoulderResource(safeResid(g)))
+                    .filter(g -> MinerBotV3Logic.boulderBlocksFrontier(anchor, heading,
+                        completed, g.rc.floor(MCache.tilesz)))
+                    .min(Comparator.<Gob>comparingDouble(g -> g.rc.dist(frontierWorld))
+                        .thenComparingLong(g -> g.id))
+                    .orElse(null);
+            }
+        }
+
+        /** Proven Clear-Cut/Cellar-Digger interaction sequence, scoped to one
+         * V3 frontier boulder. Rock output is dropped as it appears so a nearly
+         * full mining inventory cannot stall the action; V3's existing route
+         * collector retrieves the 30-stone column reserve afterward. */
+        private boolean chipBoulder(Gob boulder) throws InterruptedException {
+            long id = boulder.id;
+            int chips = 0;
+            int failedActions = 0;
+            while(chips < BOULDER_MAX_CHIPS) {
+                bot.checkCancelled();
+                ensureSupplyCircuit(false);
+                boulder = currentBoulder(id);
+                if(boulder == null) return true;
+                if(!Equip.ensureTwoHanded(gui, bot, Equip.PICKAXE)) {
+                    diag("BOULDER id=%d result=pickaxe-unavailable", id);
+                    return false;
+                }
+                boulder = currentBoulder(id);
+                if(boulder == null) return true;
+                if(!approachBoulder(boulder)) {
+                    if(currentBoulder(id) == null) return true;
+                    diag("BOULDER id=%d result=approach-failed", id);
+                    return false;
+                }
+                if(!dropRockStacks()) {
+                    diag("BOULDER id=%d result=pre-chip-rock-drop-failed", id);
+                    return false;
+                }
+                boulder = currentBoulder(id);
+                if(boulder == null) return true;
+                FlowerMenu menu = openBoulderMenu(boulder);
+                if(menu == null) {
+                    if(currentBoulder(id) == null) return true;
+                    if(++failedActions >= BOULDER_MAX_ATTEMPTS) {
+                        diag("BOULDER id=%d result=menu-timeout attempts=%d", id, failedActions);
+                        return false;
+                    }
+                    continue;
+                }
+                int option = menuOption(menu, "Chip stone");
+                if(option < 0) {
+                    diag("BOULDER id=%d result=chip-option-missing options=%s",
+                        id, java.util.Arrays.toString(menu.options));
+                    menu.wdgmsg("cl", -1, 0);
+                    return currentBoulder(id) == null;
+                }
+                diag("BOULDER chip id=%d number=%d", id, chips + 1);
+                menu.wdgmsg("cl", option, 0);
+                ChipResult result = waitForChip(id);
+                diag("BOULDER chip-result id=%d started=%b produced=%b gone=%b safe=%b",
+                    id, result.started, result.produced, result.gone, result.safe);
+                if(!result.safe) return false;
+                if((!result.started || !result.produced) && !result.gone) {
+                    if(++failedActions >= BOULDER_MAX_ATTEMPTS) return false;
+                } else {
+                    failedActions = 0;
+                    chips++;
+                }
+                if(result.gone) return true;
+            }
+            diag("BOULDER id=%d result=chip-safety-limit limit=%d", id, BOULDER_MAX_CHIPS);
+            return currentBoulder(id) == null;
+        }
+
+        private boolean approachBoulder(Gob boulder) throws InterruptedException {
+            long id = boulder.id;
+            for(int attempt = 1; attempt <= BOULDER_MAX_ATTEMPTS; attempt++) {
+                Gob target = currentBoulder(id);
+                if(target == null) return true;
+                Gob player = gui.map.player();
+                if(player != null && player.rc != null &&
+                   player.rc.dist(target.rc) <= BOULDER_DIRECT_CLICK_RADIUS) {
+                    MiningBot.waitForMovementSettled(gui, bot, 3000L);
+                    return true;
+                }
+                BotMovement.Result normal = MiningBot.approachGob(gui, bot, target,
+                    "V3 frontier boulder #" + id);
+                logMovement("approach", "frontier boulder #" + id, normal);
+                if(normal != null && normal.readyToInteract()) return true;
+                if(normal != null && normal.status == BotMovement.Status.TARGET_GONE) return true;
+
+                List<Coord2d> ring = new ArrayList<>();
+                for(int i = 0; i < 24; i++) {
+                    double angle = Math.PI * 2.0 * i / 24.0;
+                    ring.add(target.rc.add(Math.cos(angle) * BOULDER_APPROACH_RADIUS,
+                        Math.sin(angle) * BOULDER_APPROACH_RADIUS));
+                }
+                if(player != null && player.rc != null)
+                    ring.sort(Comparator.comparingDouble(player.rc::dist));
+                BotMovement.Result fallback = MiningBot.moveToAnyPoint(gui, bot, ring,
+                    "V3 frontier boulder ring #" + id);
+                logMovement("moveToAny", "frontier boulder ring #" + id, fallback);
+                player = gui.map.player();
+                target = currentBoulder(id);
+                if(target == null) return true;
+                if(fallback != null && fallback.arrived() && player != null && player.rc != null &&
+                   player.rc.dist(target.rc) <= MCache.tilesz.x * 1.75) return true;
+            }
+            return false;
+        }
+
+        private Gob currentBoulder(long id) {
+            Gob gob = gui.ui.sess.glob.oc.getgob(id);
+            if(gob == null || gob.disposed()) return null;
+            try {
+                return MinerBotV3Logic.isBoulderResource(gob.resid()) ? gob : null;
+            } catch(Loading loading) {
+                return gob;
+            }
+        }
+
+        private FlowerMenu openBoulderMenu(Gob gob) throws InterruptedException {
+            for(int attempt = 1; attempt <= BOULDER_MAX_ATTEMPTS; attempt++) {
+                bot.checkCancelled();
+                Set<Widget> before = descendantWidgets(gui.ui.root);
+                FlowerMenu.lastGob(gob);
+                new GobTarget(gob).rclick();
+                final FlowerMenu[] found = new FlowerMenu[1];
+                if(waitFor(BOULDER_STEP_TIMEOUT_MS, () -> {
+                    found[0] = newDescendant(gui.ui.root, FlowerMenu.class, before);
+                    return found[0] != null;
+                })) return found[0];
+                if(currentBoulder(gob.id) == null) return null;
+            }
+            return null;
+        }
+
+        private int menuOption(FlowerMenu menu, String name) {
+            if(menu != null && menu.options != null)
+                for(int i = 0; i < menu.options.length; i++)
+                    if(name.equals(menu.options[i])) return i;
+            return -1;
+        }
+
+        private static final class ChipResult {
+            final boolean started;
+            final boolean produced;
+            final boolean gone;
+            final boolean safe;
+
+            ChipResult(boolean started, boolean produced, boolean gone, boolean safe) {
+                this.started = started;
+                this.produced = produced;
+                this.gone = gone;
+                this.safe = safe;
+            }
+        }
+
+        private ChipResult waitForChip(long boulderId) throws InterruptedException {
+            long now = System.currentTimeMillis();
+            long startDeadline = now + 3000L;
+            long actionDeadline = now + BOULDER_CHIP_TIMEOUT_MS;
+            long stoppedAt = -1L;
+            boolean started = false;
+            boolean produced = false;
+            boolean gone = false;
+            while(System.currentTimeMillis() < actionDeadline) {
+                bot.checkCancelled();
+                boolean activeProgress = gui.prog != null;
+                if(activeProgress) started = true;
+                int dropped = dropRockStacksCount();
+                if(dropped < 0) return new ChipResult(started, produced, gone, false);
+                if(dropped > 0) {
+                    produced = true;
+                    started = true;
+                }
+                GameUI.DraggedItem held = gui.hand();
+                if(held != null) {
+                    try {
+                        held.item.info();
+                    } catch(Loading loading) {
+                        Thread.sleep(25L);
+                        continue;
+                    }
+                    if(!MiningMaterials.isRockMaterial(held.item))
+                        return new ChipResult(started, produced, gone, false);
+                    MiningBot.dropCursorItem(gui);
+                    if(!waitFor(BOULDER_STEP_TIMEOUT_MS, () -> gui.hand() == null))
+                        return new ChipResult(started, produced, gone, false);
+                    produced = true;
+                    started = true;
+                }
+                gone = currentBoulder(boulderId) == null;
+                if(gone) started = true;
+                now = System.currentTimeMillis();
+                if(!started) {
+                    if(now >= startDeadline) break;
+                } else if(activeProgress) {
+                    stoppedAt = -1L;
+                } else {
+                    if(stoppedAt < 0L) stoppedAt = now;
+                    long settle = produced ? 150L : (gone ? 750L : 2000L);
+                    if(now - stoppedAt >= settle) break;
+                }
+                Thread.sleep(25L);
+            }
+            return new ChipResult(started, produced, gone, true);
+        }
+
+        private boolean dropRockStacks() throws InterruptedException {
+            return dropRockStacksCount() >= 0;
+        }
+
+        /** Negative means a stack failed to leave the inventory. */
+        private int dropRockStacksCount() throws InterruptedException {
+            int dropped = 0;
+            while(dropped < BOULDER_MAX_ROCK_DROPS) {
+                bot.checkCancelled();
+                WItem rock = firstRockStack();
+                if(rock == null) return dropped;
+                GItem item = rock.item;
+                diag("BOULDER rock-drop item=%s", safeItemResid(item));
+                item.wdgmsg("drop", rock.sz.div(2));
+                if(!waitFor(BOULDER_STEP_TIMEOUT_MS, () -> !mainInventoryContains(item)))
+                    return -1;
+                dropped++;
+            }
+            return -1;
+        }
+
+        private WItem firstRockStack() {
+            if(gui.maininv == null) return null;
+            for(WItem item : gui.maininv.children(WItem.class))
+                if(MiningMaterials.isRockMaterial(item)) return item;
+            return null;
+        }
+
+        private boolean mainInventoryContains(GItem wanted) {
+            if(gui.maininv == null || wanted == null) return false;
+            for(WItem item : gui.maininv.children(WItem.class))
+                if(item.item == wanted) return true;
+            return false;
+        }
+
+        private Set<Widget> descendantWidgets(Widget root) {
+            Set<Widget> out = new HashSet<>();
+            if(root == null) return out;
+            for(Widget child = root.lchild; child != null; child = child.prev) {
+                out.add(child);
+                out.addAll(descendantWidgets(child));
+            }
+            return out;
+        }
+
+        private <T extends Widget> T newDescendant(Widget root, Class<T> type,
+                                                    Set<Widget> before) {
+            if(root == null) return null;
+            for(Widget child = root.lchild; child != null; child = child.prev) {
+                if(type.isInstance(child) && !before.contains(child)) return type.cast(child);
+                T nested = newDescendant(child, type, before);
+                if(nested != null) return nested;
+            }
+            return null;
+        }
+
+        private String safeResid(Gob gob) {
+            try {
+                return gob == null ? null : gob.resid();
+            } catch(RuntimeException ignored) {
+                return null;
+            }
+        }
+
+        private String safeItemResid(GItem item) {
+            try {
+                return item == null ? null : item.resname();
+            } catch(RuntimeException ignored) {
+                return null;
+            }
         }
 
         private Coord recoverTooHard(Coord failedAnchor) throws InterruptedException {
