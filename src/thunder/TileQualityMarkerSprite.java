@@ -1,6 +1,7 @@
 package thunder;
 
 import haven.*;
+import haven.res.gfx.invobjs.gems.gemstone.Gemstone;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
@@ -9,22 +10,25 @@ import java.awt.image.BufferedImage;
 public final class TileQualityMarkerSprite extends Sprite {
     private static final Coord ICON_SIZE = new Coord(24, 24);
     private static final int GAP = 3;
+    private static final String GEM_CUT_RESOURCE = "gfx/invobjs/gems/fair-rough";
 
     static final class Visual {
         final String materialName;
         final String resourceName;
+        final String gemTextureResourceName;
         final String qualityText;
 
-        Visual(String materialName, String resourceName, String qualityText) {
+        Visual(String materialName, String resourceName, String gemTextureResourceName, String qualityText) {
             this.materialName = materialName;
             this.resourceName = resourceName;
+            this.gemTextureResourceName = gemTextureResourceName;
             this.qualityText = qualityText;
         }
     }
 
     private TileQualityMarkerSprite(Owner owner, Visual visual) {
         super(owner, null);
-        BufferedImage icon = loadIcon(visual.resourceName);
+        BufferedImage icon = loadIcon(visual);
         BufferedImage quality = Text.renderstroked(visual.qualityText, Color.WHITE, Color.BLACK).img;
         BufferedImage display = icon == null
             ? quality
@@ -58,15 +62,24 @@ public final class TileQualityMarkerSprite extends Sprite {
         }
         MiningQualityCatalog.Entry entry = MiningQualityCatalog.byDisplayName(material);
         String resourceName = entry == null ? null : entry.resourceName;
-        return new Visual(material, resourceName, quality);
+        String gemTextureResourceName = entry == null ? null : entry.gemTextureResourceName;
+        return new Visual(material, resourceName, gemTextureResourceName, quality);
     }
 
-    private static BufferedImage loadIcon(String resourceName) {
-        if(resourceName == null) {return null;}
+    private static BufferedImage loadIcon(Visual visual) {
         try {
-            Resource.Image layer = Resource.remote().load(resourceName).get().layer(Resource.imgc);
-            if(layer == null || layer.img == null) {return null;}
-            return PUtils.convolvedown(layer.img, UI.scale(ICON_SIZE), CharWnd.iconfilter);
+            BufferedImage icon;
+            if(visual.gemTextureResourceName != null) {
+                Resource cut = Resource.remote().load(GEM_CUT_RESOURCE).get();
+                Resource texture = Resource.remote().load(visual.gemTextureResourceName).get();
+                icon = Gemstone.construct(cut, texture);
+            } else {
+                if(visual.resourceName == null) {return null;}
+                Resource.Image layer = Resource.remote().load(visual.resourceName).get().layer(Resource.imgc);
+                if(layer == null || layer.img == null) {return null;}
+                icon = layer.img;
+            }
+            return PUtils.convolvedown(icon, UI.scale(ICON_SIZE), CharWnd.iconfilter);
         } catch(Loading loading) {
             throw loading;
         } catch(RuntimeException ignored) {
