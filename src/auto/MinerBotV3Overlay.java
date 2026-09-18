@@ -47,8 +47,8 @@ public final class MinerBotV3Overlay implements DebugDraw {
             current = null;
             return new PreviewResult("Preview: no visible support", "No visible mine support was found.", false);
         }
-        String route = probeAnchor(gui, plan.anchor);
-        showStart(gui, plan, heading, "setup preview", route);
+        String route = probeAnchor(gui, plan);
+        showStart(gui, plan, plan.heading, "setup preview", route);
         Snapshot snapshot = current;
         return new PreviewResult(snapshot == null ? "Preview unavailable" : snapshot.summary,
             snapshot == null ? "Preview could not be built." : snapshot.warning,
@@ -74,14 +74,14 @@ public final class MinerBotV3Overlay implements DebugDraw {
         int cross = MinerBotV3Logic.crossTrackTiles(plan.anchor, heading, plan.playerTile);
         int along = MinerBotV3Logic.alongTrackTiles(plan.anchor, heading, plan.playerTile);
         boolean blocked = "BLOCKED".equals(route);
-        String warning = warningFor(cross, supportOffset, blocked);
+        String warning = warningFor(cross, supportOffset, blocked, support != null);
         String routeText = route == null ? "not probed" : route.toLowerCase(Locale.ROOT);
-        String summary = String.format(Locale.ROOT, "Preview: %s anchor %s — %s",
-            heading.name(), plan.anchor, routeText);
+        String summary = String.format(Locale.ROOT, "Preview: %s anchor %s (%s) — %s",
+            heading.name(), plan.anchor, plan.anchorSource(), routeText);
         current = new Snapshot(heading, plan.anchor, supportWorld, supportName,
             support == null ? -1L : support.id, collision, playerWorld, cross, along,
             supportOffset, plan.chainedSupports, phase, routeText, blocked, false,
-            warning, summary);
+            warning, summary, plan.anchorSource());
     }
 
     static void showLeg(GameUI gui, Coord anchor, MinerBotV3Logic.Direction heading, String phase) {
@@ -92,7 +92,8 @@ public final class MinerBotV3Overlay implements DebugDraw {
         Coord playerTile = playerWorld == null ? anchor : playerWorld.floor(MCache.tilesz);
         int cross = MinerBotV3Logic.crossTrackTiles(anchor, heading, playerTile);
         int along = MinerBotV3Logic.alongTrackTiles(anchor, heading, playerTile);
-        String warning = warningFor(cross, old == null ? Double.NaN : old.supportOffset, false);
+        String warning = warningFor(cross, old == null ? Double.NaN : old.supportOffset,
+            false, old != null && old.supportWorld != null);
         current = new Snapshot(heading, anchor,
             old == null ? null : old.supportWorld,
             old == null ? "" : old.supportName,
@@ -102,7 +103,8 @@ public final class MinerBotV3Overlay implements DebugDraw {
             old == null ? Double.NaN : old.supportOffset,
             old == null ? 0 : old.chainedSupports,
             phase, "running", false, false, warning,
-            String.format(Locale.ROOT, "V3: %s from %s", heading.name(), anchor));
+            String.format(Locale.ROOT, "V3: %s from %s", heading.name(), anchor),
+            old == null ? "session checkpoint" : old.anchorSource);
     }
 
     static void markFailure(String reason) {
@@ -117,6 +119,11 @@ public final class MinerBotV3Overlay implements DebugDraw {
     }
 
     static String warningFor(int crossTrack, double supportOffset, boolean routeBlocked) {
+        return warningFor(crossTrack, supportOffset, routeBlocked, true);
+    }
+
+    static String warningFor(int crossTrack, double supportOffset, boolean routeBlocked,
+                             boolean hasLegacySupport) {
         List<String> warnings = new ArrayList<>();
         if(crossTrack != 0) {
             warnings.add(String.format(Locale.ROOT, "player is %d tile%s %s of the computed lane",
@@ -127,19 +134,30 @@ public final class MinerBotV3Overlay implements DebugDraw {
             warnings.add(String.format(Locale.ROOT, "legacy support is %.1f units off its assumed tile point", supportOffset));
         }
         if(routeBlocked) warnings.add("computed anchor is not reachable from the current position");
-        if(warnings.isEmpty()) return "Verify that the yellow legacy support belongs on the right of this heading.";
+        if(warnings.isEmpty()) {
+            return hasLegacySupport
+                ? "Verify that the yellow legacy support belongs on the right of this heading."
+                : "Session anchor is locked; the cyan tile will be used on Start.";
+        }
         return join(warnings);
     }
 
-    private static String probeAnchor(GameUI gui, Coord anchor) {
-        if(gui == null || gui.map == null || gui.map.player() == null || anchor == null) return "UNKNOWN";
-        Coord2d target = MiningBot.tileCenter(anchor);
-        if(gui.map.player().rc != null && gui.map.player().rc.dist(target) <= 2.75) return "AT ANCHOR";
+    private static String probeAnchor(GameUI gui, MinerBotV3.StartPlan plan) {
+        if(gui == null || gui.map == null || gui.map.player() == null || plan == null) return "UNKNOWN";
+        Coord2d target = MiningBot.tileCenter(plan.anchor);
+        Coord2d player = gui.map.player().rc;
+        if(player != null && player.dist(target) <= 2.75) return "AT ANCHOR";
+        if(player != null && player.dist(target) > MCache.tilesz.x * 20.0) {
+            double distance = MinerBotV3Navigator.routeDistanceToTile(gui,
+                plan.segmentId, plan.savedAnchor);
+            return Double.isFinite(distance)
+                ? String.format(Locale.ROOT, "SAVED ROUTE %.0ft", distance) : "BLOCKED";
+        }
         PathfinderLog.beginProbe();
         try {
-            MovementScene.Plan plan = MovementScene.planAnyCaveAvoiding(gui,
+            MovementScene.Plan routePlan = MovementScene.planAnyCaveAvoiding(gui,
                 Collections.singletonList(target), false, Collections.emptyList(), 0.0);
-            return plan != null && plan.status != MovementScene.Plan.Status.FAILED ? "REACHABLE" : "BLOCKED";
+            return routePlan != null && routePlan.status != MovementScene.Plan.Status.FAILED ? "REACHABLE" : "BLOCKED";
         } catch(RuntimeException failure) {
             return "UNKNOWN";
         } finally {
@@ -244,15 +262,21 @@ public final class MinerBotV3Overlay implements DebugDraw {
         g.atext(snapshot.failure ? "Miner V3 STOP: " + snapshot.phase : snapshot.summary,
             base, 0, 0);
         g.chcolor(TEXT);
-        g.atext(String.format(Locale.ROOT,
-            "support: %s%s | chained=%d | assumed-point offset=%s",
-            snapshot.supportName, snapshot.supportId < 0 ? "" : " #" + snapshot.supportId,
-            snapshot.chainedSupports,
-            Double.isNaN(snapshot.supportOffset) ? "?" : String.format(Locale.ROOT, "%.1fu", snapshot.supportOffset)),
-            base.add(0, 16), 0, 0);
+        if(snapshot.supportWorld == null) {
+            g.atext("anchor source: " + snapshot.anchorSource,
+                base.add(0, 16), 0, 0);
+        } else {
+            g.atext(String.format(Locale.ROOT,
+                "support: %s%s | chained=%d | assumed-point offset=%s",
+                snapshot.supportName, snapshot.supportId < 0 ? "" : " #" + snapshot.supportId,
+                snapshot.chainedSupports,
+                Double.isNaN(snapshot.supportOffset) ? "?" : String.format(Locale.ROOT, "%.1fu", snapshot.supportOffset)),
+                base.add(0, 16), 0, 0);
+        }
         g.atext(String.format(Locale.ROOT, "player lane: cross=%d along=%d",
             snapshot.crossTrack, snapshot.alongTrack), base.add(0, 32), 0, 0);
-        g.chcolor(snapshot.warning.startsWith("Verify") ? SUPPORT : WARNING);
+        g.chcolor(snapshot.warning.startsWith("Verify") ? SUPPORT
+            : snapshot.warning.startsWith("Session anchor") ? ANCHOR : WARNING);
         g.atext(snapshot.warning, base.add(0, 48), 0, 0);
         g.chcolor(TEXT);
         g.atext("yellow=support  red=collision  cyan=anchor  green=11-tile leg  magenta=next column",
@@ -341,6 +365,7 @@ public final class MinerBotV3Overlay implements DebugDraw {
         final boolean failure;
         final String warning;
         final String summary;
+        final String anchorSource;
 
         Snapshot(MinerBotV3Logic.Direction heading, Coord anchor,
                  Coord2d supportWorld, String supportName, long supportId,
@@ -348,6 +373,19 @@ public final class MinerBotV3Overlay implements DebugDraw {
                  int crossTrack, int alongTrack, double supportOffset,
                  int chainedSupports, String phase, String route,
                  boolean routeBlocked, boolean failure, String warning, String summary) {
+            this(heading, anchor, supportWorld, supportName, supportId,
+                supportCollision, playerWorld, crossTrack, alongTrack, supportOffset,
+                chainedSupports, phase, route, routeBlocked, failure, warning, summary,
+                "automatic support");
+        }
+
+        Snapshot(MinerBotV3Logic.Direction heading, Coord anchor,
+                 Coord2d supportWorld, String supportName, long supportId,
+                 List<Coord2d[]> supportCollision, Coord2d playerWorld,
+                 int crossTrack, int alongTrack, double supportOffset,
+                 int chainedSupports, String phase, String route,
+                 boolean routeBlocked, boolean failure, String warning, String summary,
+                 String anchorSource) {
             this.heading = heading;
             this.anchor = new Coord(anchor);
             this.supportWorld = supportWorld;
@@ -365,12 +403,14 @@ public final class MinerBotV3Overlay implements DebugDraw {
             this.failure = failure;
             this.warning = warning == null ? "" : warning;
             this.summary = summary == null ? "" : summary;
+            this.anchorSource = anchorSource == null ? "" : anchorSource;
         }
 
         Snapshot withFailure(String reason) {
             return new Snapshot(heading, anchor, supportWorld, supportName, supportId,
                 supportCollision, playerWorld, crossTrack, alongTrack, supportOffset,
-                chainedSupports, reason, route, routeBlocked, true, warning, summary);
+                chainedSupports, reason, route, routeBlocked, true, warning, summary,
+                anchorSource);
         }
     }
 }

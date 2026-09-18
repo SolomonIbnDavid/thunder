@@ -5,9 +5,9 @@ command and MiningBot implementation remain V2.
 
 ## Straight mode
 
-Start within sight of an existing mine support, select a cardinal direction,
-and press Start. V3 anchors the tunnel one tile left of the support and repeats
-this cycle:
+For a new run, start within sight of an existing mine support, select a cardinal
+direction, and press Start. V3 anchors the tunnel one tile left of the support
+and repeats this cycle:
 
 1. Select the next eleven centerline tiles with Thunder's Mine area action.
 2. Let the native action mine the selection and clear ordinary debris. If a
@@ -29,6 +29,31 @@ legacy support placement, and whether the computed anchor is locally reachable.
 This is especially important for old or manually placed supports: V3 must assume
 that the selected support is one tile to the right of the requested heading, but
 an arbitrary legacy column may have been built for a different tunnel direction.
+
+## Session anchor checkpoint
+
+The setup window exposes a mining anchor with **Pick** and **Clear** controls.
+The anchor is the centerline tile where the next eleven-tile leg starts; the
+first selected mine tile is one tile beyond it in the locked heading.
+
+- **Pick** lets the player click one map tile and stores that tile, cave-map
+  segment, and heading for the current login session.
+- If no anchor was picked, the first Start derives one from the visible support
+  as before and immediately locks that automatic anchor.
+- After a column is successfully built on the original straight heading, the
+  checkpoint advances to that leg's endpoint before V3 attempts to return to
+  the centerline. A later movement or resupply failure therefore does not lose
+  the completed frontier.
+- A later Start uses saved-cave-map routing to return to the checkpoint instead
+  of searching for the nearest currently visible support. This works when the
+  character was left at an off-screen storage, water, or food area.
+- **Clear** discards the checkpoint and makes the next Start derive a fresh
+  anchor from a visible support.
+
+The checkpoint survives closing the setup window but is cleared by a new game
+session. Its heading is locked with the tile, and it cannot be used from another
+map segment. The Preview overlay labels whether its anchor came from a support,
+a manual pick, or a saved checkpoint.
 
 Three redraws with no terrain or movement progress stop the run. A server
 message containing `too hard` invokes the bounded detour search described

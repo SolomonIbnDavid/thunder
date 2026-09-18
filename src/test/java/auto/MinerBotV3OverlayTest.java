@@ -19,4 +19,10 @@ public class MinerBotV3OverlayTest {
         assertTrue(warning.contains("3.3 units off its assumed tile point"));
         assertTrue(warning.contains("computed anchor is not reachable"));
     }
+
+    @Test
+    void lockedAnchorDoesNotAskForALegacySupportCheck() {
+        assertEquals("Session anchor is locked; the cyan tile will be used on Start.",
+            MinerBotV3Overlay.warningFor(0, Double.NaN, false, false));
+    }
 }

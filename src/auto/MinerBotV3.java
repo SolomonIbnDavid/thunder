@@ -17,6 +17,7 @@ import haven.Widget;
 import haven.pathfinding.BotMovement;
 import haven.pathfinding.PathfinderLog;
 import haven.rx.Reactor;
+import thunder.mining.MinerBotV3AnchorStore;
 import thunder.mining.MinerBotV3ZoneStore;
 
 import java.io.File;
@@ -88,28 +89,49 @@ public final class MinerBotV3 {
                     GameUI.MsgType.INFO);
         }
 
+        MinerBotV3AnchorStore anchorStore = MinerBotV3AnchorStore.get();
+        anchorStore.bind(gui.ui.sess);
+        MinerBotV3AnchorStore.SavedAnchor checkpoint = anchorStore.get(gui.ui.sess);
+        if(checkpoint != null && checkpoint.segmentId != context.segment) {
+            gui.error("Miner Bot V3: the locked anchor is on another map segment; return to that cave level or clear the anchor.");
+            return;
+        }
+
         StartPlan plan = resolveStartPlan(gui, direction);
         if(plan == null) {
             gui.error("Miner Bot V3: no mine support is visible; start within sight of an existing support.");
             return;
         }
+        if(!plan.locked) {
+            anchorStore.put(gui.ui.sess, new MinerBotV3AnchorStore.SavedAnchor(
+                plan.segmentId, plan.savedAnchor, plan.heading, false));
+        }
 
         int cap = segmentCap <= 0 ? Integer.MAX_VALUE : segmentCap;
         final Coord start = new Coord(plan.anchor);
+        final Coord savedStart = new Coord(plan.savedAnchor);
+        final MinerBotV3Logic.Direction runDirection = plan.heading;
         final int targetBars = barsTarget;
         running = true;
         status = "Status: starting";
-        MinerBotV3Overlay.showStart(gui, plan, direction, "starting", null);
+        MinerBotV3Overlay.showStart(gui, plan, runDirection, "starting", null);
         openLog();
-        diag("START direction=%s origin=%s bars=%d cap=%s segment=%x",
-            direction, start, targetBars, cap == Integer.MAX_VALUE ? "unlimited" : Integer.toString(cap), context.segment);
-        diag("START-GEOMETRY player-tile=%s nearest-support=#%d@%s anchor-support=#%d@%s chained=%d",
-            plan.playerTile, plan.nearestSupport.id, plan.nearestSupport.rc,
-            plan.anchorSupport.id, plan.anchorSupport.rc, plan.chainedSupports);
+        diag("START direction=%s origin=%s saved-origin=%s anchor-source=%s bars=%d cap=%s segment=%x",
+            runDirection, start, savedStart, plan.anchorSource(), targetBars,
+            cap == Integer.MAX_VALUE ? "unlimited" : Integer.toString(cap), context.segment);
+        if(plan.anchorSupport != null && plan.nearestSupport != null) {
+            diag("START-GEOMETRY player-tile=%s nearest-support=#%d@%s anchor-support=#%d@%s chained=%d",
+                plan.playerTile, plan.nearestSupport.id, plan.nearestSupport.rc,
+                plan.anchorSupport.id, plan.anchorSupport.rc, plan.chainedSupports);
+        } else {
+            diag("START-GEOMETRY player-tile=%s locked-anchor=%s heading=%s source=%s",
+                plan.playerTile, savedStart, runDirection, plan.anchorSource());
+        }
         Bot task = Bot.execute((ignored, bot) -> {
             try {
                 MiningBot.prewarmSupportResource(gui, bot);
-                new Run(gui, bot, direction, targetBars, cap, context.segment, start).execute();
+                new Run(gui, bot, runDirection, targetBars, cap,
+                    context.segment, savedStart).execute();
             } catch(InterruptedException interrupted) {
                 String reason = bot.stopMessage();
                 String source = bot.cancellationSource();
@@ -143,6 +165,15 @@ public final class MinerBotV3 {
         if(gui == null || gui.map == null || direction == null) return null;
         Gob player = gui.map.player();
         if(player == null) return null;
+        MinerBotV3Navigator.Context context = MinerBotV3Navigator.context(gui);
+        if(context == null) return null;
+        MinerBotV3AnchorStore.SavedAnchor saved = MinerBotV3AnchorStore.get().get(gui.ui.sess);
+        if(saved != null) {
+            if(saved.segmentId != context.segment) return null;
+            Coord live = saved.liveTile(context.sessionTile);
+            return new StartPlan(null, null, live, player.rc.floor(MCache.tilesz), 0,
+                saved.tile, saved.segmentId, saved.heading, true, saved.manuallyPicked);
+        }
         Gob nearest = MiningBot.findNearestSupport(gui, player);
         if(nearest == null || nearest.rc == null) return null;
         Gob anchorSupport = nearest;
@@ -157,7 +188,8 @@ public final class MinerBotV3 {
             chained++;
         }
         return new StartPlan(nearest, anchorSupport, origin,
-            player.rc.floor(MCache.tilesz), chained);
+            player.rc.floor(MCache.tilesz), chained, origin.add(context.sessionTile),
+            context.segment, direction, false, false);
     }
 
     static final class StartPlan {
@@ -166,14 +198,31 @@ public final class MinerBotV3 {
         final Coord anchor;
         final Coord playerTile;
         final int chainedSupports;
+        final Coord savedAnchor;
+        final long segmentId;
+        final MinerBotV3Logic.Direction heading;
+        final boolean locked;
+        final boolean manuallyPicked;
 
         StartPlan(Gob nearestSupport, Gob anchorSupport, Coord anchor,
-                  Coord playerTile, int chainedSupports) {
+                  Coord playerTile, int chainedSupports, Coord savedAnchor,
+                  long segmentId, MinerBotV3Logic.Direction heading,
+                  boolean locked, boolean manuallyPicked) {
             this.nearestSupport = nearestSupport;
             this.anchorSupport = anchorSupport;
             this.anchor = new Coord(anchor);
             this.playerTile = new Coord(playerTile);
             this.chainedSupports = chainedSupports;
+            this.savedAnchor = new Coord(savedAnchor);
+            this.segmentId = segmentId;
+            this.heading = heading;
+            this.locked = locked;
+            this.manuallyPicked = manuallyPicked;
+        }
+
+        String anchorSource() {
+            if(!locked) return "automatic support";
+            return manuallyPicked ? "manual session checkpoint" : "saved session checkpoint";
         }
     }
 
@@ -268,27 +317,37 @@ public final class MinerBotV3 {
         final int barsTarget;
         final int segmentCap;
         final long segmentId;
+        final Coord savedOrigin;
         final List<Coord> trail = new ArrayList<>();
         final List<Anchor> anchors = new ArrayList<>();
+        Coord sessionTile;
         int placements;
         boolean barBatchInitialized;
 
         Run(GameUI gui, Bot bot, MinerBotV3Logic.Direction originalDirection,
-            int barsTarget, int segmentCap, long segmentId, Coord origin) {
+            int barsTarget, int segmentCap, long segmentId, Coord savedOrigin) {
             this.gui = gui;
             this.bot = bot;
             this.originalDirection = originalDirection;
             this.barsTarget = barsTarget;
             this.segmentCap = segmentCap;
             this.segmentId = segmentId;
-            trail.add(new Coord(origin));
-            anchors.add(new Anchor(origin, 0));
+            this.savedOrigin = new Coord(savedOrigin);
         }
 
         void execute() throws InterruptedException {
-            if(!walkToTile(trail.get(0), "initial support anchor"))
-                fail("could not reach the initial support anchor " + trail.get(0));
-            Coord anchor = new Coord(trail.get(0));
+            status = "Status: returning to locked mining anchor";
+            if(!returnToSavedAnchor())
+                fail("could not reach the locked mining anchor " + savedOrigin);
+            MinerBotV3Navigator.Context arrived = MinerBotV3Navigator.context(gui);
+            if(arrived == null || arrived.segment != segmentId)
+                fail("saved-map position became unavailable at the locked mining anchor");
+            sessionTile = new Coord(arrived.sessionTile);
+            Coord anchor = savedOrigin.sub(sessionTile);
+            trail.add(new Coord(anchor));
+            anchors.add(new Anchor(anchor, 0));
+            diag("CHECKPOINT arrived saved=%s live=%s heading=%s", savedOrigin, anchor,
+                originalDirection);
             try {
                 while(placements < segmentCap) {
                     bot.checkCancelled();
@@ -312,6 +371,21 @@ public final class MinerBotV3 {
             status = "Status: complete — safety cap reached after " + placements + " columns";
             gui.msg("Miner Bot V3 finished: safety cap reached after " + placements + " columns.",
                 GameUI.MsgType.GOOD);
+        }
+
+        private boolean returnToSavedAnchor() throws InterruptedException {
+            MinerBotV3Navigator.Context context = MinerBotV3Navigator.context(gui);
+            Gob player = gui.map == null ? null : gui.map.player();
+            if(context != null && context.segment == segmentId && player != null && player.rc != null) {
+                Coord live = savedOrigin.sub(context.sessionTile);
+                if(player.rc.dist(MiningBot.tileCenter(live)) <= MCache.tilesz.x * 20.0) {
+                    if(walkToTile(live, "nearby session mining anchor")) return true;
+                    diag("CHECKPOINT nearby-local-route-failed saved=%s; trying saved-map route",
+                        savedOrigin);
+                }
+            }
+            return MinerBotV3Navigator.moveToTile(gui, bot, segmentId, savedOrigin,
+                "session mining anchor");
         }
 
         private LegOutcome mineAndPlaceLeg(Coord anchor, MinerBotV3Logic.Direction heading)
@@ -338,6 +412,7 @@ public final class MinerBotV3 {
             MiningBot.waitForMovementSettled(gui, bot, 3000L);
             if(!MiningBot.placeSupport(gui, bot, MiningBot.tileCenter(column)))
                 return failLeg("column placement failed at " + column);
+            if(heading == originalDirection) saveCheckpoint(endpoint);
             if(!walkToTile(endpoint, "return to tunnel centerline"))
                 return failLeg("could not return to centerline " + endpoint + " after placement");
 
@@ -347,6 +422,22 @@ public final class MinerBotV3 {
             placements++;
             diag("COLUMN placed=%s anchor=%s heading=%s count=%d", column, endpoint, heading, placements);
             return LegOutcome.SUCCESS;
+        }
+
+        private void saveCheckpoint(Coord liveAnchor) {
+            MinerBotV3Navigator.Context context = MinerBotV3Navigator.context(gui);
+            Coord offset = context != null && context.segment == segmentId
+                ? context.sessionTile : sessionTile;
+            if(offset == null) {
+                diag("CHECKPOINT update-skipped live=%s reason=session-offset-unavailable", liveAnchor);
+                return;
+            }
+            Coord saved = liveAnchor.add(offset);
+            MinerBotV3AnchorStore.get().put(gui.ui.sess,
+                new MinerBotV3AnchorStore.SavedAnchor(segmentId, saved,
+                    originalDirection, false));
+            diag("CHECKPOINT updated saved=%s live=%s heading=%s", saved, liveAnchor,
+                originalDirection);
         }
 
         private LegOutcome completeLine(Coord anchor, MinerBotV3Logic.Direction heading)

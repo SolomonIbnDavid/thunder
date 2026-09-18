@@ -70,6 +70,18 @@ final class MinerBotV3Navigator {
         return plan.usable() ? plan.distanceTiles : Double.POSITIVE_INFINITY;
     }
 
+    static double routeDistanceToTile(GameUI gui, long segment, Coord tile) {
+        Context context = context(gui);
+        if(context == null || tile == null || context.segment != segment)
+            return Double.POSITIVE_INFINITY;
+        List<Coord> goals = new ArrayList<>();
+        goals.add(new Coord(tile));
+        CaveRoutePlanner.Plan plan = CaveRoutePlanner.planTo(
+            new MapFileCaveSource(context.file, context.segment), context.savedTile,
+            goals, ROUTE_MAX_TILES);
+        return plan.usable() ? plan.distanceTiles : Double.POSITIVE_INFINITY;
+    }
+
     static boolean moveToArea(GameUI gui, Bot bot, MinerBotV3ZoneStore.SavedArea area,
                               String label) throws InterruptedException {
         return area != null && move(gui, bot, area.segmentId, goals(area.area), label);
