@@ -88,27 +88,24 @@ public final class MinerBotV3 {
                     GameUI.MsgType.INFO);
         }
 
-        Gob player = gui.map.player();
-        Gob support = MiningBot.findNearestSupport(gui, player);
-        if(support == null) {
+        StartPlan plan = resolveStartPlan(gui, direction);
+        if(plan == null) {
             gui.error("Miner Bot V3: no mine support is visible; start within sight of an existing support.");
             return;
         }
-        Coord origin = support.rc.floor(MCache.tilesz).sub(direction.right().step());
-        while(true) {
-            Coord expected = MinerBotV3Logic.columnTile(origin, direction);
-            if(MiningBot.findSupportNear(gui, expected) == null) break;
-            origin = MinerBotV3Logic.endpoint(origin, direction);
-        }
 
         int cap = segmentCap <= 0 ? Integer.MAX_VALUE : segmentCap;
-        final Coord start = new Coord(origin);
+        final Coord start = new Coord(plan.anchor);
         final int targetBars = barsTarget;
         running = true;
         status = "Status: starting";
+        MinerBotV3Overlay.showStart(gui, plan, direction, "starting", null);
         openLog();
         diag("START direction=%s origin=%s bars=%d cap=%s segment=%x",
             direction, start, targetBars, cap == Integer.MAX_VALUE ? "unlimited" : Integer.toString(cap), context.segment);
+        diag("START-GEOMETRY player-tile=%s nearest-support=#%d@%s anchor-support=#%d@%s chained=%d",
+            plan.playerTile, plan.nearestSupport.id, plan.nearestSupport.rc,
+            plan.anchorSupport.id, plan.anchorSupport.rc, plan.chainedSupports);
         Bot task = Bot.execute((ignored, bot) -> {
             try {
                 MiningBot.prewarmSupportResource(gui, bot);
@@ -116,6 +113,7 @@ public final class MinerBotV3 {
             } catch(InterruptedException interrupted) {
                 String reason = bot.stopMessage();
                 String source = bot.cancellationSource();
+                MinerBotV3Overlay.markFailure(reason == null ? "Task interrupted" : reason);
                 diag("CANCEL reason=%s source=%s", reason == null ? "Task interrupted" : reason,
                     source == null ? "unknown" : source);
                 throw interrupted;
@@ -139,6 +137,44 @@ public final class MinerBotV3 {
         });
         active = task;
         task.start(gui.ui, true);
+    }
+
+    static StartPlan resolveStartPlan(GameUI gui, MinerBotV3Logic.Direction direction) {
+        if(gui == null || gui.map == null || direction == null) return null;
+        Gob player = gui.map.player();
+        if(player == null) return null;
+        Gob nearest = MiningBot.findNearestSupport(gui, player);
+        if(nearest == null || nearest.rc == null) return null;
+        Gob anchorSupport = nearest;
+        Coord origin = nearest.rc.floor(MCache.tilesz).sub(direction.right().step());
+        int chained = 0;
+        while(true) {
+            Coord expected = MinerBotV3Logic.columnTile(origin, direction);
+            Gob next = MiningBot.findSupportNear(gui, expected);
+            if(next == null) break;
+            anchorSupport = next;
+            origin = MinerBotV3Logic.endpoint(origin, direction);
+            chained++;
+        }
+        return new StartPlan(nearest, anchorSupport, origin,
+            player.rc.floor(MCache.tilesz), chained);
+    }
+
+    static final class StartPlan {
+        final Gob nearestSupport;
+        final Gob anchorSupport;
+        final Coord anchor;
+        final Coord playerTile;
+        final int chainedSupports;
+
+        StartPlan(Gob nearestSupport, Gob anchorSupport, Coord anchor,
+                  Coord playerTile, int chainedSupports) {
+            this.nearestSupport = nearestSupport;
+            this.anchorSupport = anchorSupport;
+            this.anchor = new Coord(anchor);
+            this.playerTile = new Coord(playerTile);
+            this.chainedSupports = chainedSupports;
+        }
     }
 
     public static synchronized void stop() {abort("Stopped by user.");}
@@ -282,6 +318,7 @@ public final class MinerBotV3 {
                 throws InterruptedException {
             if(placements >= segmentCap) throw new SafetyCapReached();
             status = "Status: mining " + heading.name().toLowerCase(Locale.ROOT) + " from " + anchor;
+            MinerBotV3Overlay.showLeg(gui, anchor, heading, status);
             LegOutcome line = completeLine(anchor, heading);
             if(line != LegOutcome.SUCCESS) return line;
 
@@ -1083,6 +1120,7 @@ public final class MinerBotV3 {
         private void fail(String reason) throws InterruptedException {
             diag("FAIL %s", reason);
             status = "Status: stopped — " + reason;
+            MinerBotV3Overlay.markFailure(reason);
             gui.error("Miner Bot V3 stopped: " + reason);
             bot.cancel(reason);
             bot.checkCancelled();
