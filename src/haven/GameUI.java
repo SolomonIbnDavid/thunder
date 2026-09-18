@@ -98,6 +98,8 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
     public thunder.TileQualitySettingsWnd tileQualitySettingsWnd;
     public final thunder.FishingHelper fishingHelper = new thunder.FishingHelper();
     public thunder.FishingHelperWnd fishingHelperWnd;
+    public final thunder.MiningHeatMap miningHeatMap = new thunder.MiningHeatMap();
+    public thunder.MiningHeatMapWnd miningHeatMapWnd;
     public thunder.macro.MacroListWnd macroListWnd;
     public haven.pathfinding.AreaExportWnd areaExportWnd;
     public thunder.cookbook.EatingHelperWnd eatingHelperWnd;
@@ -1336,6 +1338,10 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 
     public void toggleFishingHelper() {
 	thunder.FishingHelperWnd.toggle(ui);
+    }
+
+    public void toggleMiningHeatMap() {
+	thunder.MiningHeatMapWnd.toggle(ui);
     }
 
     // KamiClient: open/close the combat distancing tool (yoinked from Hurricane).

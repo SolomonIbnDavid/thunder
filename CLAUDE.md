@@ -84,6 +84,7 @@ Per-feature design notes. Check the relevant file before reading source for an e
 - [docs/layerutil-linux-fix.md](docs/layerutil-linux-fix.md) — LayerUtil.jar listFiles-order patch + release-workflow resource guard
 - [docs/macros.md](docs/macros.md) — record/replay sequences of in-game actions; `:macro` console + `MacroListWnd`/`MacroEditorWnd`
 - [docs/milking-assistant.md](docs/milking-assistant.md) — sfx-driven cattle deselect after milking; movement-probe for no-milk rejection
+- [docs/mining-heat-map.md](docs/mining-heat-map.md) — local mining-quality surface, rare-drop coverage, and one-tile frontier guidance
 - [docs/plob-snap-design.md](docs/plob-snap-design.md) — placeable-object snap geometry
 - [docs/tile-quality-tracker.md](docs/tile-quality-tracker.md) — per-tile quality observations for mining/digging/water
 - [docs/upstream-sync.md](docs/upstream-sync.md) — log of kami merges (which commits were no-op duplicates vs intentionally skipped)
