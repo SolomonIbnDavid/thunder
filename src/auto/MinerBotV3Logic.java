@@ -87,6 +87,7 @@ public final class MinerBotV3Logic {
     }
 
     public enum Side {RIGHT, LEFT}
+    public enum Supply {STONE, BARS}
 
     public static final class DetourCandidate {
         public final int retreatLegs;
@@ -133,8 +134,35 @@ public final class MinerBotV3Logic {
         return energy >= EAT_UNTIL_PERCENT / 100.0;
     }
 
-    public static boolean needsBars(int carried, int minimum) {
-        return carried < Math.max(0, minimum);
+    /** Bars are replenished as a batch only after the carried supply is exhausted. */
+    public static boolean needsBarRefill(int carried) {
+        return carried <= 0;
+    }
+
+    public static boolean barBatchRestored(int carried, int target) {
+        return carried >= Math.max(1, target);
+    }
+
+    /** Any already-triggered supply trip should top up a placement reserve from the trail first. */
+    public static boolean shouldCollectRouteStone(int carriedStones, boolean circuitTriggered) {
+        return circuitTriggered && carriedStones < COLUMN_STONES;
+    }
+
+    /** The fresh inventory observation is authoritative; helper return values can lag it. */
+    public static boolean waterRefillSucceeded(boolean helperResult, boolean allVesselsFull) {
+        return allVesselsFull;
+    }
+
+    /** Lower values are preferred, but no recognized source is excluded. */
+    public static int supplySourcePriority(Supply supply, String resid,
+                                           boolean hasWater, boolean empty, boolean full) {
+        if(hasWater) return 100;
+        if(empty) return 90;
+        String name = resid == null ? "" : resid.toLowerCase(Locale.ROOT);
+        boolean stonePile = name.contains("/stockpile-stone");
+        if(supply == Supply.STONE && stonePile) return 0;
+        if(supply == Supply.BARS && stonePile) return 80;
+        return full ? 10 : 20;
     }
 
     /** Inclusive sequence of bounded route-history stops, ending exactly at target. */

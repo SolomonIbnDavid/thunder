@@ -11,6 +11,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
+import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -46,6 +47,15 @@ public class MiningMaterials {
         if(resid == null || resid.isEmpty()) {return null;}
         int variant = resid.indexOf('[');
         return variant > 0 ? resid.substring(0, variant) : resid;
+    }
+
+    private static String safeResid(Gob gob) {
+        if(gob == null) return "<null>";
+        try {
+            return String.valueOf(gob.resid());
+        } catch(RuntimeException ignored) {
+            return "<unavailable>";
+        }
     }
 
     /** Shared food-zone classification used by preflight and runtime eating. */
@@ -315,6 +325,15 @@ public class MiningMaterials {
     }
 
     public static boolean fetchFromZone(GameUI gui, Bot bot, Area zone, Predicate<WItem> want, int need) throws InterruptedException {
+        return fetchFromZone(gui, bot, zone, want, need, gob -> 0);
+    }
+
+    /**
+     * Backward-compatible prioritized variant. Priority only changes visit order;
+     * every recognized container remains eligible as a fallback.
+     */
+    public static boolean fetchFromZone(GameUI gui, Bot bot, Area zone, Predicate<WItem> want,
+                                        int need, ToIntFunction<Gob> sourcePriority) throws InterruptedException {
         // Logged unconditionally, before the early-return below -- already having
         // enough on hand (e.g. from an earlier test) short-circuited this whole
         // function before the diagnostic ever ran, live, producing an empty log with
@@ -323,12 +342,16 @@ public class MiningMaterials {
         if(countMatching(gui, want) >= need) {return true;}
 
         Gob player = gui.map.player();
+        ToIntFunction<Gob> priority = sourcePriority == null ? gob -> 0 : sourcePriority;
+        Comparator<Gob> sourceOrder = Comparator
+            .comparingInt((Gob gob) -> priority.applyAsInt(gob))
+            .thenComparingDouble(gob -> player == null ? 0 : player.rc.dist(gob.rc));
         WorldObjectRegistry.Snapshot world = WorldObjectRegistry.snapshot(gui, player, 0);
         List<Gob> containers = world.objects.stream()
             .filter(e -> e.category == WorldObjectRegistry.Category.CONTAINER || e.category == WorldObjectRegistry.Category.STOCKPILE)
             .filter(e -> zone.contains(e.position.floor(MCache.tilesz)))
-            .sorted(Comparator.comparingDouble(e -> player == null ? 0 : player.rc.dist(e.position)))
             .map(e -> e.gob)
+            .sorted(sourceOrder)
             .collect(Collectors.toList());
         MiningBot.diag("[minebot-diag] fetchFromZone: %d container(s) in zone", containers.size());
 
@@ -336,7 +359,7 @@ public class MiningMaterials {
             containers = gui.ui.sess.glob.oc.stream()
                 .filter(gobIs(GobTag.CONTAINER))
                 .filter(g -> zone.contains(g.rc.floor(MCache.tilesz)))
-                .sorted(PositionHelper.byDistanceToPlayer)
+                .sorted(sourceOrder)
                 .collect(Collectors.toList());
             MiningBot.diag("[minebot-diag] fetchFromZone: %d container(s) in zone after loading it", containers.size());
         }
@@ -344,8 +367,10 @@ public class MiningMaterials {
         for(Gob container : containers) {
             bot.checkCancelled();
             if(countMatching(gui, want) >= need) {return true;}
+            MiningBot.diag("[minebot-diag] fetchFromZone: candidate priority=%d id=%d resid=%s",
+                priority.applyAsInt(container), container.id, safeResid(container));
             if(container.disposed()) {
-                MiningBot.diag("[minebot-diag] fetchFromZone: container %s disposed, skipping", container.resid());
+                MiningBot.diag("[minebot-diag] fetchFromZone: container %s disposed, skipping", safeResid(container));
                 continue;
             }
             String resid = container.resid();
@@ -365,7 +390,12 @@ public class MiningMaterials {
             // a "Take" button that must be clicked once per unit wanted -- there's no
             // item grid to search at all. Handle whichever one actually appeared.
             Button take = MiningBot.findButton(win, "Take");
-            if(take == null) {
+            Inventory inv = null;
+            for(Widget wdg = win.lchild; wdg != null; wdg = wdg.prev) {
+                Inventory found = ExtInventory.inventory(wdg);
+                if(found != null) {inv = found; break;}
+            }
+            if(take == null && inv == null) {
                 // findButton only checks direct children -- if the real button is
                 // nested (a sub-panel, a per-item-type row, etc.) this dump shows the
                 // actual tree instead of guessing at another label/depth blind.
@@ -388,11 +418,6 @@ public class MiningMaterials {
                 }
                 MiningBot.diag("[minebot-diag] fetchFromZone: Stockpile-style, clicked Take %d time(s), now %d/%d", clicked, (int) countMatching(gui, want), need);
             } else {
-                Inventory inv = null;
-                for(Widget wdg = win.lchild; wdg != null; wdg = wdg.prev) {
-                    Inventory found = ExtInventory.inventory(wdg);
-                    if(found != null) {inv = found; break;}
-                }
                 MiningBot.diag("[minebot-diag] fetchFromZone: crate-style, inventory widget found=%b", inv != null);
                 if(inv != null) {
                     int matched = 0;

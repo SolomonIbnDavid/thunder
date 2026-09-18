@@ -56,7 +56,7 @@ public final class MinerBotV3 {
         if(gui == null || gui.map == null || gui.menu == null || gui.map.player() == null) return;
         if(Bot.hasCurrent()) {gui.error("Miner Bot V3: another automation task is already running."); return;}
         if(direction == null) {gui.error("Miner Bot V3: choose a direction."); return;}
-        if(barsTarget < 1) {gui.error("Miner Bot V3: bars to carry must be at least 1."); return;}
+        if(barsTarget < 1) {gui.error("Miner Bot V3: bar refill target must be at least 1."); return;}
         if(segmentCap < 0) {gui.error("Miner Bot V3: safety cap must be 0 or greater."); return;}
 
         MinerBotV3Navigator.Context context = MinerBotV3Navigator.context(gui);
@@ -257,8 +257,8 @@ public final class MinerBotV3 {
             ensureSupplyCircuit(true);
             if(MiningMaterials.stoneCount(gui) < MinerBotV3Logic.COLUMN_STONES)
                 return failLeg("only " + MiningMaterials.stoneCount(gui) + "/" + MinerBotV3Logic.COLUMN_STONES + " building stones available");
-            if(MiningMaterials.hardBarCount(gui) < barsTarget)
-                return failLeg("only " + MiningMaterials.hardBarCount(gui) + "/" + barsTarget + " Bronze/Wrought bars available");
+            if(MiningMaterials.hardBarCount(gui) < 1)
+                return failLeg("no Bronze/Wrought bar is available for the column");
 
             status = "Status: placing column at " + column;
             MiningBot.waitForCommandQueueIdle(gui, bot, 15000L);
@@ -450,14 +450,21 @@ public final class MinerBotV3 {
         }
 
         private void ensureSupplyCircuit(boolean requireStones) throws InterruptedException {
-            if(requireStones && MiningMaterials.stoneCount(gui) < MinerBotV3Logic.COLUMN_STONES)
-                collectStonesAlongTrail();
-
             boolean waterEmpty = !MiningBot.hasAnyDrink(gui);
             boolean energyLow = energyLow();
             boolean stoneLow = MiningMaterials.stoneCount(gui) < MinerBotV3Logic.COLUMN_STONES;
-            boolean barsLow = MinerBotV3Logic.needsBars(MiningMaterials.hardBarCount(gui), barsTarget);
-            boolean triggered = waterEmpty || energyLow || barsLow || (requireStones && stoneLow);
+            boolean barsEmpty = MinerBotV3Logic.needsBarRefill(MiningMaterials.hardBarCount(gui));
+            boolean triggered = waterEmpty || energyLow || barsEmpty || (requireStones && stoneLow);
+            if(!triggered) return;
+
+            if(MinerBotV3Logic.shouldCollectRouteStone(MiningMaterials.stoneCount(gui), triggered))
+                collectStonesAlongTrail();
+
+            waterEmpty = !MiningBot.hasAnyDrink(gui);
+            energyLow = energyLow();
+            stoneLow = MiningMaterials.stoneCount(gui) < MinerBotV3Logic.COLUMN_STONES;
+            barsEmpty = MinerBotV3Logic.needsBarRefill(MiningMaterials.hardBarCount(gui));
+            triggered = waterEmpty || energyLow || barsEmpty || (requireStones && stoneLow);
             if(!triggered) return;
 
             MinerBotV3Navigator.Context frontier = MinerBotV3Navigator.context(gui);
@@ -469,14 +476,14 @@ public final class MinerBotV3 {
 
             if(waterEmpty && water == null) fail("no water remains and no water area is selected");
             if(energyLow && food == null) fail("energy fell below 2,500% and no food area is selected");
-            if((stoneLow || barsLow) && storage == null)
+            if((stoneLow || barsEmpty) && storage == null)
                 fail("stone/bar reserves are short and no storage area is selected");
 
             List<Service> pending = new ArrayList<>();
             if(water != null && !allDrinkVesselsFull()) pending.add(Service.WATER);
             if(energyLow) pending.add(Service.FOOD);
-            if(stoneLow || barsLow) pending.add(Service.STORAGE);
-            diag("SUPPLY trigger water-empty=%b energy-low=%b stone=%d/%d bars=%d/%d pending=%s frontier=%s",
+            if(stoneLow || barsEmpty) pending.add(Service.STORAGE);
+            diag("SUPPLY trigger water-empty=%b energy-low=%b stone=%d/%d bars=%d refill-at-zero target=%d pending=%s frontier=%s",
                 waterEmpty, energyLow, MiningMaterials.stoneCount(gui), MinerBotV3Logic.COLUMN_STONES,
                 MiningMaterials.hardBarCount(gui), barsTarget, pending, frontier.savedTile);
 
@@ -491,26 +498,35 @@ public final class MinerBotV3 {
                 if(live == null) fail("could not convert the " + next + " area into the live cave map");
                 boolean ok;
                 switch(next) {
-                case WATER:
-                    ok = MiningMaterials.refillWaterFromZone(gui, bot, live) && allDrinkVesselsFull();
+                case WATER: {
+                    boolean helperResult = MiningMaterials.refillWaterFromZone(gui, bot, live);
+                    boolean allFull = allDrinkVesselsFull();
+                    ok = MinerBotV3Logic.waterRefillSucceeded(helperResult, allFull);
+                    diag("SUPPLY water helper-result=%b observed-all-full=%b", helperResult, allFull);
                     break;
+                }
                 case FOOD:
                     ok = MiningMaterials.eatFromZone(gui, bot, live, MinerBotV3Logic.EAT_UNTIL_PERCENT)
                         && MinerBotV3Logic.energyTargetReached(energy());
                     break;
-                default:
+                default: {
+                    boolean refillBars = MinerBotV3Logic.needsBarRefill(MiningMaterials.hardBarCount(gui));
                     ok = true;
                     if(MiningMaterials.stoneCount(gui) < MinerBotV3Logic.COLUMN_STONES)
                         ok = MiningMaterials.fetchFromZone(gui, bot, live,
-                            MiningMaterials::isBuildingStone, MinerBotV3Logic.COLUMN_STONES);
-                    if(MiningMaterials.hardBarCount(gui) < barsTarget)
+                            MiningMaterials::isBuildingStone, MinerBotV3Logic.COLUMN_STONES,
+                            gob -> sourcePriority(gob, MinerBotV3Logic.Supply.STONE));
+                    if(refillBars)
                         ok = MiningMaterials.fetchFromZone(gui, bot, live,
-                            MiningMaterials::isHardBar, barsTarget) && ok;
+                            MiningMaterials::isHardBar, barsTarget,
+                            gob -> sourcePriority(gob, MinerBotV3Logic.Supply.BARS)) && ok;
                     if(gui.maininv != null)
                         ok = StackAllItems.stackMatchingNow(gui.maininv, MiningMaterials::isHardBar) && ok;
                     ok = ok && MiningMaterials.stoneCount(gui) >= MinerBotV3Logic.COLUMN_STONES
-                        && MiningMaterials.hardBarCount(gui) >= barsTarget;
+                        && (!refillBars || MinerBotV3Logic.barBatchRestored(
+                            MiningMaterials.hardBarCount(gui), barsTarget));
                     break;
+                }
                 }
                 diag("SUPPLY service=%s ok=%b water-full=%b energy=%.4f stone=%d bars=%d",
                     next, ok, allDrinkVesselsFull(), energy(), MiningMaterials.stoneCount(gui),
@@ -561,6 +577,19 @@ public final class MinerBotV3 {
 
         private MinerBotV3ZoneStore.SavedArea zone(String role) {
             return MinerBotV3ZoneStore.get().get(gui.ui.sess, role);
+        }
+
+        private int sourcePriority(Gob gob, MinerBotV3Logic.Supply supply) {
+            String resid;
+            try {
+                resid = gob == null ? null : gob.resid();
+            } catch(RuntimeException ignored) {
+                resid = null;
+            }
+            return MinerBotV3Logic.supplySourcePriority(supply, resid,
+                gob != null && gob.is(GobTag.HAS_WATER),
+                gob != null && gob.is(GobTag.EMPTY),
+                gob != null && gob.is(GobTag.FULL));
         }
 
         private void collectStonesAlongTrail() throws InterruptedException {

@@ -14,7 +14,7 @@ this cycle:
 3. If the action stops, walk to the furthest opened tile and redraw only the
    remainder of the original eleven-tile leg.
 4. Mine one tile to the current heading's right, obtain 30 building stones and
-   the configured Bronze/Wrought Iron reserve, and build a Stone Column there.
+   one Bronze/Wrought Iron bar, and build a Stone Column there.
 5. Return to the centerline and continue in the same heading.
 
 Three redraws with no terrain or movement progress stop the run. A server
@@ -38,11 +38,14 @@ segment as the mining frontier.
 
 V3 pauses and returns through known saved cave floor when carried water is
 empty, energy is below 2,500%, 30 column stones are unavailable at placement,
-or carried Bronze/Wrought Iron is below the configured minimum. It fills every
-drink vessel, eats to 8,000% when the low-energy trigger fired, restores the
-stone/bar targets, consolidates only eligible bars, and returns to the exact
-recorded frontier. Before using storage for stone, it searches backward along
-the route V3 has mined and returns to the frontier with loose building stones.
+or carried Bronze/Wrought Iron reaches zero. The configured bar count is a
+refill batch: V3 loads 10 by default, spends them down through successive
+columns, and returns for another batch only when none remain. During a supply
+circuit it fills every drink vessel, eats to 8,000% when the low-energy trigger
+fired, restores 30 stones and any exhausted bar batch, consolidates only
+eligible bars, and returns to the exact recorded frontier. Before using storage
+for stone, it searches backward along the route V3 has mined and returns to the
+frontier with loose building stones.
 
 Supply areas are optional at startup. A missing area produces a warning; the
 run stops with a specific message only if that supply later becomes necessary.
