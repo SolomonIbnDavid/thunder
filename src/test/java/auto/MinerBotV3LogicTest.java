@@ -63,6 +63,10 @@ public class MinerBotV3LogicTest {
         assertTrue(MinerBotV3Logic.needsBarRefill(0));
         assertTrue(MinerBotV3Logic.barBatchRestored(10, 10));
         assertFalse(MinerBotV3Logic.barBatchRestored(9, 10));
+        assertTrue(MinerBotV3Logic.needsBarSupply(4, 10, false));
+        assertFalse(MinerBotV3Logic.needsBarSupply(10, 10, false));
+        assertFalse(MinerBotV3Logic.needsBarSupply(4, 10, true));
+        assertTrue(MinerBotV3Logic.needsBarSupply(0, 10, true));
         assertTrue(MinerBotV3Logic.shouldCollectRouteStone(13, true));
         assertFalse(MinerBotV3Logic.shouldCollectRouteStone(13, false));
         assertTrue(MinerBotV3Logic.waterRefillSucceeded(false, true));
