@@ -77,6 +77,11 @@ public final class MinerBotV3Logic {
         return endpoint(anchor, heading).add(heading.right().step());
     }
 
+    public static Coord priorAnchor(Coord anchor, Direction heading, int legsBack) {
+        if(legsBack < 0) throw new IllegalArgumentException("legsBack must be nonnegative");
+        return anchor.sub(heading.step().mul(LEG_TILES * legsBack));
+    }
+
     /** Signed tiles from the computed centerline; positive values are to the heading's right. */
     public static int crossTrackTiles(Coord anchor, Direction heading, Coord tile) {
         if(anchor == null || heading == null || tile == null) return 0;

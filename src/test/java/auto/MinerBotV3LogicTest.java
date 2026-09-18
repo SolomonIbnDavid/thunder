@@ -16,6 +16,19 @@ public class MinerBotV3LogicTest {
     }
 
     @Test
+    void restartHistoryFindsOneAndTwoPriorSupportAnchorsInEveryHeading() {
+        Coord anchor = Coord.of(100, 200);
+        for(MinerBotV3Logic.Direction heading : MinerBotV3Logic.Direction.values()) {
+            assertEquals(anchor.sub(heading.step().mul(11)),
+                MinerBotV3Logic.priorAnchor(anchor, heading, 1));
+            assertEquals(anchor.sub(heading.step().mul(22)),
+                MinerBotV3Logic.priorAnchor(anchor, heading, 2));
+        }
+        assertThrows(IllegalArgumentException.class,
+            () -> MinerBotV3Logic.priorAnchor(anchor, MinerBotV3Logic.Direction.NORTH, -1));
+    }
+
+    @Test
     void redrawPreservesTheOriginalEndpoint() {
         Coord anchor = Coord.of(10, 10);
         MinerBotV3Logic.Line line = MinerBotV3Logic.remainingLine(
