@@ -14,7 +14,7 @@ Open the world map and press **Q**, then press **Marker settings**.
 - Threshold settings persist in `config.json` and apply to every character/map.
 - **Copy settings** puts the universal rule and all individual rules in a versioned JSON profile on the clipboard. **Paste settings** replaces the local threshold profile with the shared one.
 
-When an observation qualifies, Thunder creates a purple player marker named like `[TQ] Granite q72.5`. It has **Display in world** enabled. In the game world, quality markers render as the material's inventory icon beside the quality number instead of the ordinary flag; on the saved map they remain normal searchable player markers. Raising or disabling a threshold does not erase markers that were already created; they remain editable and can be removed from the map marker list.
+When an observation qualifies, Thunder creates a purple player marker named like `[TQ] Granite q72.5`. It has **Display in world** enabled. In the game world, quality markers render as the material's inventory icon beside the quality number instead of the ordinary flag; each gemstone uses a representative rough-gem icon composed with that gemstone's specific game texture. On the saved map they remain normal searchable player markers. Raising or disabling a threshold does not erase markers that were already created; they remain editable and can be removed from the map marker list.
 
 Purple is an existing player-marker group color. If purple marker upload is enabled in Thunder's automapper settings, quality flags are eligible for the normal remote marker upload path as well.
 
