@@ -2,6 +2,7 @@ package thunder.mining;
 
 import auto.MinerBotV3;
 import auto.MinerBotV3Logic;
+import auto.MinerBotV3Overlay;
 import haven.Area;
 import haven.Button;
 import haven.Coord;
@@ -27,6 +28,7 @@ public final class MinerBotV3SetupWnd extends WindowX {
     private final TextEntry direction;
     private final TextEntry bars;
     private final TextEntry cap;
+    private final Label previewStatus;
     private final Label runtimeStatus;
     private String lastRuntimeStatus;
 
@@ -43,7 +45,13 @@ public final class MinerBotV3SetupWnd extends WindowX {
 
         add(new Label("Direction (n/s/e/w):"), 0, y);
         direction = add(new TextEntry(UI.scale(55), "n"), UI.scale(205), y);
+        add(new Button(UI.scale(60), "Preview") {
+            public void click() {refreshPreview(true);}
+        }, UI.scale(268), y);
         y += direction.sz.y + UI.scale(6);
+
+        previewStatus = add(new Label("Preview: waiting for the map"), 0, y);
+        y += UI.scale(20);
 
         add(new Label("Bars per refill batch (refill at 0):"), 0, y);
         bars = add(new TextEntry(UI.scale(55), "10"), UI.scale(255), y);
@@ -77,6 +85,7 @@ public final class MinerBotV3SetupWnd extends WindowX {
         super.added();
         if(ui != null && ui.sess != null) MinerBotV3ZoneStore.get().bind(ui.sess);
         showZones();
+        refreshPreview(false);
     }
 
     @Override
@@ -156,7 +165,25 @@ public final class MinerBotV3SetupWnd extends WindowX {
             ui.gui.error("Miner Bot V3: " + failure.getMessage());
             return;
         }
+        MinerBotV3Overlay.PreviewResult preview = MinerBotV3Overlay.preview(ui.gui, dir);
+        previewStatus.settext(preview.summary);
+        if(!preview.reachable)
+            ui.gui.msg("Miner Bot V3 preview warning: " + preview.warning, GameUI.MsgType.BAD);
         MinerBotV3.start(ui.gui, dir, barTarget, safetyCap);
+    }
+
+    private void refreshPreview(boolean reportWarning) {
+        if(ui == null || ui.gui == null) return;
+        try {
+            MinerBotV3Logic.Direction dir = MinerBotV3Logic.Direction.parse(direction.text());
+            MinerBotV3Overlay.PreviewResult preview = MinerBotV3Overlay.preview(ui.gui, dir);
+            previewStatus.settext(preview.summary);
+            if(reportWarning && !preview.reachable)
+                ui.gui.msg("Miner Bot V3 preview warning: " + preview.warning, GameUI.MsgType.BAD);
+        } catch(IllegalArgumentException failure) {
+            previewStatus.settext("Preview: enter n, s, e, or w");
+            MinerBotV3Overlay.clear();
+        }
     }
 
     private static String roleName(String role) {
@@ -171,6 +198,7 @@ public final class MinerBotV3SetupWnd extends WindowX {
     }
 
     public static void toggle(Widget parent) {
+        MinerBotV3Overlay.init();
         if(instance == null) instance = parent.add(new MinerBotV3SetupWnd());
         else instance.reqdestroy();
     }
@@ -179,6 +207,7 @@ public final class MinerBotV3SetupWnd extends WindowX {
     public void destroy() {
         ZonePicker.cancel();
         for(String role : roles()) ZonePicker.hideZone(role);
+        MinerBotV3Overlay.clear();
         super.destroy();
         instance = null;
     }

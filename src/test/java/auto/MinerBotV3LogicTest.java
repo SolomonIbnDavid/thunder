@@ -33,6 +33,21 @@ public class MinerBotV3LogicTest {
     }
 
     @Test
+    void previewOffsetsAreHeadingRelativeInAllFourDirections() {
+        Coord anchor = Coord.of(50, 60);
+        for(MinerBotV3Logic.Direction heading : MinerBotV3Logic.Direction.values()) {
+            Coord twoAheadThreeRight = anchor.add(heading.step().mul(2))
+                .add(heading.right().step().mul(3));
+            assertEquals(2, MinerBotV3Logic.alongTrackTiles(anchor, heading, twoAheadThreeRight));
+            assertEquals(3, MinerBotV3Logic.crossTrackTiles(anchor, heading, twoAheadThreeRight));
+            Coord oneBehindTwoLeft = anchor.sub(heading.step())
+                .sub(heading.right().step().mul(2));
+            assertEquals(-1, MinerBotV3Logic.alongTrackTiles(anchor, heading, oneBehindTwoLeft));
+            assertEquals(-2, MinerBotV3Logic.crossTrackTiles(anchor, heading, oneBehindTwoLeft));
+        }
+    }
+
+    @Test
     void doglegCandidatesHaveTheAgreedDeterministicOrder() {
         List<MinerBotV3Logic.DetourCandidate> candidates = MinerBotV3Logic.detourCandidates();
         assertEquals(8, candidates.size());
