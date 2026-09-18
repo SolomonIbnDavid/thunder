@@ -23,11 +23,13 @@ public final class MinerBotV3SetupWnd extends WindowX {
         ZonePicker.registerRoleColor(MinerBotV3ZoneStore.ROLE_STORAGE, new Integer[]{255, 160, 0});
         ZonePicker.registerRoleColor(MinerBotV3ZoneStore.ROLE_WATER, new Integer[]{0, 160, 255});
         ZonePicker.registerRoleColor(MinerBotV3ZoneStore.ROLE_FOOD, new Integer[]{0, 220, 100});
+        ZonePicker.registerRoleColor(MinerBotV3AnchorStore.ROLE_ANCHOR, new Integer[]{40, 230, 255});
     }
 
     private final TextEntry direction;
     private final TextEntry bars;
     private final TextEntry cap;
+    private final Label anchorStatus;
     private final Label previewStatus;
     private final Label runtimeStatus;
     private String lastRuntimeStatus;
@@ -49,6 +51,17 @@ public final class MinerBotV3SetupWnd extends WindowX {
             public void click() {refreshPreview(true);}
         }, UI.scale(268), y);
         y += direction.sz.y + UI.scale(6);
+
+        add(new Label("Mining anchor (next leg starts here):"), 0, y);
+        y += UI.scale(17);
+        anchorStatus = add(new Label("automatic on first Start"), 0, y);
+        add(new Button(UI.scale(55), "Pick") {
+            public void click() {pickAnchor();}
+        }, UI.scale(205), y - UI.scale(2));
+        add(new Button(UI.scale(60), "Clear") {
+            public void click() {clearAnchor();}
+        }, UI.scale(268), y - UI.scale(2));
+        y += UI.scale(25);
 
         previewStatus = add(new Label("Preview: waiting for the map"), 0, y);
         y += UI.scale(20);
@@ -83,7 +96,13 @@ public final class MinerBotV3SetupWnd extends WindowX {
     @Override
     protected void added() {
         super.added();
-        if(ui != null && ui.sess != null) MinerBotV3ZoneStore.get().bind(ui.sess);
+        if(ui != null && ui.sess != null) {
+            MinerBotV3ZoneStore.get().bind(ui.sess);
+            MinerBotV3AnchorStore.get().bind(ui.sess);
+            MinerBotV3AnchorStore.SavedAnchor saved = MinerBotV3AnchorStore.get().get(ui.sess);
+            if(saved != null) direction.settext(shortDirection(saved.heading));
+        }
+        anchorStatus.settext(anchorStatus());
         showZones();
         refreshPreview(false);
     }
@@ -96,6 +115,75 @@ public final class MinerBotV3SetupWnd extends WindowX {
             lastRuntimeStatus = current;
             runtimeStatus.settext(current);
         }
+        String currentAnchor = anchorStatus();
+        if(!currentAnchor.equals(anchorStatus.gettext())) anchorStatus.settext(currentAnchor);
+    }
+
+    private void pickAnchor() {
+        if(MinerBotV3.isRunning()) {
+            ui.gui.error("Miner Bot V3: stop the bot before changing its anchor.");
+            return;
+        }
+        MinerBotV3Logic.Direction heading;
+        try {
+            heading = MinerBotV3Logic.Direction.parse(direction.text());
+        } catch(IllegalArgumentException failure) {
+            ui.gui.error("Miner Bot V3: " + failure.getMessage());
+            return;
+        }
+        GameUI gui = ui.gui;
+        MiniMap.Location location = gui != null && gui.mapfile != null
+            ? gui.mapfile.playerLocation() : null;
+        if(location == null || location.seg == null || location.tc == null) {
+            gui.error("Miner Bot V3: saved cave-map location is unavailable.");
+            return;
+        }
+        gui.msg("Click one centerline tile to lock the Miner Bot V3 anchor. The next 11-tile leg starts after it.",
+            GameUI.MsgType.INFO);
+        ZonePicker.start(gui.map, MinerBotV3AnchorStore.ROLE_ANCHOR, live -> {
+            if(!Coord.of(1, 1).equals(live.sz())) {
+                gui.error("Miner Bot V3: the anchor must be one tile; click without dragging.");
+                return;
+            }
+            MiniMap.Location pickedAt = gui.mapfile == null ? null : gui.mapfile.playerLocation();
+            if(pickedAt == null || pickedAt.seg == null || pickedAt.tc == null) {
+                gui.error("Miner Bot V3: saved cave-map location disappeared while selecting the anchor.");
+                return;
+            }
+            MinerBotV3AnchorStore.SavedAnchor saved =
+                MinerBotV3AnchorStore.SavedAnchor.fromLive(pickedAt.seg.id,
+                    pickedAt.tc, live.ul, heading, true);
+            MinerBotV3AnchorStore.get().put(gui.ui.sess, saved);
+            ZonePicker.showZone(gui.map, MinerBotV3AnchorStore.ROLE_ANCHOR, live);
+            anchorStatus.settext(anchorStatus());
+            refreshPreview(false);
+            gui.msg("Miner Bot V3 anchor locked for this login session.", GameUI.MsgType.GOOD);
+        });
+    }
+
+    private void clearAnchor() {
+        if(MinerBotV3.isRunning()) {
+            ui.gui.error("Miner Bot V3: stop the bot before clearing its anchor.");
+            return;
+        }
+        MinerBotV3AnchorStore.get().clear(ui.sess);
+        ZonePicker.hideZone(MinerBotV3AnchorStore.ROLE_ANCHOR);
+        anchorStatus.settext(anchorStatus());
+        refreshPreview(false);
+        ui.gui.msg("Miner Bot V3 anchor cleared; the next Start will choose one from a visible support.",
+            GameUI.MsgType.INFO);
+    }
+
+    private String anchorStatus() {
+        if(ui == null || ui.sess == null) return "automatic on first Start";
+        MinerBotV3AnchorStore.SavedAnchor saved = MinerBotV3AnchorStore.get().get(ui.sess);
+        if(saved == null) return "automatic on first Start";
+        return String.format("locked %s %s (%s)", saved.tile, saved.heading.name(),
+            saved.manuallyPicked ? "picked" : "checkpoint");
+    }
+
+    private static String shortDirection(MinerBotV3Logic.Direction heading) {
+        return heading.name().substring(0, 1).toLowerCase(java.util.Locale.ROOT);
     }
 
     private int zoneRow(int y, String name, String role) {
@@ -151,6 +239,12 @@ public final class MinerBotV3SetupWnd extends WindowX {
                 ZonePicker.showZone(ui.gui.map, role, live);
             }
         }
+        MinerBotV3AnchorStore.SavedAnchor anchor = MinerBotV3AnchorStore.get().get(ui.sess);
+        if(anchor != null && anchor.segmentId == location.seg.id) {
+            Coord live = anchor.liveTile(location.tc);
+            ZonePicker.showZone(ui.gui.map, MinerBotV3AnchorStore.ROLE_ANCHOR,
+                new Area(live, live.add(1, 1)));
+        }
     }
 
     private void startBot() {
@@ -164,6 +258,11 @@ public final class MinerBotV3SetupWnd extends WindowX {
         } catch(IllegalArgumentException failure) {
             ui.gui.error("Miner Bot V3: " + failure.getMessage());
             return;
+        }
+        MinerBotV3AnchorStore.SavedAnchor locked = MinerBotV3AnchorStore.get().get(ui.sess);
+        if(locked != null && locked.heading != dir) {
+            ui.gui.msg("Miner Bot V3: using the locked anchor heading " + locked.heading
+                + "; Pick or Clear the anchor to change direction.", GameUI.MsgType.INFO);
         }
         MinerBotV3Overlay.PreviewResult preview = MinerBotV3Overlay.preview(ui.gui, dir);
         previewStatus.settext(preview.summary);
@@ -207,6 +306,7 @@ public final class MinerBotV3SetupWnd extends WindowX {
     public void destroy() {
         ZonePicker.cancel();
         for(String role : roles()) ZonePicker.hideZone(role);
+        ZonePicker.hideZone(MinerBotV3AnchorStore.ROLE_ANCHOR);
         MinerBotV3Overlay.clear();
         super.destroy();
         instance = null;
