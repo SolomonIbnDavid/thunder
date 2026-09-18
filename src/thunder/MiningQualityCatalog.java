@@ -29,12 +29,16 @@ public final class MiningQualityCatalog {
         public final String key;
         public final String name;
         public final String resourceName;
+        public final String gemTextureResourceName;
 
         private Entry(Category category, String name, String resourceSlug) {
             this.category = category;
             this.name = name;
             this.key = category.prefix + "/" + slug(name);
             this.resourceName = resourceSlug == null ? null : "gfx/invobjs/" + resourceSlug;
+            this.gemTextureResourceName = category == Category.GEM
+                ? "gfx/terobjs/bumlings/" + compact(name)
+                : null;
         }
     }
 

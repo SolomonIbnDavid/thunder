@@ -15,11 +15,25 @@ class TileQualityMarkerSpriteTest {
     }
 
     @Test
-    void resolvesOreAliasesAndDynamicGemResource() {
+    void resolvesOreAliasesAndDynamicGemResources() {
         assertEquals("gfx/invobjs/magnetite",
             TileQualityMarkerSprite.parse("[TQ] Black Ore q81").resourceName);
-        assertEquals("gfx/invobjs/gems/gemstone",
-            TileQualityMarkerSprite.parse("[TQ] Sapphire q12.3").resourceName);
+        TileQualityMarkerSprite.Visual sapphire =
+            TileQualityMarkerSprite.parse("[TQ] Sapphire q12.3");
+        assertEquals("gfx/invobjs/gems/gemstone", sapphire.resourceName);
+        assertEquals("gfx/terobjs/bumlings/sapphire", sapphire.gemTextureResourceName);
+    }
+
+    @Test
+    void everyGemTypeUsesItsSpecificGameTexture() {
+        for(MiningQualityCatalog.Entry entry :
+                MiningQualityCatalog.entries(MiningQualityCatalog.Category.GEM)) {
+            TileQualityMarkerSprite.Visual visual =
+                TileQualityMarkerSprite.parse("[TQ] " + entry.name + " q1");
+            assertNotNull(visual, entry.name);
+            assertEquals("gfx/terobjs/bumlings/" + entry.name.toLowerCase().replace(" ", ""),
+                visual.gemTextureResourceName, entry.name);
+        }
     }
 
     @Test
