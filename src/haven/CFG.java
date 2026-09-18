@@ -243,6 +243,10 @@ public class CFG<T> {
     public static final CFG<Integer> MINEBOT_STONE_MIN = new CFG<>("automation.minebot.stone_min", 30);
     public static final CFG<Integer> MINEBOT_EAT_UNTIL_PERCENT = new CFG<>("automation.minebot.eat_until_percent", 95);
     public static final CFG<Integer> MINEBOT_BARS_TARGET = new CFG<>("automation.minebot.bars_target", 10);
+    /** Per-material auto-marker thresholds, stored as quality x10. */
+    public static final CFG<Map<String, Integer>> TILE_QUALITY_THRESHOLDS = new CFG<>(
+        "map.tile_quality.thresholds_x10", new HashMap<>(), new TypeToken<Map<String, Integer>>(){}
+    );
     public static final CFG<Boolean> ENABLE_PURGE_BUTTON_IN_KIN_LIST = new CFG<>("ui.enable_purge_button_kin_list", false);
     public static final CFG<Boolean> SHOW_FEP_NUMBERS_ON_FOOD = new CFG<>("ui.show_fep_numbers_on_food", true);
     public static final CFG<Boolean> EXTEND_ZOOM_ON_ORTHO = new CFG<>("cam.extend_zoom_on_ortho", false);
