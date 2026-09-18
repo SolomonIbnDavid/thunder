@@ -87,16 +87,21 @@ public class MapHelper {
 
     /** True if tc is already open, walkable cave/mine floor -- nothing left to mine there. */
     public static boolean isMinedFloorTile(GameUI gui, Coord tc) {
+	return isMinedFloorName(tileResourceName(gui, tc));
+    }
+
+    /** Returns the loaded terrain resource at tc, or null while it is unresolved. */
+    public static String tileResourceName(GameUI gui, Coord tc) {
 	try {
 	    MCache mcache = gui.ui.sess.glob.map;
 	    int t = mcache.gettile(tc);
 	    Resource res = mcache.tilesetr(t);
-	    return res != null && isMinedFloorName(res.name);
+	    return res == null ? null : res.name;
 	} catch(Loading loading) {
 	    /* A newly exposed tile can reference a resource that the loader has not
 	     * resolved yet. Treat it as unknown/closed for this polling pass; V3 will
 	     * probe again instead of letting LoadingIndir terminate the whole run. */
-	    return false;
+	    return null;
 	}
     }
 
