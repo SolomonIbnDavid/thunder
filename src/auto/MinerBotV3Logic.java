@@ -143,6 +143,10 @@ public final class MinerBotV3Logic {
         return carried >= Math.max(1, target);
     }
 
+    public static boolean needsBarSupply(int carried, int target, boolean batchInitialized) {
+        return batchInitialized ? needsBarRefill(carried) : !barBatchRestored(carried, target);
+    }
+
     /** Any already-triggered supply trip should top up a placement reserve from the trail first. */
     public static boolean shouldCollectRouteStone(int carriedStones, boolean circuitTriggered) {
         return circuitTriggered && carriedStones < COLUMN_STONES;
