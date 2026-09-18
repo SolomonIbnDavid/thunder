@@ -7,11 +7,12 @@ Thunder records the highest observed quality for mining, digging, and water-fill
 Open the world map and press **Q**, then press **Marker settings**.
 
 - The catalog contains 52 stone types, 18 ore types, and 12 gemstone types.
+- **Any stone or ore** is a universal minimum-quality rule. Every stone or ore at or above that quality is flagged, regardless of its individual setting; `0`/`Off` disables the universal rule.
 - Each stone and ore has an independent minimum quality. `0`/`Off` disables automatic flags for that material.
 - Gemstones are always important and are flagged at every quality; no gemstone threshold is required.
 - Threshold comparison is inclusive. A quality 50.0 Granite observation qualifies when Granite is set to 50.
 - Threshold settings persist in `config.json` and apply to every character/map.
-- **Copy settings** puts a versioned JSON profile on the clipboard. **Paste settings** replaces the local threshold profile with the shared one.
+- **Copy settings** puts the universal rule and all individual rules in a versioned JSON profile on the clipboard. **Paste settings** replaces the local threshold profile with the shared one.
 
 When an observation qualifies, Thunder creates a purple player marker named like `[TQ] Granite q72.5`. It has **Display in world** enabled, so the same persistent flag is visible over the in-game tile and on the map. Raising or disabling a threshold does not erase flags that were already created; they remain ordinary editable player markers and can be removed from the map marker list.
 

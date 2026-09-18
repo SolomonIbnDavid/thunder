@@ -247,6 +247,10 @@ public class CFG<T> {
     public static final CFG<Map<String, Integer>> TILE_QUALITY_THRESHOLDS = new CFG<>(
         "map.tile_quality.thresholds_x10", new HashMap<>(), new TypeToken<Map<String, Integer>>(){}
     );
+    /** Universal stone/ore auto-marker threshold, stored as quality x10; zero disables it. */
+    public static final CFG<Integer> TILE_QUALITY_ANY_ROCK_THRESHOLD = new CFG<>(
+        "map.tile_quality.any_rock_threshold_x10", 0
+    );
     public static final CFG<Boolean> ENABLE_PURGE_BUTTON_IN_KIN_LIST = new CFG<>("ui.enable_purge_button_kin_list", false);
     public static final CFG<Boolean> SHOW_FEP_NUMBERS_ON_FOOD = new CFG<>("ui.show_fep_numbers_on_food", true);
     public static final CFG<Boolean> EXTEND_ZOOM_ON_ORTHO = new CFG<>("cam.extend_zoom_on_ortho", false);

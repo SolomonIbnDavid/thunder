@@ -34,15 +34,29 @@ class TileQualityThresholdsTest {
     }
 
     @Test
+    void universalRockThresholdAppliesToEveryStoneAndOreAsAnAdditionalRule() {
+        Map<String, Integer> values = new LinkedHashMap<>();
+        values.put("stone/granite", 500);
+
+        assertTrue(TileQualityThresholds.qualifies("stone/basalt", (short)800, values, 800));
+        assertTrue(TileQualityThresholds.qualifies("ore/cinnabar", (short)800, values, 800));
+        assertFalse(TileQualityThresholds.qualifies("ore/cinnabar", (short)799, values, 800));
+        assertTrue(TileQualityThresholds.qualifies("stone/granite", (short)500, values, 800));
+        assertFalse(TileQualityThresholds.qualifies(TileQuality.KEY_CRYSTAL, (short)900, values, 800));
+    }
+
+    @Test
     void sharePayloadRoundTripsAndNormalizesLegacyKeys() {
         Map<String, Integer> values = new LinkedHashMap<>();
         values.put("stone/magnetite", 613);
         values.put("stone/granite", 500);
         values.put("gem/ruby", 100); // gems have no configurable threshold
 
-        String json = TileQualityThresholds.exportJson(values);
-        Map<String, Integer> imported = TileQualityThresholds.importJson(json);
+        String json = TileQualityThresholds.exportJson(values, 777);
+        TileQualityThresholds.Profile profile = TileQualityThresholds.importProfileJson(json);
+        Map<String, Integer> imported = profile.thresholds;
 
+        assertEquals(777, profile.anyRockQualityX10);
         assertEquals(2, imported.size());
         assertEquals(613, imported.get("ore/black-ore"));
         assertEquals(500, imported.get("stone/granite"));
@@ -53,5 +67,13 @@ class TileQualityThresholdsTest {
     void rejectsUnrelatedClipboardJson() {
         assertThrows(IllegalArgumentException.class,
             () -> TileQualityThresholds.importJson("{\"type\":\"something-else\",\"version\":1,\"thresholds\":{}}"));
+    }
+
+    @Test
+    void oldSharedProfilesDefaultTheUniversalThresholdToOff() {
+        TileQualityThresholds.Profile profile = TileQualityThresholds.importProfileJson(
+            "{\"type\":\"thunder-tile-quality-thresholds\",\"version\":1,\"thresholds\":{}}"
+        );
+        assertEquals(0, profile.anyRockQualityX10);
     }
 }

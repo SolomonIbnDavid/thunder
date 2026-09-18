@@ -17,6 +17,7 @@ public final class TileQualitySettingsWnd extends WindowX {
 
     private final MaterialList materials;
     private final TextEntry search;
+    private final TextEntry anyRockThreshold;
     private final TextEntry threshold;
     private final Button save;
     private final Label selectedLabel;
@@ -30,6 +31,16 @@ public final class TileQualitySettingsWnd extends WindowX {
         add(new Label("Stone and ore: set the minimum quality to flag (0 = off)."), 0, y);
         y += UI.scale(20);
         add(new Label("Gemstones are always recorded and flagged, at every quality."), 0, y);
+        y += UI.scale(24);
+
+        add(new Label("Any stone or ore:"), 0, y + UI.scale(3));
+        anyRockThreshold = add(new TextEntry(UI.scale(70),
+            TileQualityThresholds.formatQuality(TileQualityThresholds.anyRock())) {
+            @Override public void activate(String text) {saveAnyRockThreshold();}
+        }, UI.scale(145), y);
+        add(new Button(UI.scale(125), "Save universal", this::saveAnyRockThreshold), UI.scale(225), y);
+        y += anyRockThreshold.sz.y + UI.scale(2);
+        add(new Label("Flags every mined rock at or above this quality (0 = off)."), 0, y);
         y += UI.scale(24);
 
         materials = new MaterialList(UI.scale(430), 15);
@@ -111,8 +122,21 @@ public final class TileQualitySettingsWnd extends WindowX {
         }
     }
 
+    private void saveAnyRockThreshold() {
+        try {
+            int value = TileQualityThresholds.parseQuality(anyRockThreshold.text().replace("Off", "0"));
+            TileQualityThresholds.setAnyRock(value);
+            anyRockThreshold.settext(TileQualityThresholds.formatQuality(value));
+            ui.gui.msg("Universal rock quality marker threshold: "
+                + TileQualityThresholds.formatQuality(value), GameUI.MsgType.INFO);
+        } catch(RuntimeException e) {
+            ui.gui.error("Universal rock threshold must be a non-negative number.");
+        }
+    }
+
     private void copySettings() {
-        ClipboardUtil.copy(TileQualityThresholds.exportJson(TileQualityThresholds.snapshot()));
+        ClipboardUtil.copy(TileQualityThresholds.exportJson(
+            TileQualityThresholds.snapshot(), TileQualityThresholds.anyRock()));
         ui.gui.msg("Mining quality settings copied to the clipboard.", GameUI.MsgType.INFO);
     }
 
@@ -123,10 +147,12 @@ public final class TileQualitySettingsWnd extends WindowX {
                 throw new IllegalArgumentException("Clipboard has no text");
             }
             String json = (String)contents.getTransferData(DataFlavor.stringFlavor);
-            Map<String, Integer> values = TileQualityThresholds.importJson(json);
-            TileQualityThresholds.replace(values);
+            TileQualityThresholds.Profile profile = TileQualityThresholds.importProfileJson(json);
+            TileQualityThresholds.replace(profile);
+            anyRockThreshold.settext(TileQualityThresholds.formatQuality(profile.anyRockQualityX10));
             select(selected);
-            ui.gui.msg("Imported " + values.size() + " mining quality thresholds.", GameUI.MsgType.INFO);
+            ui.gui.msg("Imported " + profile.thresholds.size()
+                + " material thresholds and the universal rock threshold.", GameUI.MsgType.INFO);
         } catch(Exception e) {
             ui.gui.error("Could not import mining quality settings: " + e.getMessage());
         }
