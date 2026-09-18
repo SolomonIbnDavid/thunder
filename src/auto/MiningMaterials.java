@@ -105,7 +105,10 @@ public class MiningMaterials {
     }
 
     public static boolean isHardBar(WItem w) {
-        String name = itemName(w.item);
+        return w != null && isHardBarName(itemName(w.item));
+    }
+
+    static boolean isHardBarName(String name) {
         if(name == null) {return false;}
         for(String n : HARD_BAR_NAMES) {
             if(n.equals(name)) {return true;}
@@ -161,6 +164,14 @@ public class MiningMaterials {
         return personalItems(gui).anyMatch(MiningMaterials::isHardBar);
     }
 
+    public static int hardBarCount(GameUI gui) {
+        return (int) personalItems(gui)
+            .filter(MiningMaterials::isHardBar)
+            .map(w -> w.quantity.get())
+            .reduce(0f, Float::sum)
+            .floatValue();
+    }
+
     /** Picks up loose stone (any STONE_NAMES rock type) dropped nearby until `need` is reached or none remain in range. */
     public static boolean pickUpLooseStone(GameUI gui, Bot bot, int need) throws InterruptedException {
         Set<Long> tried = new HashSet<>();
@@ -196,7 +207,7 @@ public class MiningMaterials {
     /* Ground-dropped rock/ore item-gobs use resid gfx/terobjs/items/<rockname> in this
      * client family; matching by resid substring against the same confirmed name list
      * (lowercased, spaces stripped) avoids a second, separate name guess. */
-    private static boolean looksLikeStone(Gob g) {
+    static boolean looksLikeStone(Gob g) {
         try {
             String id = g.resid();
             if(id == null) {return false;}

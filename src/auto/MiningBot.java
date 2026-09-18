@@ -246,7 +246,7 @@ public class MiningBot {
     }
 
     /** Nearest gob matching a known mine-support resource pattern (GobRadius.toggleFor's own substring list). */
-    private static Gob findNearestSupport(GameUI gui, Gob player) {
+    static Gob findNearestSupport(GameUI gui, Gob player) {
         return gui.ui.sess.glob.oc.stream()
             .filter(MiningBot::looksLikeSupport)
             .min(java.util.Comparator.comparingDouble(g -> g.rc.dist(player.rc)))
@@ -254,7 +254,7 @@ public class MiningBot {
     }
 
     /** A support-type gob within about one tile of the given tile's center, or null. */
-    private static Gob findSupportNear(GameUI gui, Coord tile) {
+    static Gob findSupportNear(GameUI gui, Coord tile) {
         Coord2d center = MCache.tilesz.mul(tile.x, tile.y).add(5, 5);
         return gui.ui.sess.glob.oc.stream()
             .filter(MiningBot::looksLikeSupport)
@@ -262,7 +262,7 @@ public class MiningBot {
             .findFirst().orElse(null);
     }
 
-    private static boolean looksLikeSupport(Gob g) {
+    static boolean looksLikeSupport(Gob g) {
         try {
             String id = g.resid();
             if(id == null) {return false;}
@@ -388,7 +388,7 @@ public class MiningBot {
         gui.msg("MiningBot finished: " + segments + " support segment(s) mined.", GameUI.MsgType.GOOD);
     }
 
-    private static Coord2d tileCenter(Coord tile) {
+    static Coord2d tileCenter(Coord tile) {
         return MCache.tilesz.mul(tile.x, tile.y).add(5, 5);
     }
 
@@ -488,7 +488,7 @@ public class MiningBot {
      * downgrades an unprotected drop to a plain click unless Ctrl is held, hence
      * MOD_CTRL here.
      */
-    private static void dropCursorItem(GameUI gui) {
+    static void dropCursorItem(GameUI gui) {
         if(gui.hand() == null) {return;}
         Gob player = gui.map.player();
         if(player == null) {return;}
@@ -504,7 +504,7 @@ public class MiningBot {
      * actual contents (w.contains.get().is("Water")), which is what "do I still have a
      * drink" actually needs to mean.
      */
-    private static boolean hasAnyDrink(GameUI gui) {
+    static boolean hasAnyDrink(GameUI gui) {
         return InvHelper.HANDS(gui).get().stream().anyMatch(w -> InvHelper.isBucket(w) && InvHelper.HAS_WATER.test(w))
             || InvHelper.POUCHES(gui).get().stream().anyMatch(w -> InvHelper.isDrinkContainer(w) && InvHelper.HAS_WATER.test(w))
             || InvHelper.INVENTORY(gui).get().stream().anyMatch(w -> InvHelper.isDrinkContainer(w) && InvHelper.HAS_WATER.test(w))
@@ -541,7 +541,7 @@ public class MiningBot {
      * window: waits for it, clicks Build, and confirms it closes (construction
      * actually completed) rather than assuming success.
      */
-    private static boolean placeSupport(GameUI gui, Bot bot, Coord2d at) throws InterruptedException {
+    static boolean placeSupport(GameUI gui, Bot bot, Coord2d at) throws InterruptedException {
         dropCursorItem(gui); // a full-inventory pickup can leave an item stuck on the cursor, which blocks placement (same precondition Actions.refillDrinks checks for)
 
         // Auto-capture the raw wire traffic for this placement attempt (same recorder
@@ -733,7 +733,7 @@ public class MiningBot {
      * genuinely never idle, this gives up and logs that fact instead of hanging
      * forever.
      */
-    private static boolean waitForCommandQueueIdle(GameUI gui, Bot bot, long timeoutMs) throws InterruptedException {
+    static boolean waitForCommandQueueIdle(GameUI gui, Bot bot, long timeoutMs) throws InterruptedException {
         long deadline = System.currentTimeMillis() + timeoutMs;
         int lastDepth = -1;
         while(true) {
@@ -764,7 +764,7 @@ public class MiningBot {
      * standing in a freshly-mined, unsupported tile to one before mining has
      * even started.
      */
-    private static void prewarmSupportResource(GameUI gui, Bot bot) throws InterruptedException {
+    static void prewarmSupportResource(GameUI gui, Bot bot) throws InterruptedException {
         gui.msg("MiningBot: pre-loading the Stone Column resource before starting...", GameUI.MsgType.INFO);
         long started = System.currentTimeMillis();
         gui.menu.wdgmsg("act", "bp", "column", gui.ui.modflags());

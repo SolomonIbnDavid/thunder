@@ -5,6 +5,15 @@ import org.junit.jupiter.api.Test;
 
 public class MiningMaterialsTest {
     @Test
+    void classifiesOnlyTheConfiguredHardMetalBars() {
+        Assertions.assertTrue(MiningMaterials.isHardBarName("Bar of Bronze"));
+        Assertions.assertTrue(MiningMaterials.isHardBarName("Bar of Wrought Iron"));
+        Assertions.assertFalse(MiningMaterials.isHardBarName("Bar of Iron"));
+        Assertions.assertFalse(MiningMaterials.isHardBarName("Bronze Bar"));
+        Assertions.assertFalse(MiningMaterials.isHardBarName(null));
+    }
+
+    @Test
     void recognizesInventoryOpeningTablesAsFoodSources() {
         Assertions.assertTrue(MiningMaterials.isFoodTableResid("gfx/terobjs/htable"));
         Assertions.assertTrue(MiningMaterials.isFoodTableResid("gfx/terobjs/table"));
