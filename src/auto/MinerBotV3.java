@@ -346,8 +346,7 @@ public final class MinerBotV3 {
                 fail("saved-map position became unavailable at the locked mining anchor");
             sessionTile = new Coord(arrived.sessionTile);
             Coord anchor = savedOrigin.sub(sessionTile);
-            trail.add(new Coord(anchor));
-            anchors.add(new Anchor(anchor, 0));
+            seedRouteHistory(anchor);
             diag("CHECKPOINT arrived saved=%s live=%s heading=%s", savedOrigin, anchor,
                 originalDirection);
             try {
@@ -388,6 +387,32 @@ public final class MinerBotV3 {
             }
             return MinerBotV3Navigator.moveToTile(gui, bot, segmentId, savedOrigin,
                 "session mining anchor");
+        }
+
+        /**
+         * A saved session checkpoint records the current frontier, but the
+         * too-hard search needs the previous one or two support anchors. Rebuild
+         * only the contiguous, already-open centerline behind that checkpoint;
+         * unresolved or closed terrain terminates reconstruction immediately.
+         */
+        private void seedRouteHistory(Coord anchor) {
+            int openBehind = 0;
+            int limit = MinerBotV3Logic.LEG_TILES * 2;
+            for(int distance = 1; distance <= limit; distance++) {
+                Coord tile = anchor.sub(originalDirection.step().mul(distance));
+                if(!MapHelper.isMinedFloorTile(gui, tile)) break;
+                openBehind = distance;
+            }
+            int priorLegs = openBehind / MinerBotV3Logic.LEG_TILES;
+            for(int distance = priorLegs * MinerBotV3Logic.LEG_TILES;
+                    distance >= 0; distance--) {
+                Coord tile = anchor.sub(originalDirection.step().mul(distance));
+                appendTrail(tile);
+                if(distance % MinerBotV3Logic.LEG_TILES == 0)
+                    anchors.add(new Anchor(tile, trail.size() - 1));
+            }
+            diag("CHECKPOINT history anchor=%s open-behind=%d prior-anchors=%d trail=%d",
+                anchor, openBehind, priorLegs, trail.size());
         }
 
         private LegOutcome mineAndPlaceLeg(Coord anchor, MinerBotV3Logic.Direction heading)
