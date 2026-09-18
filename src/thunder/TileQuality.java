@@ -18,7 +18,7 @@ public class TileQuality {
     private static final String GRID_NAME = "thunder-tq-grid-%x";
     private static final int GRID_VERSION = 3;
     private static final int SHARED_GRID_VERSION = 1;
-    private static final String MARKER_PREFIX = "[TQ] ";
+    static final String MARKER_PREFIX = "[TQ] ";
 
     public static final String KEY_STONE_PREFIX = "stone/";
     public static final String KEY_ORE_PREFIX = "ore/";
