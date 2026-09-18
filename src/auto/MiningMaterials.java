@@ -2,6 +2,7 @@ package auto;
 
 import haven.pathfinding.BotMovement;
 import haven.pathfinding.WorldObjectRegistry;
+import thunder.MiningQualityCatalog;
 
 import haven.*;
 
@@ -73,24 +74,11 @@ public class MiningMaterials {
     // User-confirmed, exhaustive list: every rock-type item name H&H produces from
     // mining, minus the 18 ore types below. Any of these count as "stone" for
     // support-building purposes.
-    private static final Set<String> STONE_NAMES = new HashSet<>(Arrays.asList(
-        "Alabaster", "Apatite", "Arkose", "Basalt", "Bat Rock", "Black Coal", "Breccia",
-        "Cat Gold", "Chert", "Diabase", "Diorite", "Dolomite", "Dross", "Eclogite",
-        "Feldspar", "Flint", "Fluorospar", "Gabbro", "Gneiss", "Granite", "Graywacke",
-        "Greenschist", "Hornblende", "Jasper", "Korund", "Kyanite", "Lava Rock",
-        "Limestone", "Marble", "Mica", "Microlite", "Obsidian", "Olivine", "Orthoclase",
-        "Pegmatite", "Porphyry", "Pumice", "Quarryartz", "Quartz", "Rhyolite",
-        "Rock Crystal", "Rock Salt", "Sandstone", "Schist", "Serpentine",
-        "Shard of Conch", "Slag", "Slate", "Soapstone", "Sodalite", "Sunstone", "Zincspar"
-    ));
+    private static final Set<String> STONE_NAMES = MiningQualityCatalog.names(MiningQualityCatalog.Category.STONE);
 
     // Same rock-type family, but these are ore -- must NOT be used for supports, and
     // should be dropped/discarded rather than counted toward the stone minimum.
-    private static final Set<String> ORE_NAMES = new HashSet<>(Arrays.asList(
-        "Black Ore", "Bloodstone", "Cassiterite", "Chalcopyrite", "Cinnabar", "Direvein",
-        "Galena", "Heavy Earth", "Horn Silver", "Iron Ochre", "Lead Glance", "Leaf Ore",
-        "Malachite", "Meteorite", "Peacock Ore", "Schrifterz", "Silvershine", "Wine Glance"
-    ));
+    private static final Set<String> ORE_NAMES = MiningQualityCatalog.names(MiningQualityCatalog.Category.ORE);
 
     // Confirmed via live inventory tooltip: H&H uses "Bar of <Material>", not "<Material> Bar".
     private static final String[] HARD_BAR_NAMES = {"Bar of Bronze", "Bar of Wrought Iron"};

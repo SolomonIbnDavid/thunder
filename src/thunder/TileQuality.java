@@ -7,6 +7,7 @@ import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.awt.image.WritableRaster;
 import java.io.*;
+import java.lang.ref.WeakReference;
 import java.util.*;
 
 import static haven.MapFile.*;
@@ -15,9 +16,13 @@ import static haven.MCache.cmaps;
 public class TileQuality {
     private static final String INDEX = "thunder-tq-index";
     private static final String GRID_NAME = "thunder-tq-grid-%x";
-    private static final int GRID_VERSION = 2;
+    private static final int GRID_VERSION = 3;
+    private static final int SHARED_GRID_VERSION = 1;
+    private static final String MARKER_PREFIX = "[TQ] ";
 
     public static final String KEY_STONE_PREFIX = "stone/";
+    public static final String KEY_ORE_PREFIX = "ore/";
+    public static final String KEY_GEM_PREFIX = "gem/";
     public static final String KEY_CRYSTAL = "crystal";
     public static final String KEY_SHELL = "shell";
     public static final String KEY_QUARTZ = "quartz";
@@ -61,10 +66,26 @@ public class TileQuality {
     // Static globals so the MiniMap renderer (running on a worker thread)
     // can find the active TileQuality and the current overlay state.
     private static volatile TileQuality current;
+    private static final Map<MapFile, WeakReference<TileQuality>> byFile = new WeakHashMap<>();
     public static volatile long seq = 0;
     public static volatile String selectedKind = null;
 
     public static TileQuality current() {return current;}
+
+    /** Finds the tracker owned by a specific map file (used by .hmap sharing). */
+    public static TileQuality forFile(MapFile file) {
+	synchronized (byFile) {
+	    WeakReference<TileQuality> ref = byFile.get(file);
+	    return ref == null ? null : ref.get();
+	}
+    }
+
+    /** Threshold changes can add flags, but never erase already-created permanent flags. */
+    public static void onThresholdsChanged() {
+	seq++;
+	TileQuality tracker = current;
+	if(tracker != null) {tracker.reconcileImportantMarkers();}
+    }
 
     public static void setSelectedKind(String kind) {
 	if(!Objects.equals(selectedKind, kind)) {
@@ -77,6 +98,7 @@ public class TileQuality {
 	this.file = file;
 	MapFileUtils.load(file, this::loadIndex, INDEX);
 	current = this;
+	synchronized (byFile) {byFile.put(file, new WeakReference<>(this));}
     }
 
     /** Walks all known grids and renames matching keys. Returns the number of entries changed. */
@@ -479,14 +501,19 @@ public class TileQuality {
 
 	switch (resname) {
 	    case "gfx/invobjs/strangecrystal": return KEY_CRYSTAL;
-	    case "gfx/invobjs/petrifiedshell": return KEY_SHELL;
-	    case "gfx/invobjs/quarryquartz": return KEY_QUARTZ;
-	    case "gfx/invobjs/catgold": return KEY_CATGOLD;
 	    case "gfx/invobjs/gems/gemstone": return classifyGem(item);
+	    case "gfx/invobjs/petrifiedshell": return "stone/shard-of-conch";
+	    case "gfx/invobjs/quarryquartz": return "stone/quarryartz";
+	    case "gfx/invobjs/catgold": return "stone/cat-gold";
 	}
 
+	String key = MiningQualityCatalog.keyForMinedName(minedItemName(item));
+	if(key != null) {return key;}
+
+	// Retain the original track-new-material behavior. Unknown mine produce is
+	// kept as stone until it can be added to the catalog, rather than discarded.
 	if(resname.startsWith("gfx/invobjs/")) {
-	    return KEY_STONE_PREFIX + resname.substring("gfx/invobjs/".length());
+	    return MiningQualityCatalog.normalizeKey(KEY_STONE_PREFIX + resname.substring("gfx/invobjs/".length()));
 	}
 	return null;
     }
@@ -497,18 +524,22 @@ public class TileQuality {
      * Throws Loading if info isn't parsed yet.
      */
     private static String classifyGem(GItem item) {
+	return MiningQualityCatalog.keyForGemName(minedItemName(item));
+    }
+
+    private static String minedItemName(GItem item) {
 	List<ItemInfo> info = item.info(); // may throw Loading
 	ItemInfo.Name name = ItemInfo.find(ItemInfo.Name.class, info);
-	if(name == null || name.original == null) {return null;}
-	String[] parts = name.original.trim().split("\\s+");
-	if(parts.length == 0) {return null;}
-	String gem = parts[parts.length - 1].toLowerCase();
-	return gem.isEmpty() ? null : gem;
+	return name == null ? null : name.original;
     }
 
     // --- Display ---
 
     public static String displayName(String key) {
+	String canonical = MiningQualityCatalog.normalizeKey(key);
+	if(MiningQualityCatalog.categoryOf(canonical) != null) {
+	    return MiningQualityCatalog.displayName(canonical);
+	}
 	if(key.startsWith(KEY_STONE_PREFIX)) {
 	    String rock = key.substring(KEY_STONE_PREFIX.length());
 	    return Character.toUpperCase(rock.charAt(0)) + rock.substring(1);
@@ -648,6 +679,8 @@ public class TileQuality {
     // --- Storage ---
 
     private boolean recordQuality(long gridId, Coord tc, short quality, String key) {
+	key = MiningQualityCatalog.normalizeKey(key);
+	boolean changed = false;
 	synchronized (lock) {
 	    Map<Integer, Map<String, Short>> grid = grids.get(gridId);
 	    if(grid == null) {
@@ -667,9 +700,153 @@ public class TileQuality {
 		tileData.put(key, quality);
 		storeGrid(gridId, grid);
 		seq++;
-		return true;
+		changed = true;
 	    }
-	    return false;
+	}
+	if(changed) {ensureImportantMarker(gridId, tc, key, quality);}
+	return changed;
+    }
+
+    private void reconcileImportantMarkers() {
+	for(TileSnapshot tile : snapshotAll()) {
+	    Coord tc = new Coord(tile.tileIdx % cmaps.x, tile.tileIdx / cmaps.x);
+	    for(Map.Entry<String, Short> kind : tile.kinds.entrySet()) {
+		ensureImportantMarker(tile.gridId, tc, kind.getKey(), kind.getValue());
+	    }
+	}
+    }
+
+    private void ensureImportantMarker(long gridId, Coord gridTc, String key, short quality) {
+	key = MiningQualityCatalog.normalizeKey(key);
+	if(!TileQualityThresholds.qualifies(key, quality)) {return;}
+
+	GridInfo info;
+	file.lock.readLock().lock();
+	try {
+	    info = file.gridinfo.get(gridId);
+	} finally {
+	    file.lock.readLock().unlock();
+	}
+	if(info == null) {return;}
+	Coord mapTc = info.sc.mul(cmaps).add(gridTc);
+	String base = MARKER_PREFIX + displayName(key) + " q";
+	String name = base + formatQuality(quality);
+	List<Marker> stale = new ArrayList<>();
+	boolean found = false;
+	file.lock.readLock().lock();
+	try {
+	    for(Marker marker : file.markers) {
+		if(!(marker instanceof PMarker) || marker.seg != info.seg || !marker.tc.equals(mapTc)) {continue;}
+		if(marker.nm.equals(name)) {found = true;}
+		else if(marker.nm.startsWith(base)) {stale.add(marker);}
+	    }
+	} finally {
+	    file.lock.readLock().unlock();
+	}
+	if(found) {return;}
+	for(Marker marker : stale) {file.remove(marker);}
+	// Purple is an ordinary player-marker group color, so the flag is included
+	// when that group is enabled in Thunder's existing automapper settings.
+	file.add(new PMarker(file, info.seg, mapTc, name, BuddyWnd.Group.Purple.col, true));
+    }
+
+    private static String formatQuality(short quality) {
+	return (quality % 10 == 0)
+	    ? Integer.toString(quality / 10)
+	    : String.format(Locale.ROOT, "%.1f", quality / 10.0);
+    }
+
+    // --- .hmap sharing ---
+
+    /** Returns one self-contained grid payload, or null when that grid has no observations. */
+    public byte[] exportSharedGrid(long gridId) {
+	Map<Integer, Map<String, Short>> grid = snapshotGrid(gridId);
+	if(grid.isEmpty()) {return null;}
+	MessageBuf out = new MessageBuf();
+	out.adduint8(SHARED_GRID_VERSION);
+	out.addint64(gridId);
+	int count = 0;
+	for(Map<String, Short> tile : grid.values()) {count += tile.size();}
+	out.addint32(count);
+	for(Map.Entry<Integer, Map<String, Short>> tile : grid.entrySet()) {
+	    for(Map.Entry<String, Short> kind : tile.getValue().entrySet()) {
+		out.adduint16(tile.getKey());
+		out.addstring(MiningQualityCatalog.normalizeKey(kind.getKey()));
+		out.addint16(kind.getValue());
+	    }
+	}
+	return out.fin();
+    }
+
+    public static final class SharedGrid {
+	public final long gridId;
+	public final Map<Integer, Map<String, Short>> tiles;
+
+	SharedGrid(long gridId, Map<Integer, Map<String, Short>> tiles) {
+	    this.gridId = gridId;
+	    this.tiles = tiles;
+	}
+    }
+
+    public static SharedGrid readSharedGrid(Message data) {
+	int version = data.uint8();
+	if(version != SHARED_GRID_VERSION) {
+	    throw new Message.FormatError("Unknown tile-quality share version: " + version);
+	}
+	long gridId = data.int64();
+	int count = data.int32();
+	if(count < 0 || count > cmaps.x * cmaps.y * 256) {
+	    throw new Message.FormatError("Invalid tile-quality entry count: " + count);
+	}
+	Map<Integer, Map<String, Short>> tiles = new HashMap<>();
+	for(int i = 0; i < count; i++) {
+	    int idx = data.uint16();
+	    if(idx >= cmaps.x * cmaps.y) {throw new Message.FormatError("Invalid tile-quality tile index: " + idx);}
+	    String key = MiningQualityCatalog.normalizeKey(data.string());
+	    short quality = (short)data.int16();
+	    if(key == null || key.isEmpty() || quality <= 0) {continue;}
+	    Map<String, Short> tile = tiles.computeIfAbsent(idx, ignored -> new HashMap<>());
+	    Short previous = tile.get(key);
+	    if(previous == null || quality > previous) {tile.put(key, quality);}
+	}
+	return new SharedGrid(gridId, tiles);
+    }
+
+    /** Merge shared observations by maximum quality; local observations never regress. */
+    public void importSharedGrid(SharedGrid shared) {
+	if(shared == null || shared.tiles.isEmpty()) {return;}
+	Map<Integer, Map<String, Short>> merged;
+	boolean changed = false;
+	boolean newGrid = false;
+	synchronized (lock) {
+	    if(!grids.containsKey(shared.gridId)) {loadGrid(shared.gridId);}
+	    merged = grids.get(shared.gridId);
+	    if(merged == null) {
+		merged = new HashMap<>();
+		grids.put(shared.gridId, merged);
+		newGrid = gridIds.add(shared.gridId);
+	    }
+	    for(Map.Entry<Integer, Map<String, Short>> tileEntry : shared.tiles.entrySet()) {
+		Map<String, Short> tile = merged.computeIfAbsent(tileEntry.getKey(), ignored -> new HashMap<>());
+		for(Map.Entry<String, Short> kind : tileEntry.getValue().entrySet()) {
+		    String key = MiningQualityCatalog.normalizeKey(kind.getKey());
+		    Short previous = tile.get(key);
+		    if(previous == null || kind.getValue() > previous) {
+			tile.put(key, kind.getValue());
+			changed = true;
+		    }
+		}
+	    }
+	    if(newGrid) {storeIndex();}
+	    if(changed) {storeGrid(shared.gridId, merged);}
+	}
+	if(!changed) {return;}
+	seq++;
+	for(Map.Entry<Integer, Map<String, Short>> tileEntry : shared.tiles.entrySet()) {
+	    Coord tc = new Coord(tileEntry.getKey() % cmaps.x, tileEntry.getKey() / cmaps.x);
+	    for(Map.Entry<String, Short> kind : tileEntry.getValue().entrySet()) {
+		ensureImportantMarker(shared.gridId, tc, kind.getKey(), kind.getValue());
+	    }
 	}
     }
 
@@ -751,15 +928,17 @@ public class TileQuality {
 
     private boolean loadGridData(StreamMessage data, long id) {
 	int ver = data.uint8();
-	if(ver == GRID_VERSION) {
+	if(ver == 2 || ver == GRID_VERSION) {
 	    ZMessage zdata = new ZMessage(data);
 	    int count = zdata.int32();
 	    Map<Integer, Map<String, Short>> grid = new HashMap<>();
 	    for (int i = 0; i < count; i++) {
 		int idx = zdata.int16() & 0xFFFF;
-		String key = zdata.string();
+		String key = MiningQualityCatalog.normalizeKey(zdata.string());
 		short quality = (short) zdata.int16();
-		grid.computeIfAbsent(idx, k -> new HashMap<>()).put(key, quality);
+		Map<String, Short> tile = grid.computeIfAbsent(idx, k -> new HashMap<>());
+		Short previous = tile.get(key);
+		if(previous == null || quality > previous) {tile.put(key, quality);}
 	    }
 	    grids.put(id, grid);
 	    return true;
