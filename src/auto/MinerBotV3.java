@@ -513,9 +513,14 @@ public final class MinerBotV3 {
 
                 completed = advanceOpenPrefix(anchor, heading, completed);
                 if(progress.failedAfter(completed)) {
-                    diag("LINE no-progress anchor=%s heading=%s completed=%d redraws=%d",
-                        anchor, heading, completed, progress.noProgressCount());
-                    return LegOutcome.FAILED;
+                    Coord frontier = anchor.add(heading.step().mul(completed + 1));
+                    String terrain = MapHelper.tileResourceName(gui, frontier);
+                    boolean supplyNeeded = immediateSupplyNeeded();
+                    boolean hardWall = MinerBotV3Logic.hardWallFallback(terrain, supplyNeeded);
+                    diag("LINE no-progress anchor=%s heading=%s completed=%d redraws=%d frontier=%s terrain=%s supply-needed=%b classification=%s",
+                        anchor, heading, completed, progress.noProgressCount(), frontier,
+                        terrain, supplyNeeded, hardWall ? "hard-wall-fallback" : "failed");
+                    return hardWall ? LegOutcome.TOO_HARD : LegOutcome.FAILED;
                 }
             }
             return LegOutcome.SUCCESS;
@@ -546,9 +551,11 @@ public final class MinerBotV3 {
 
             AtomicBoolean tooHard = new AtomicBoolean();
             rx.Subscription errors = Reactor.EMSG.subscribe(message -> {
+                diag("MINE phase=%s server-error=%s", phase, message);
                 if(MinerBotV3Logic.tooHardMessage(message)) tooHard.set(true);
             });
             rx.Subscription infos = Reactor.IMSG.subscribe(message -> {
+                diag("MINE phase=%s server-info=%s", phase, message);
                 if(MinerBotV3Logic.tooHardMessage(message)) tooHard.set(true);
             });
             boolean supply = false;

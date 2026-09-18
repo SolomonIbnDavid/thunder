@@ -123,6 +123,18 @@ public class MinerBotV3LogicTest {
     }
 
     @Test
+    void exhaustedRedrawsOnlyInferHardWallsFromLoadedMineTerrain() {
+        assertTrue(MinerBotV3Logic.hardWallFallback("gfx/tiles/rocks/granite", false));
+        assertTrue(MinerBotV3Logic.hardWallFallback("GFX/TILES/ROCKS/MAGNETITE", false));
+        assertTrue(MinerBotV3Logic.hardWallFallback("gfx/tiles/cavewall", false));
+        assertTrue(MinerBotV3Logic.hardWallFallback("gfx/tiles/caveobsidian", false));
+
+        assertFalse(MinerBotV3Logic.hardWallFallback(null, false));
+        assertFalse(MinerBotV3Logic.hardWallFallback("gfx/tiles/mine", false));
+        assertFalse(MinerBotV3Logic.hardWallFallback("gfx/tiles/rocks/granite", true));
+    }
+
+    @Test
     void activeLineBoulderDetectionIsResourceAndHeadingAware() {
         assertTrue(MinerBotV3Logic.isBoulderResource("gfx/terobjs/boulder"));
         assertTrue(MinerBotV3Logic.isBoulderResource("gfx/terobjs/bumlings/granite[stage=2]"));

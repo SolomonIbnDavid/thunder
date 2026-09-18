@@ -153,6 +153,21 @@ public final class MinerBotV3Logic {
         return message != null && message.toLowerCase(Locale.ROOT).contains("too hard");
     }
 
+    /**
+     * The live server does not consistently emit its too-hard toast for an area
+     * mining selection. After the normal redraw budget is exhausted, a loaded
+     * rock/cave-wall resource is strong enough evidence to enter the same
+     * bounded dogleg recovery. Unknown terrain and ordinary open terrain still
+     * fail closed instead of sending the bot on an unrelated detour.
+     */
+    public static boolean hardWallFallback(String resourceName, boolean supplyNeeded) {
+        if(resourceName == null || supplyNeeded) return false;
+        String name = resourceName.toLowerCase(Locale.ROOT);
+        return name.startsWith("gfx/tiles/rocks/")
+            || name.equals("gfx/tiles/cavewall")
+            || name.equals("gfx/tiles/caveobsidian");
+    }
+
     /** Boulder resource identities used by the live cave client. Drawable-state
      * suffixes are transient and must not hide an otherwise valid blocker. */
     public static boolean isBoulderResource(String resid) {
