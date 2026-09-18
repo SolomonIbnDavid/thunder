@@ -179,6 +179,11 @@ public final class MiningQualityCatalog {
         return BY_KEY.get(normalizeKey(key));
     }
 
+    public static Entry byDisplayName(String name) {
+        if(name == null) {return null;}
+        return BY_NAME.get(normalizeName(name));
+    }
+
     public static String keyForMinedName(String itemName) {
         if(itemName == null) {return null;}
         Entry entry = BY_NAME.get(normalizeName(stripStackSuffix(itemName)));

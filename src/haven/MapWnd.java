@@ -1117,9 +1117,11 @@ public class MapWnd extends WindowX implements Console.Directory {
 		for(PMarker m : acurrent) {
 		    if(!dcurrent.containsKey(m)) {
 			Gob mob = new Gob(mm.ui.sess.glob, Coord2d.of(m.tc.sub(curloc.tc)).add(0.5, 0.5).mul(tilesz));
-			MessageBuf sdt = new MessageBuf();
-			sdt.addcolor(m.color);
-			mob.setattr(new ResDrawable(mob, flag, new MessageBuf(sdt.fin())));
+			if(!thunder.TileQualityMarkerSprite.apply(mob, m)) {
+			    MessageBuf sdt = new MessageBuf();
+			    sdt.addcolor(m.color);
+			    mob.setattr(new ResDrawable(mob, flag, new MessageBuf(sdt.fin())));
+			}
 			dcurrent.put(m, Pair.of(mob, slot.add(mob.placed)));
 		    }
 		    old.remove(m);
@@ -1128,6 +1130,7 @@ public class MapWnd extends WindowX implements Console.Directory {
 		    Pair<Gob, RenderTree.Slot> r = dcurrent.remove(m);
 		    synchronized(r.a) {
 			r.b.remove();
+			r.a.dispose();
 		    }
 		}
 		loading = false;
@@ -1150,6 +1153,9 @@ public class MapWnd extends WindowX implements Console.Directory {
 	void remove() {
 	    if(slot != null)
 		slot.remove();
+	    for(Pair<Gob, RenderTree.Slot> marker : dcurrent.values())
+		marker.a.dispose();
+	    dcurrent.clear();
 	}
     }
 
