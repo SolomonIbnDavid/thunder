@@ -64,9 +64,12 @@ session. Its heading is locked with the tile, and it cannot be used from another
 map segment. The Preview overlay labels whether its anchor came from a support,
 a manual pick, or a saved checkpoint.
 
-Three redraws with no terrain or movement progress stop the run. A server
-message containing `too hard` invokes the bounded detour search described
-below. Other unexplained failures stop instead of being treated as hardness.
+Three redraws with no terrain or movement progress normally stop the run. A
+server message containing `too hard` invokes the bounded detour search
+described below. Because area mining can omit that message, exhausting the
+redraw budget against a loaded rock or cave-wall terrain tile invokes the same
+bounded search when supplies are still valid. Unknown terrain and other
+unexplained failures continue to stop instead of being treated as hardness.
 
 ## Too-hard detours
 
@@ -77,6 +80,10 @@ tile behind its support anchor, clearing the existing column footprint while
 preserving the full eleven- or twenty-two-tile lateral reach. Every sideways eleven-tile leg
 receives a column one tile right relative to that leg's heading. A candidate is
 accepted only after V3 completes a new eleven-tile leg in the original heading.
+When a run starts from a saved frontier, V3 reconstructs up to two prior
+support anchors only across contiguous, already-open centerline tiles. This
+keeps the same retreat candidates available after a restart without guessing
+through closed or unresolved terrain.
 
 ## Supplies
 
