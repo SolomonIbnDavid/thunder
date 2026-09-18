@@ -45,6 +45,7 @@ public class TileQualityWnd extends WindowX {
 		}
 	    }
 	}, Coord.z);
+	add(new Button(UI.scale(95), "Marker settings", () -> TileQualitySettingsWnd.toggle(ui)), UI.scale(360), 0);
 	int h = overlayBox.sz.y + UI.scale(3);
 
 	segmentOnlyBox = add(new CheckBox("Current segment only") {
@@ -339,7 +340,9 @@ public class TileQualityWnd extends WindowX {
 	    }
 	    g.atext(String.format("%.1f", e.q / 10.0), new Coord(UI.scale(4), ELH / 2), 0, 0.5);
 	    g.chcolor();
-	    g.atext(TileQuality.displayName(e.kind), new Coord(UI.scale(50), ELH / 2), 0, 0.5);
+	    String name = TileQuality.displayName(e.kind);
+	    if(TileQualityThresholds.qualifies(e.kind, e.q)) {name = "* " + name;}
+	    g.atext(name, new Coord(UI.scale(50), ELH / 2), 0, 0.5);
 	    String distStr = (e.distance < 0) ? "-" : (e.distance + "t");
 	    g.atext(distStr, new Coord(UI.scale(255), ELH / 2), 0, 0.5);
 	}

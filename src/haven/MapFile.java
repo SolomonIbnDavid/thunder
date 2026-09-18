@@ -2001,6 +2001,15 @@ public class MapFile {
 		zout.addstring("grid");
 		zout.addint32(od.length);
 		zout.addbytes(od);
+		thunder.TileQuality tq = thunder.TileQuality.forFile(this);
+		if(tq != null) {
+		    byte[] quality = tq.exportSharedGrid(gd.b);
+		    if(quality != null) {
+			zout.addstring("tilequality");
+			zout.addint32(quality.length);
+			zout.addbytes(quality);
+		    }
+		}
 		Utils.checkirq();
 	    }
 	    nseg++;
@@ -2181,6 +2190,7 @@ public class MapFile {
 
     private class Importer {
 	final Map<Long, ImportedSegment> segs = new HashMap<>();
+	final Set<Long> importedGrids = new HashSet<>();
 	final ImportFilter filter;
 	Segment curseg;
 
@@ -2279,10 +2289,18 @@ public class MapFile {
 			rseg.include(rgrid, nc);
 			gridinfo.put(rgrid.id, new GridInfo(rgrid.id, rseg.id, nc));
 		    }
+		    importedGrids.add(grid.gid);
 		} finally {
 		    lock.writeLock().unlock();
 		}
 	    }
+	}
+
+	void importtilequality(Message data) {
+	    thunder.TileQuality.SharedGrid shared = thunder.TileQuality.readSharedGrid(data);
+	    if(!importedGrids.contains(shared.gridId)) {return;}
+	    thunder.TileQuality tq = thunder.TileQuality.forFile(MapFile.this);
+	    if(tq != null) {tq.importSharedGrid(shared);}
 	}
 
 	Marker prevmark(Marker mark) {
@@ -2368,6 +2386,12 @@ public class MapFile {
 			    importcmark(lay);
 			} catch(RuntimeException exc) {
 			    filter.handleerror(exc, "custmark");
+			}
+		    } else if(type.equals("tilequality")) {
+			try {
+			    importtilequality(lay);
+			} catch(RuntimeException exc) {
+			    filter.handleerror(exc, "tilequality");
 			}
 		    }
 		    lay.skip();

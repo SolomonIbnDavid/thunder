@@ -95,6 +95,7 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
     public TileQuality tileQuality;
     public TileHighlight.TileHighlightCFG tileHighlight;
     public thunder.TileQualityWnd tileQualityWnd;
+    public thunder.TileQualitySettingsWnd tileQualitySettingsWnd;
     public final thunder.FishingHelper fishingHelper = new thunder.FishingHelper();
     public thunder.FishingHelperWnd fishingHelperWnd;
     public thunder.macro.MacroListWnd macroListWnd;

@@ -1,172 +1,90 @@
 # Tile Quality Tracker
 
-Track the max observed quality per tile for mining, digging, and filling (water/saltwater). Stored per map grid, searchable via a UI window that navigates the map.
+Thunder records the highest observed quality for mining, digging, and water-filling actions at the map tile that produced it. Mining observations can also create permanent flags for important stone, ore, and gemstones.
 
-## Terminology
+## Mining quality markers
 
-- **Mine** — player mines a cave wall; stone/ore appears in inventory then hand
-- **Dig** — player digs terrain; dirt/clay appears in inventory then hand
-- **Fill (water)** — player fills a container from a `gfx/tiles/water` or `gfx/tiles/deep` tile; quality shows on the water content of the container
-- **Fill (saltwater)** — same but from `gfx/tiles/owater`, `gfx/tiles/odeep`, `gfx/tiles/odeeper`
+Open the world map and press **Q**, then press **Marker settings**.
 
-## Data model
+- The catalog contains 52 stone types, 18 ore types, and 12 gemstone types.
+- Each stone and ore has an independent minimum quality. `0`/`Off` disables automatic flags for that material.
+- Gemstones are always important and are flagged at every quality; no gemstone threshold is required.
+- Threshold comparison is inclusive. A quality 50.0 Granite observation qualifies when Granite is set to 50.
+- Threshold settings persist in `config.json` and apply to every character/map.
+- **Copy settings** puts a versioned JSON profile on the clipboard. **Paste settings** replaces the local threshold profile with the shared one.
 
-### Storage (parallel to Minesweeper)
+When an observation qualifies, Thunder creates a purple player marker named like `[TQ] Granite q72.5`. It has **Display in world** enabled, so the same persistent flag is visible over the in-game tile and on the map. Raising or disabling a threshold does not erase flags that were already created; they remain ordinary editable player markers and can be removed from the map marker list.
+
+Purple is an existing player-marker group color. If purple marker upload is enabled in Thunder's automapper settings, quality flags are eligible for the normal remote marker upload path as well.
+
+## Sharing
+
+Normal `.hmap` export/import now includes three related pieces:
+
+1. map grids;
+2. `[TQ]` player flags; and
+3. the raw per-tile quality observations used by the quality overlay.
+
+This means another Thunder client importing the map can use the overlay and search window, not merely see the flags. Imports merge by maximum quality, so shared data cannot lower a better local observation. Older clients ignore the new `tilequality` export layer and still import the ordinary map and marker records.
+
+Threshold profiles are shared separately with the **Copy settings** and **Paste settings** buttons. Importing someone else's map does not silently replace personal thresholds.
+
+## Search and overlay
+
+The map's **Q** button opens `TileQualityWnd`.
+
+- **Show overlay** renders recorded tile qualities on the saved map.
+- Selecting a material limits the overlay and result list to that material.
+- **Current segment only** restricts results to the connected saved-map segment containing the player.
+- Results can be sorted by quality or same-segment tile distance.
+- Clicking a result centers the map on that tile.
+- An asterisk in the result list means that observation currently satisfies the important-material policy.
+
+The overlay uses the highest selected/available quality on each tile and the existing gray → white → green → blue → purple → orange → red palette.
+
+## Catalog and stable keys
+
+Mining records use stable category keys:
+
+- `stone/granite`
+- `ore/black-ore`
+- `gem/sapphire`
+
+The displayed item name is authoritative for classification. Resource aliases handle ores whose resource slug differs from the game name, such as `magnetite` → Black Ore and `petzite` → Direvein. Version-2 tracker data is normalized on load, including old `stone/<resource>` ore keys and bare gem keys such as `ruby`.
+
+The gemstone catalog is Amber, Amethyst, Diamond, Emerald, Jade, Moonstone, Onyx, Opal, Ruby, Sapphire, Topaz, and Turquoise. The item resource is dynamic, so Thunder extracts the type from names such as `Fair Smooth Onyx`. An unknown future gemstone name still receives a `gem/<name>` key and the always-important policy.
+
+`MiningQualityCatalog` is also the source for Miner Bot's stone-versus-ore classification, keeping support-building material logic and quality-marker logic aligned.
+
+## Persistence model
+
+The tracker uses sparse per-grid storage alongside the map file:
 
 | Key | Contents |
-|-----|----------|
-| `"thunder-tq-index"` | Set of grid IDs that have data |
-| `"thunder-tq-grid-%x"` | Per-grid sparse tile quality entries |
+|---|---|
+| `thunder-tq-index` | grid IDs containing observations |
+| `thunder-tq-grid-%x` | sparse tile/material/quality entries for one grid |
 
-Per grid: sparse `Map<tileIndex, Map<kind, quality>>`. Serialized as a flat list of `(tile_index:i16, kind:u8, quality:i16)` tuples (5 bytes/entry), compressed with ZMessage. Only tiles with observations are stored.
+Quality is stored as quality ×10 in a signed short (`47.3` → `473`). A tile can contain multiple observations, such as its base stone plus a gemstone or Strange Crystal. Only a higher observation replaces a stored value.
 
-Quality stored as `(int)(quality * 10)` — e.g., 47.3 → 473. Range 0–6000 fits in a short.
+Grid payload version 3 stores canonical string keys. Version 2 remains readable and is migrated in memory. Data is loaded lazily through `MapFile.sstore()` and compressed with `ZMessage`.
 
-### Kind constants
+## Capture behavior
 
-| Byte | Kind | Source |
-|------|------|--------|
-| 1 | Stone | `gfx/invobjs/<rockname>` matching tile `gfx/tiles/rocks/<rockname>` |
-| 2 | Strange Crystal | `gfx/invobjs/strangecrystal` |
-| 3 | Petrified Shell | `gfx/invobjs/petrifiedshell` |
-| 4 | Quarryartz | `gfx/invobjs/quarryquartz` |
-| 5 | Cat's Gold | `gfx/invobjs/catgold` |
-| 6 | Dig | dirt/clay from digging |
-| 7 | Water | fill from freshwater tile |
-| 8 | Saltwater | fill from ocean tile |
+### Mining
 
-A single tile can have multiple kinds (stone + crystal + shell etc from one mine location).
+An area-mine click arms the mine action. Each `gfx/terobjs/mineout` overlay advances the pending location to the wall tile that just opened. Inventory item-info updates then provide the material name and quality. This works for manual mining and Miner Bot V3 because both use Thunder's normal mining action.
 
-### Class: `TileQuality` in `me.ender.minimap`
+Only items in the main inventory are accepted for mining/digging attribution. Stacked item names are normalized, and delayed item information is retried until name and quality are available.
 
-Instance held on `GameUI` as `gui.tileQuality`, initialized from `MapFile` alongside `minesweeper`.
+### Digging
 
-Persistence follows Minesweeper: `storeIndex()` / `storeGrid()` via `MapFile.sstore()`, loaded lazily per grid via `MapFileUtils.load()`, compressed with `ZMessage`.
+The `gfx/hud/curs/dig` cursor plus a normal map click arms a dig action. The player's tile at item arrival is used because digging produces from under the character. Soil, Sand, Clay, and named clay variants are recorded; unrelated side products such as Earthworms are rejected.
 
-## Detection: how quality is captured
+### Water
 
-### General approach
+Using a carried vessel on fresh water, salt water, wells, or wellsprings arms a five-second fill action. The filled hand item's content quality is attributed to the source tile. Fresh, spring, and salt water remain separate keys.
 
-A `PendingAction` queue tracks what the player is doing and where. Items from the action produce quality observations.
+## Diagnostics
 
-```
-PendingAction { byte group; Coord2d rc; long timestamp; }
-```
-
-The pending action is NOT consumed by the first item — it stays alive (15s expiry) so multiple items from one action (stone + minerals) all resolve against the same tile. `peekLast()` always attributes to the most recent pending action.
-
-### Mine detection (implemented)
-
-**Trigger**: `gfx/terobjs/mineout` sprite spawn fires `TileQuality.markPendingMine(owner)` in `AnimSprite.java`. This is the wall-collapse animation that plays when a mining swing successfully destroys a wall — exactly when items drop. Registers a `GROUP_MINE` pending action at the wall Gob's tile coordinate.
-
-Note: `gfx/fx/cavewarn` (class `Cavein`) is NOT the right hook — that's the cave-in warning effect (falling dust, used by Minesweeper to track tile instability). It only fires on unstable tiles, not on every mine swing.
-
-**Quality source**: mining adds items to inventory (stone first, then optional minerals). Each item eventually gets a "tt" server message → `GItem.uimsg("tt")` → `TileQuality.onItemInfoUpdate(item)`.
-
-On info update:
-1. Check if a pending mine action exists (`peekLast()`)
-2. Walk widget tree to verify item is in main inventory (handles direct items AND stacked items via ItemStack)
-3. Classify item by resource name:
-   - `gfx/invobjs/strangecrystal` → KIND_STRANGE_CRYSTAL
-   - `gfx/invobjs/petrifiedshell` → KIND_PETRIFIED_SHELL
-   - `gfx/invobjs/quarryquartz` → KIND_QUARRYARTZ
-   - `gfx/invobjs/catgold` → KIND_CATS_GOLD
-   - `gfx/invobjs/<name>` matching tile `gfx/tiles/rocks/<name>` → KIND_STONE
-4. Record max quality at the pending action's tile
-
-### Dig detection
-
-Verified live (2026-08-13) with the `dev.tq` event log; earlier assumptions about an
-"area drag" for dig were wrong:
-
-- Activating Dig sets the root cursor to `gfx/hud/curs/dig`. **No selector** — the
-  server only ever sends the `sel` (area-select) widget message for mine. Dig is a
-  plain click action.
-- A left click with the dig cursor sends an ordinary map `click`; the character
-  walks to the tile and digs the tile under itself. Produce (`Soil`, `Soil, stack
-  of`, clays) arrives in the main inventory **while the cursor is still the dig
-  cursor**. Digging also yields side products (`Earthworm`) that must be rejected
-  by name.
-- The cursor stays up across multiple digs and is cleared by the server when the
-  action is cancelled (right-click). So dig pendings are **cursor-gated exactly
-  like mine** — no TTL needed.
-
-Wiring: `MapView.click()` (plain map clicks) calls `TileQuality.markPendingForClick`,
-which arms a pending when the root cursor is mine or dig. `Selector.mmousedown`
-calls the same hook for area mine. Attribution uses the player's position at item
-arrival, since the character digs the tile under itself.
-
-### Fill detection (TODO)
-
-**Trigger**: detect when player uses container on water/saltwater tile.
-
-**Saltwater tile detection**: extend `MapHelper` with `isSaltWaterTile()`:
-```java
-public static boolean isSaltWaterTile(GameUI gui, Coord tc) {
-    MCache mcache = gui.ui.sess.glob.map;
-    int t = mcache.gettile(tc);
-    Resource res = mcache.tilesetr(t);
-    if(res == null) return false;
-    String name = res.name;
-    return name.equals("gfx/tiles/owater") || name.equals("gfx/tiles/odeep") || name.equals("gfx/tiles/odeeper");
-}
-```
-
-**Quality source**: container's content quality updates after fill. `GItem.itemq` reads `contains.q` (content quality).
-
-## Search UI
-
-### Window: `TileQualityWnd`
-
-A searchable list window (similar to existing marker list in `MapWnd`). Accessible from the map window or a menu action.
-
-**Features**:
-- List of all recorded tile quality observations, showing: quality value, action type icon (mine/dig/water/salt), grid coordinates
-- Filter by action kind (mine, dig, water, saltwater)
-- Filter by quality range (min/max input)
-- Sort by quality (descending default)
-- Click an entry → map window centers on that tile via `view.center(new SpecLocator(seg, tc))`
-
-**Mapping grid ID → map segment**: `MapFile` tracks which segment contains which grid. The `SpecLocator` needs `(seg, tc)`. We need to resolve `gridId` → `(segmentId, tileCoord)` at display time by looking up the grid in the map file's segment index.
-
-## Implementation status
-
-### Done: Storage layer + mine detection
-- `TileQuality.java` in `me/ender/minimap/` — sparse per-grid storage, pending action queue, item classification
-- `GameUI.java` — `gui.tileQuality` field, initialized alongside minesweeper
-- `MCache.java` — trim hooks for grid eviction
-- `AnimSprite.java` — `TileQuality.markPendingMine(owner)` when `gfx/terobjs/mineout` spawns (wall destruction)
-- `GItem.java` — `TileQuality.onItemInfoUpdate(this)` on "tt" message arrival
-
-### Done: Dig detection
-- `MapView.click()` — plain-click hook arms mine/dig pendings via `markPendingForClick` (dig has no area-select mode)
-- Dig pendings are cursor-gated (`gfx/hud/curs/dig`), cleared when the server clears the cursor on cancel
-- `classifyDugItem()` — item-name classification (`Soil`, `Sand`, `Clay`, any `* Clay`); side products (`Earthworm`) rejected
-- `TileQualityDebug` (`dev.tq`, CFG `debug.tile_quality`) — event log of cursor changes, selector lifecycle, map clicks, pending set/clear/expiry, classification verdicts, and records; painter overlay + `dev.tq.dump`/`snapshot`/`clear`
-
-### Done: Water fill detection
-- `MapHelper.isSaltWaterTile()` — owater/odeep/odeeper classifier
-- `MapView.iteminteract()` Hittest hook — on item-drop click, calls `TileQuality.markPendingFillFromMap(gui, mc, clickedGob)`
-- `TileQuality.markPendingFillFromMap()` — picks group:
-  - `gfx/terobjs/wellspring` (natural spring) → `GROUP_FILL_SPRING_WATER`, keyed to the spring's tile
-  - `gfx/terobjs/well` (constructed well) → `GROUP_FILL_WATER`, keyed to the well's tile
-  - fresh water tile → `GROUP_FILL_WATER`
-  - salt water tile → `GROUP_FILL_SALT_WATER`
-  - anything else → no-op
-- Fill pendings carry a 5s `deadline` (TTL) since there's no cursor-clear signal — stale pendings drop on the next item-info attempt.
-- Resolution checks the **hand item** (`gui.hand`), not main inventory — see `isEligibleItem`.
-- `classifyFilledItem()` only records when `item.contains` holds liquid content, so unrelated tt updates on the hand item don't pollute the log. Quality comes from `item.quality()` which already falls back to `contains.q`.
-
-### TODO: Visualization — map overlay
-- Quality overlay rendering (parallel to Minesweeper's `SweeperNode`)
-- Toggle button in map window
-- Color coding by quality value range
-
-### TODO: Visualization — search UI
-- `TileQualityWnd` — searchable/filterable list
-- Filter by kind (stone, crystal, shell, quarryartz, catgold, dig, water, salt) and quality range
-- Grid ID → map segment lookup for navigation
-- Click-to-navigate via `SpecLocator`
-
-### Future: trees/seeds/fruit
-The pending action + info update pattern generalizes. Kind byte is extensible (9=tree, 10=seed, 11=fruit, etc.).
+`dev.tq` and `debug.tile_quality` expose the pending action, cursor changes, classification results, and record events. The existing debug dump/snapshot/clear commands remain available for diagnosing attribution problems.
