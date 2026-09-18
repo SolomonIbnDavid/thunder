@@ -1,3 +1,8 @@
+$size[14]{$u{Miner Bot V3 hard-wall recovery fix on 18.09.2026:}
+* Silent hard mining walls now enter the bounded too-hard dogleg search after the normal no-progress redraw limit, even when the server omits its expected error message.
+* Restarting from a saved frontier reconstructs up to two verified open support legs behind the anchor, so one- and two-leg retreat candidates remain available after resupply or a manual restart.
+* Action-scoped server messages, frontier terrain, restored anchor history, and fallback classification are recorded in the Miner Bot V3 diagnostic log.
+`
 $size[14]{$u{experimental Miner Bot V3 and mining quality tracker on 17.09.2026:}
 * Adds Miner Bot V3 alongside V1/V2, with 11-tile straight exploratory mining, automatic Stone Column placement, bounded boulder and too-hard recovery, and a persistent restart anchor.
 * Adds same-cave-segment NavCore resupply for water, food, building stone, and 10-bar batches, with exact return to the recorded mining frontier.
