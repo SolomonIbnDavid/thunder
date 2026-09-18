@@ -13,6 +13,16 @@ public final class TileQualityThresholds {
 
     private TileQualityThresholds() {}
 
+    public static final class Profile {
+        public final int anyRockQualityX10;
+        public final Map<String, Integer> thresholds;
+
+        Profile(int anyRockQualityX10, Map<String, Integer> thresholds) {
+            this.anyRockQualityX10 = sanitizeQuality(anyRockQualityX10);
+            this.thresholds = Collections.unmodifiableMap(new LinkedHashMap<>(sanitize(thresholds)));
+        }
+    }
+
     public static Map<String, Integer> snapshot() {
         return sanitize(CFG.TILE_QUALITY_THRESHOLDS.get());
     }
@@ -20,6 +30,16 @@ public final class TileQualityThresholds {
     public static int get(String key) {
         Integer value = snapshot().get(MiningQualityCatalog.normalizeKey(key));
         return value == null ? 0 : value;
+    }
+
+    public static int anyRock() {
+        Integer value = CFG.TILE_QUALITY_ANY_ROCK_THRESHOLD.get();
+        return sanitizeQuality(value == null ? 0 : value);
+    }
+
+    public static void setAnyRock(int qualityX10) {
+        CFG.TILE_QUALITY_ANY_ROCK_THRESHOLD.set(sanitizeQuality(qualityX10));
+        TileQuality.onThresholdsChanged();
     }
 
     public static void set(String key, int qualityX10) {
@@ -38,16 +58,27 @@ public final class TileQualityThresholds {
         apply(sanitize(values));
     }
 
+    public static void replace(Profile profile) {
+        if(profile == null) {throw new IllegalArgumentException("Missing quality settings profile");}
+        CFG.TILE_QUALITY_THRESHOLDS.set(new LinkedHashMap<>(sanitize(profile.thresholds)));
+        CFG.TILE_QUALITY_ANY_ROCK_THRESHOLD.set(sanitizeQuality(profile.anyRockQualityX10));
+        TileQuality.onThresholdsChanged();
+    }
+
     private static void apply(Map<String, Integer> values) {
         CFG.TILE_QUALITY_THRESHOLDS.set(new LinkedHashMap<>(values));
         TileQuality.onThresholdsChanged();
     }
 
     public static boolean qualifies(String key, short qualityX10) {
-        return qualifies(key, qualityX10, snapshot());
+        return qualifies(key, qualityX10, snapshot(), anyRock());
     }
 
     static boolean qualifies(String key, short qualityX10, Map<String, Integer> values) {
+        return qualifies(key, qualityX10, values, 0);
+    }
+
+    static boolean qualifies(String key, short qualityX10, Map<String, Integer> values, int anyRockQualityX10) {
         String normalized = MiningQualityCatalog.normalizeKey(key);
         MiningQualityCatalog.Category category = MiningQualityCatalog.categoryOf(normalized);
         if(category == MiningQualityCatalog.Category.GEM) {return qualityX10 > 0;}
@@ -56,7 +87,9 @@ public final class TileQualityThresholds {
         }
         Integer configured = sanitize(values).get(normalized);
         int threshold = configured == null ? 0 : configured;
-        return threshold > 0 && qualityX10 >= threshold;
+        int anyRock = sanitizeQuality(anyRockQualityX10);
+        return (anyRock > 0 && qualityX10 >= anyRock)
+            || (threshold > 0 && qualityX10 >= threshold);
     }
 
     public static int parseQuality(String text) {
@@ -73,9 +106,14 @@ public final class TileQualityThresholds {
     }
 
     public static String exportJson(Map<String, Integer> values) {
+        return exportJson(values, anyRock());
+    }
+
+    static String exportJson(Map<String, Integer> values, int anyRockQualityX10) {
         JsonObject root = new JsonObject();
         root.addProperty("type", SHARE_TYPE);
         root.addProperty("version", SHARE_VERSION);
+        root.addProperty("anyRock", sanitizeQuality(anyRockQualityX10) / 10.0);
         JsonObject thresholds = new JsonObject();
         for(Map.Entry<String, Integer> entry : sanitize(values).entrySet()) {
             thresholds.addProperty(entry.getKey(), entry.getValue() / 10.0);
@@ -85,6 +123,10 @@ public final class TileQualityThresholds {
     }
 
     public static Map<String, Integer> importJson(String json) {
+        return importProfileJson(json).thresholds;
+    }
+
+    public static Profile importProfileJson(String json) {
         JsonElement parsed = com.google.gson.JsonParser.parseString(json);
         if(!parsed.isJsonObject()) {throw new IllegalArgumentException("Quality settings must be a JSON object");}
         JsonObject root = parsed.getAsJsonObject();
@@ -105,7 +147,14 @@ public final class TileQualityThresholds {
                 values.put(key, (int)Math.min(Math.round(q * 10.0), Short.MAX_VALUE));
             }
         }
-        return sanitize(values);
+        int anyRock = 0;
+        if(root.has("anyRock")) {
+            double q = root.get("anyRock").getAsDouble();
+            if(Double.isFinite(q) && q > 0) {
+                anyRock = (int)Math.min(Math.round(q * 10.0), Short.MAX_VALUE);
+            }
+        }
+        return new Profile(anyRock, values);
     }
 
     static Map<String, Integer> sanitize(Map<String, Integer> values) {
@@ -124,5 +173,9 @@ public final class TileQualityThresholds {
     private static boolean thresholdKey(String key) {
         MiningQualityCatalog.Category category = MiningQualityCatalog.categoryOf(key);
         return category == MiningQualityCatalog.Category.STONE || category == MiningQualityCatalog.Category.ORE;
+    }
+
+    private static int sanitizeQuality(int value) {
+        return value <= 0 ? 0 : Math.min(value, (int)Short.MAX_VALUE);
     }
 }
