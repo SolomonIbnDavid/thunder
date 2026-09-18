@@ -74,6 +74,31 @@ public class MinerBotV3LogicTest {
     }
 
     @Test
+    void activeLineBoulderDetectionIsResourceAndHeadingAware() {
+        assertTrue(MinerBotV3Logic.isBoulderResource("gfx/terobjs/boulder"));
+        assertTrue(MinerBotV3Logic.isBoulderResource("gfx/terobjs/bumlings/granite[stage=2]"));
+        assertFalse(MinerBotV3Logic.isBoulderResource("gfx/terobjs/items/granite"));
+
+        Coord anchor = Coord.of(20, 30);
+        for(MinerBotV3Logic.Direction heading : MinerBotV3Logic.Direction.values()) {
+            Coord frontier = anchor.add(heading.step().mul(7));
+            assertTrue(MinerBotV3Logic.boulderBlocksFrontier(
+                anchor, heading, 6, frontier));
+            assertTrue(MinerBotV3Logic.boulderBlocksFrontier(
+                anchor, heading, 6, frontier.add(heading.right().step())));
+            assertTrue(MinerBotV3Logic.boulderBlocksFrontier(
+                anchor, heading, 6, frontier.add(heading.step())));
+            assertFalse(MinerBotV3Logic.boulderBlocksFrontier(
+                anchor, heading, 6, frontier.sub(heading.step())));
+            assertFalse(MinerBotV3Logic.boulderBlocksFrontier(
+                anchor, heading, 6, frontier.add(heading.right().step().mul(2))));
+        }
+        assertFalse(MinerBotV3Logic.boulderBlocksFrontier(
+            anchor, MinerBotV3Logic.Direction.NORTH, MinerBotV3Logic.LEG_TILES,
+            MinerBotV3Logic.endpoint(anchor, MinerBotV3Logic.Direction.NORTH)));
+    }
+
+    @Test
     void supplySourcesPreferTheRightContainerWithoutExcludingFallbacks() {
         int stonePile = MinerBotV3Logic.supplySourcePriority(
             MinerBotV3Logic.Supply.STONE, "gfx/terobjs/stockpile-stone", false, false, false);

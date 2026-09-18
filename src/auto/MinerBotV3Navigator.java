@@ -21,7 +21,7 @@ import java.util.Set;
 /** Miner-owned saved-map strategy. BotMovement still owns every local leg. */
 final class MinerBotV3Navigator {
     private static final int ROUTE_MAX_TILES = 250_000;
-    private static final int LOCAL_LEG_TILES = 8;
+    private static final int LOCAL_LEG_TILES = 4;
     private static final int MAX_REPLANS = 4;
 
     private MinerBotV3Navigator() {}
@@ -109,6 +109,7 @@ final class MinerBotV3Navigator {
             if(plan.route.size() <= 1) return true;
 
             boolean replan = false;
+            int previousIndex = 0;
             for(int index = LOCAL_LEG_TILES; index < plan.route.size(); index += LOCAL_LEG_TILES) {
                 int goalIndex = Math.min(index, plan.route.size() - 1);
                 Coord savedGoal = plan.route.get(goalIndex);
@@ -119,11 +120,21 @@ final class MinerBotV3Navigator {
                     BotMovement.Mode.CAVE, 45000L);
                 MinerBotV3.logMovement("saved-route", label + " tile " + savedGoal, result);
                 if(result == null || !result.arrived()) {
+                    if(advanceToEarlierWaypoint(gui, bot, segment, plan.route,
+                        previousIndex, goalIndex, label)) {
+                        MinerBotV3.diag("ROUTE phase=%s local-fallback-progress failed=%s",
+                            label, savedGoal);
+                        replan = true;
+                        break;
+                    }
                     markBarrier(blocked, savedGoal);
+                    MinerBotV3.diag("ROUTE phase=%s block-exact=%s blocked=%d",
+                        label, savedGoal, blocked.size());
                     replan = true;
                     break;
                 }
                 if(goalIndex == plan.route.size() - 1) return true;
+                previousIndex = goalIndex;
             }
             if(!replan) {
                 Coord savedGoal = plan.route.get(plan.route.size() - 1);
@@ -134,17 +145,58 @@ final class MinerBotV3Navigator {
                     BotMovement.Mode.CAVE, 45000L);
                 MinerBotV3.logMovement("saved-route-final", label, result);
                 if(result != null && result.arrived()) return true;
-                markBarrier(blocked, savedGoal);
+                if(advanceToEarlierWaypoint(gui, bot, segment, plan.route,
+                    previousIndex, plan.route.size() - 1, label)) {
+                    MinerBotV3.diag("ROUTE phase=%s local-fallback-progress failed=%s",
+                        label, savedGoal);
+                    continue;
+                }
+                Coord barrier = failureBarrier(plan.route, previousIndex,
+                    plan.route.size() - 1, true);
+                markBarrier(blocked, barrier);
+                MinerBotV3.diag("ROUTE phase=%s failed-goal=%s block-exact=%s blocked=%d",
+                    label, savedGoal, barrier, blocked.size());
             }
         }
         MinerBotV3.diag("ROUTE phase=%s result=replans-exhausted", label);
         return false;
     }
 
-    private static void markBarrier(Set<Coord> blocked, Coord center) {
-        for(int y = -1; y <= 1; y++)
-            for(int x = -1; x <= 1; x++)
-                blocked.add(center.add(x, y));
+    /** A local failure proves only that exact waypoint unsafe. Expanding it to
+     * 3x3 can seal an otherwise valid one- or two-tile mine tunnel. */
+    static void markBarrier(Set<Coord> blocked, Coord center) {
+        if(blocked != null && center != null) blocked.add(new Coord(center));
+    }
+
+    /** Never mark the requested destination itself blocked. For a failed final
+     * hop, invalidate only its last approach tile so the saved planner may try
+     * another side. A one-tile final hop is retried without inventing a block. */
+    static Coord failureBarrier(List<Coord> route, int previousIndex,
+                                int failedIndex, boolean destination) {
+        if(route == null || failedIndex < 0 || failedIndex >= route.size()) return null;
+        if(!destination) return new Coord(route.get(failedIndex));
+        int approach = failedIndex - 1;
+        return approach > previousIndex ? new Coord(route.get(approach)) : null;
+    }
+
+    /** Salvage bounded progress when a four-tile local goal is obstructed.
+     * Replanning from a nearer observed tile is safer than inventing a wide
+     * saved-map barrier around an arbitrary staging waypoint. */
+    private static boolean advanceToEarlierWaypoint(GameUI gui, Bot bot, long segment,
+                                                     List<Coord> route, int previousIndex,
+                                                     int failedIndex, String label)
+            throws InterruptedException {
+        for(int index = failedIndex - 1; index > previousIndex; index--) {
+            Context live = context(gui);
+            if(live == null || live.segment != segment) return false;
+            Coord savedGoal = route.get(index);
+            BotMovement.Result result = BotMovement.moveTo(gui, bot,
+                MapTileCoordinates.worldPosition(savedGoal, live.sessionTile),
+                BotMovement.Mode.CAVE, 45000L);
+            MinerBotV3.logMovement("saved-route-fallback", label + " tile " + savedGoal, result);
+            if(result != null && result.arrived()) return true;
+        }
+        return false;
     }
 
     /** Tight candidate set around zone center so strategic routing reaches its containers. */

@@ -10,7 +10,10 @@ and press Start. V3 anchors the tunnel one tile left of the support and repeats
 this cycle:
 
 1. Select the next eleven centerline tiles with Thunder's Mine area action.
-2. Let the native action mine the selection and clear its own debris.
+2. Let the native action mine the selection and clear ordinary debris. If a
+   boulder gob blocks the first unopened tile, V3 equips the pickaxe, chips
+   that active-line boulder to exhaustion, and leaves its rock output at the
+   frontier for the existing column-stone collector.
 3. If the action stops, walk to the furthest opened tile and redraw only the
    remainder of the original eleven-tile leg.
 4. Mine one tile to the current heading's right, obtain 30 building stones and
@@ -50,6 +53,11 @@ frontier with loose building stones.
 Supply areas are optional at startup. A missing area produces a warning; the
 run stops with a specific message only if that supply later becomes necessary.
 Cross-level routing through ladders and mineholes is not supported.
+Saved-map routes are executed as four-tile cave-mode legs. A failed local leg
+first tries nearer route waypoints; if none can be reached, only the exact
+failed staging tile is excluded. V3 never expands one failure into a 3x3
+barrier that could seal a narrow mine tunnel, and it never marks the requested
+destination itself blocked.
 
 ## Safety and diagnostics
 

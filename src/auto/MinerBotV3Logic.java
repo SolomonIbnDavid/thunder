@@ -126,6 +126,31 @@ public final class MinerBotV3Logic {
         return message != null && message.toLowerCase(Locale.ROOT).contains("too hard");
     }
 
+    /** Boulder resource identities used by the live cave client. Drawable-state
+     * suffixes are transient and must not hide an otherwise valid blocker. */
+    public static boolean isBoulderResource(String resid) {
+        if(resid == null) return false;
+        String name = resid.toLowerCase(Locale.ROOT);
+        int state = name.indexOf('[');
+        if(state > 0) name = name.substring(0, state);
+        return name.equals("gfx/terobjs/boulder") || name.startsWith("gfx/terobjs/bumlings/");
+    }
+
+    /** A large boulder can occupy the first unopened tile even when its gob
+     * origin is on the immediately adjacent tile. Limit recovery to that
+     * three-tile-wide frontier instead of clearing unrelated cave boulders. */
+    public static boolean boulderBlocksFrontier(Coord anchor, Direction heading,
+                                                int completedTiles, Coord boulderTile) {
+        if(anchor == null || heading == null || boulderTile == null) return false;
+        int completed = Math.max(0, Math.min(LEG_TILES, completedTiles));
+        if(completed >= LEG_TILES) return false;
+        Coord frontier = anchor.add(heading.step().mul(completed + 1));
+        Coord delta = boulderTile.sub(frontier);
+        int along = delta.x * heading.dx + delta.y * heading.dy;
+        int cross = delta.x * heading.right().dx + delta.y * heading.right().dy;
+        return along >= 0 && along <= 1 && Math.abs(cross) <= 1;
+    }
+
     public static boolean needsEnergy(double energy) {
         return energy >= 0.0 && energy < LOW_ENERGY;
     }
