@@ -1,0 +1,3 @@
+#PAGINA LAYER
+#String text
+Tracks mined material quality, paints a local heat map, and marks the next adjacent frontier tile toward the strongest observed point. Advisory only: it never walks or mines automatically.

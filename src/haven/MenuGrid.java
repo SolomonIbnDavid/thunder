@@ -922,6 +922,7 @@ public class MenuGrid extends Widget implements KeyBinding.Bindable {
 	makeLocal("paginae/add/refill_drinks", Action.ACT_REFILL_DRINKS);
 	makeLocal("paginae/add/quest_help", Action.OPEN_QUEST_HELP);
 	makeLocal("paginae/add/fishing_helper", Action.OPEN_FISHING_HELPER);
+	makeLocal("paginae/add/mining_heat_map", Action.OPEN_MINING_HEAT_MAP);
 	makeLocal("paginae/add/inspect", Action.TOGGLE_INSPECT);
 	makeLocal("paginae/add/track", Action.TRACK_OBJECT);
 	makeLocal("paginae/add/measure", TileMeasure::paginaAction, TileMeasure::isActive);

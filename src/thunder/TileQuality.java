@@ -193,6 +193,7 @@ public class TileQuality {
 	UI ui = gob.glob.sess.ui;
 	if(ui == null || ui.gui == null || ui.gui.tileQuality == null) {return;}
 	ui.gui.tileQuality.setPending(GROUP_MINE, gob.rc);
+	ui.gui.miningHeatMap.noteMineout(ui.gui, gob.rc);
     }
 
     /**
@@ -382,6 +383,7 @@ public class TileQuality {
 	short val = (short) Math.min(Math.round(q * 10), Short.MAX_VALUE);
 	TileQualityDebug.event("record %s q=%.1f tile=%s (group=%s)", key, q, gc, debugGroupName(action.group));
 	recordQuality(grid.id, tc, val, key);
+	if(action.group == GROUP_MINE) {gui.miningHeatMap.noteObservation(key);}
     }
 
     private static boolean isEligibleItem(GItem item, GameUI gui, PendingAction action) {
