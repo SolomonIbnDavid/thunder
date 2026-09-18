@@ -1,3 +1,10 @@
+$size[14]{$u{experimental Miner Bot V3 and mining quality tracker on 17.09.2026:}
+* Adds Miner Bot V3 alongside V1/V2, with 11-tile straight exploratory mining, automatic Stone Column placement, bounded boulder and too-hard recovery, and a persistent restart anchor.
+* Adds same-cave-segment NavCore resupply for water, food, building stone, and 10-bar batches, with exact return to the recorded mining frontier.
+* Adds a live planning/debug overlay for the selected anchor, heading, first mining leg, column position, and route status.
+* Adds shareable stone and ore quality thresholds, including a universal highest-quality rock rule, plus always-on gemstone tracking.
+* Persistent world markers now show the matching rock, ore, or type-specific gemstone icon beside the recorded quality; saved-map markers remain searchable and shareable.
+`
 $size[14]{$u{experimental quality-aware Auto Stack on 17.09.2026:}
 * Stack now merges matching items, reorganizes existing stack contents into close quality bands, and then sorts the container. Shift-click keeps the faster merge-only behavior.
 * Full cupboards are reorganized in place with one free inventory square as a swap buffer, instead of unpacking every stack into the container.
