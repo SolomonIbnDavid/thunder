@@ -45,7 +45,7 @@ public final class MinerBotV3SetupWnd extends WindowX {
         direction = add(new TextEntry(UI.scale(55), "n"), UI.scale(205), y);
         y += direction.sz.y + UI.scale(6);
 
-        add(new Label("Minimum Bronze/Wrought bars:"), 0, y);
+        add(new Label("Bars per refill batch (refill at 0):"), 0, y);
         bars = add(new TextEntry(UI.scale(55), "10"), UI.scale(255), y);
         y += bars.sz.y + UI.scale(6);
 

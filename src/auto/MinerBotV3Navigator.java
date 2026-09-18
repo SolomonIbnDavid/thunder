@@ -147,15 +147,19 @@ final class MinerBotV3Navigator {
                 blocked.add(center.add(x, y));
     }
 
-    /** Candidate observation tiles in and immediately around the selected zone. */
+    /** Tight candidate set around zone center so strategic routing reaches its containers. */
     static List<Coord> goals(Area area) {
         List<Coord> out = new ArrayList<>();
         if(area == null) return out;
-        Area expanded = area.margin(2);
         Coord center = area.ul.add(area.br).div(2);
-        out.add(center);
-        for(Coord tile : expanded) {
-            if(!out.contains(tile)) out.add(new Coord(tile));
+        out.add(new Coord(center));
+        for(int radius = 1; radius <= 2; radius++) {
+            for(int y = -radius; y <= radius; y++) {
+                for(int x = -radius; x <= radius; x++) {
+                    if(Math.max(Math.abs(x), Math.abs(y)) == radius)
+                        out.add(center.add(x, y));
+                }
+            }
         }
         return out;
     }

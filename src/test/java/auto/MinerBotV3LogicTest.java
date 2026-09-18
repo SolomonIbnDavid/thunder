@@ -58,9 +58,42 @@ public class MinerBotV3LogicTest {
         assertTrue(MinerBotV3Logic.needsEnergy(0.249));
         assertFalse(MinerBotV3Logic.needsEnergy(0.25));
         assertTrue(MinerBotV3Logic.energyTargetReached(0.80));
-        assertTrue(MinerBotV3Logic.needsBars(9, 10));
-        assertFalse(MinerBotV3Logic.needsBars(10, 10));
-        assertFalse(MinerBotV3Logic.needsBars(14, 10));
+        assertFalse(MinerBotV3Logic.needsBarRefill(10));
+        assertFalse(MinerBotV3Logic.needsBarRefill(1));
+        assertTrue(MinerBotV3Logic.needsBarRefill(0));
+        assertTrue(MinerBotV3Logic.barBatchRestored(10, 10));
+        assertFalse(MinerBotV3Logic.barBatchRestored(9, 10));
+        assertTrue(MinerBotV3Logic.shouldCollectRouteStone(13, true));
+        assertFalse(MinerBotV3Logic.shouldCollectRouteStone(13, false));
+        assertTrue(MinerBotV3Logic.waterRefillSucceeded(false, true));
+        assertFalse(MinerBotV3Logic.waterRefillSucceeded(true, false));
+    }
+
+    @Test
+    void supplySourcesPreferTheRightContainerWithoutExcludingFallbacks() {
+        int stonePile = MinerBotV3Logic.supplySourcePriority(
+            MinerBotV3Logic.Supply.STONE, "gfx/terobjs/stockpile-stone", false, false, false);
+        int fullChest = MinerBotV3Logic.supplySourcePriority(
+            MinerBotV3Logic.Supply.STONE, "gfx/terobjs/lchest", false, false, true);
+        int genericChest = MinerBotV3Logic.supplySourcePriority(
+            MinerBotV3Logic.Supply.STONE, "gfx/terobjs/lchest", false, false, false);
+        int emptyChest = MinerBotV3Logic.supplySourcePriority(
+            MinerBotV3Logic.Supply.STONE, "gfx/terobjs/lchest", false, true, false);
+        int water = MinerBotV3Logic.supplySourcePriority(
+            MinerBotV3Logic.Supply.STONE, "gfx/terobjs/barrel", true, false, false);
+        assertTrue(stonePile < fullChest);
+        assertTrue(fullChest < genericChest);
+        assertTrue(genericChest < emptyChest);
+        assertTrue(emptyChest < water);
+
+        int barsFullChest = MinerBotV3Logic.supplySourcePriority(
+            MinerBotV3Logic.Supply.BARS, "gfx/terobjs/lchest", false, false, true);
+        int barsGeneric = MinerBotV3Logic.supplySourcePriority(
+            MinerBotV3Logic.Supply.BARS, "gfx/terobjs/crate", false, false, false);
+        int barsStonePile = MinerBotV3Logic.supplySourcePriority(
+            MinerBotV3Logic.Supply.BARS, "gfx/terobjs/stockpile-stone", false, false, false);
+        assertTrue(barsFullChest < barsGeneric);
+        assertTrue(barsGeneric < barsStonePile);
     }
 
     @Test
