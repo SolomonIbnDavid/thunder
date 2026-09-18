@@ -77,6 +77,20 @@ public final class MinerBotV3Logic {
         return endpoint(anchor, heading).add(heading.right().step());
     }
 
+    /** Signed tiles from the computed centerline; positive values are to the heading's right. */
+    public static int crossTrackTiles(Coord anchor, Direction heading, Coord tile) {
+        if(anchor == null || heading == null || tile == null) return 0;
+        Coord delta = tile.sub(anchor);
+        return delta.x * heading.right().dx + delta.y * heading.right().dy;
+    }
+
+    /** Signed tiles along the heading from the computed anchor. */
+    public static int alongTrackTiles(Coord anchor, Direction heading, Coord tile) {
+        if(anchor == null || heading == null || tile == null) return 0;
+        Coord delta = tile.sub(anchor);
+        return delta.x * heading.dx + delta.y * heading.dy;
+    }
+
     /** Tile distance along the heading, clamped to this leg. Off-axis tiles make no progress. */
     public static int completedTiles(Coord anchor, Direction heading, Coord tile) {
         if(anchor == null || heading == null || tile == null) return 0;

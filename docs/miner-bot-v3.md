@@ -20,6 +20,16 @@ this cycle:
    one Bronze/Wrought Iron bar, and build a Stone Column there.
 5. Return to the centerline and continue in the same heading.
 
+The setup window's Preview button draws the exact startup interpretation on the
+live map before movement begins. Yellow marks the legacy support V3 selected,
+red outlines that support's collision geometry, cyan marks the computed anchor,
+green shows the eleven-tile leg, and magenta marks the proposed next column.
+The preview HUD reports the player's cross-track lane offset, any off-center
+legacy support placement, and whether the computed anchor is locally reachable.
+This is especially important for old or manually placed supports: V3 must assume
+that the selected support is one tile to the right of the requested heading, but
+an arbitrary legacy column may have been built for a different tunnel direction.
+
 Three redraws with no terrain or movement progress stop the run. A server
 message containing `too hard` invokes the bounded detour search described
 below. Other unexplained failures stop instead of being treated as hardness.
