@@ -76,7 +76,12 @@ Grid payload version 3 stores canonical string keys. Version 2 remains readable 
 
 ### Mining
 
-An area-mine click arms the mine action. Each `gfx/terobjs/mineout` overlay advances the pending location to the wall tile that just opened. Inventory item-info updates then provide the material name and quality. This works for manual mining and Miner Bot V3 because both use Thunder's normal mining action.
+An area-mine click arms the mine action. Miner Bot V3's programmatic area
+selection explicitly performs the same arming step before sending the mining
+selection, so fast gemstone inventory results cannot outrun attribution. Each
+`gfx/terobjs/mineout` overlay advances the pending location to the wall tile
+that just opened. Inventory item-info updates then provide the material name
+and quality.
 
 When the mine cursor closes, the last mined tile remains eligible for five
 seconds. This bounded grace period covers delayed dynamic gemstone name and

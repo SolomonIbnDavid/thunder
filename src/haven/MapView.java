@@ -3071,6 +3071,13 @@ public class MapView extends PView implements DTarget, Console.Directory, Widget
     }
 
     public void commitAreaSelection(Coord startTile, Coord endTile, int modflags) {
+	// Programmatic users (notably Miner V3) bypass Selector.mmousedown,
+	// which is where a real drag arms mining-quality attribution. Mirror
+	// that step before sending the selection so fast inventory results such
+	// as gemstones cannot arrive before the tracker knows the source tile.
+	if(ui != null && ui.gui != null) {
+	    TileQuality.markPendingForClick(new Coord2d(startTile.mul(MCache.tilesz2)), ui.gui);
+	}
 	wdgmsg("sel", startTile, endTile, modflags);
     }
 

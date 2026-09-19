@@ -66,4 +66,17 @@ public class MiningNavigationContractTest {
             < bot.indexOf("walkToTile(live, \"nearby session mining anchor\")"),
             "the anchor must be mined before V3 asks movement to occupy it");
     }
+
+    @Test
+    void programmaticMiningSelectionArmsQualityTrackingBeforeSending() throws Exception {
+        String mapView = Files.readString(Path.of("src/haven/MapView.java"));
+        int helper = mapView.indexOf("public void commitAreaSelection(");
+        int nextHelper = mapView.indexOf("public boolean hasActivePlacement()", helper);
+        String body = mapView.substring(helper, nextHelper);
+
+        assertTrue(body.contains("TileQuality.markPendingForClick("),
+            "Miner V3 selections must arm quality tracking like a manual selection");
+        assertTrue(body.indexOf("TileQuality.markPendingForClick(") < body.indexOf("wdgmsg(\"sel\""),
+            "quality tracking must be armed before fast gemstone results can arrive");
+    }
 }
