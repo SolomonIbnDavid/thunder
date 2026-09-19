@@ -916,6 +916,8 @@ public class MiniMap extends Widget {
 		    try {
 			ArrayList<DisplayMarker> marks = new ArrayList<>();
 			for(Marker mark : file.markers) {
+			    if(thunder.TileQuality.isGroundQualityMarker(mark))
+				continue;
 			    if((mark.seg == this.seg.id) && mapext.contains(mark.tc))
 				marks.add(new DisplayMarker(mm, mark, ui));
 			}

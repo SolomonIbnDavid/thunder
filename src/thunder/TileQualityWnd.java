@@ -34,7 +34,7 @@ public class TileQualityWnd extends WindowX {
     private boolean awaitingPlayer = false;
 
     public TileQualityWnd() {
-	super(Coord.z, "Tile Quality");
+	super(Coord.z, "Mining Log");
 	justclose = true;
 
 	overlayBox = add(new CheckBox("Show overlay") {
@@ -45,6 +45,7 @@ public class TileQualityWnd extends WindowX {
 		}
 	    }
 	}, Coord.z);
+	add(new Button(UI.scale(110), "Mark on map", this::markSelected), UI.scale(240), 0);
 	add(new Button(UI.scale(95), "Marker settings", () -> TileQualitySettingsWnd.toggle(ui)), UI.scale(360), 0);
 	int h = overlayBox.sz.y + UI.scale(3);
 
@@ -251,6 +252,24 @@ public class TileQualityWnd extends WindowX {
 	Coord tc = info.sc.mul(cmaps).add(tx, ty);
 	ui.gui.mapfile.view.center(new MiniMap.SpecLocator(info.seg, tc));
 	if(!ui.gui.mapfile.visible()) {ui.gui.mapfile.show();}
+    }
+
+    private void markSelected() {
+	Entry selected = list.sel;
+	TileQuality tracker = TileQuality.current();
+	if(selected == null) {
+	    if(ui != null && ui.gui != null) {ui.gui.error("Mining Log: select an entry first.");}
+	    return;
+	}
+	if(tracker == null || !tracker.markOnMap(selected.gridId, selected.tileIdx, selected.kind, selected.q)) {
+	    if(ui != null && ui.gui != null) {ui.gui.error("Mining Log: that map location is not available.");}
+	    return;
+	}
+	if(ui != null && ui.gui != null) {
+	    ui.gui.msg("Mining Log: marked " + TileQuality.displayName(selected.kind)
+		+ " q" + String.format(Locale.ROOT, "%.1f", selected.q / 10.0) + " on the map.",
+		GameUI.MsgType.INFO);
+	}
     }
 
     private static class ResolvedSnap {

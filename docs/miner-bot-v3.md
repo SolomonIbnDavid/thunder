@@ -11,14 +11,23 @@ and repeats this cycle:
 
 1. Select the next eleven centerline tiles with Thunder's Mine area action.
 2. Let the native action mine the selection and clear ordinary debris. If a
-   boulder gob blocks the first unopened tile, V3 equips the pickaxe, chips
-   that active-line boulder to exhaustion, and leaves its rock output at the
-   frontier for the existing column-stone collector.
+   boulder gob blocks the first unopened tile or the next column pocket and
+   placement, V3 equips the pickaxe, chips that operation's boulder to
+   exhaustion, and leaves its rock output for the existing column-stone
+   collector.
 3. If the action stops, walk to the furthest opened tile and redraw only the
    remainder of the original eleven-tile leg.
 4. Mine one tile to the current heading's right, obtain 30 building stones and
    one Bronze/Wrought Iron bar, and build a Stone Column there.
 5. Return to the centerline and continue in the same heading.
+
+The optional **Fanning mode** adds a supported crosscut after every successful
+column. One tile behind the new column, V3 mines eleven tiles left and eleven
+tiles right, returns to the centerline, and then resumes the straight tunnel.
+The one-tile setback keeps the right arm from intersecting the column itself.
+A too-hard wall bounds only that fan arm; the opposite arm and main tunnel
+continue. Blue preview lines show both planned fan arms before the run and
+during each column cycle.
 
 The setup window's Preview button draws the exact startup interpretation on the
 live map before movement begins. Yellow marks the legacy support V3 selected,
@@ -63,7 +72,9 @@ below. Other unexplained failures stop instead of being treated as hardness.
 
 V3 tries eight candidates in a fixed order. From one prior support anchor it
 tries right 11, left 11, right 22, and left 22 tiles; it then repeats those
-four candidates from two prior support anchors. Every sideways eleven-tile leg
+four candidates from two prior support anchors. Each sideways route begins one
+tile behind its support anchor, clearing the existing column footprint while
+preserving the full eleven- or twenty-two-tile lateral reach. Every sideways eleven-tile leg
 receives a column one tile right relative to that leg's heading. A candidate is
 accepted only after V3 completes a new eleven-tile leg in the original heading.
 
@@ -96,12 +107,17 @@ destination itself blocked.
 
 ## Safety and diagnostics
 
+The setup window also opens Thunder's persistent **Mining Log**. Qualifying
+stone, ore, and gemstone observations are labeled permanently on the ground but
+do not automatically clutter the map. A selected log entry can be promoted to
+an ordinary map marker with **Mark on map**.
+
 Miner Bot V3 refuses to replace another active Bot task. The mining threat
 watchdog stops and flees for V3 just as it does for V2. Per-run diagnostics are
 written under `bin/minerbot-v3-logs/` through Thunder's debug-directory helper.
 
 ## Deferred modes
 
-The standing/fan pattern and map-grid coverage miner are intentionally deferred.
-Straight mode establishes the shared line-mining, placement, route-memory, and
-resupply behavior those later strategies will call.
+The map-grid coverage miner remains intentionally deferred. Straight and
+fanning modes establish the shared line-mining, placement, route-memory, and
+resupply behavior it will call.

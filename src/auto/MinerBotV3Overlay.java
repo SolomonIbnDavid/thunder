@@ -24,6 +24,7 @@ public final class MinerBotV3Overlay implements DebugDraw {
     private static final Color SUPPORT = new Color(255, 210, 60, 245);
     private static final Color ANCHOR = new Color(40, 230, 255, 245);
     private static final Color LEG = new Color(80, 255, 170, 235);
+    private static final Color FAN = new Color(90, 180, 255, 235);
     private static final Color COLUMN = new Color(235, 80, 255, 245);
     private static final Color COLLISION = new Color(255, 70, 70, 230);
     private static final Color PLAYER_LINK = new Color(245, 245, 245, 190);
@@ -42,13 +43,18 @@ public final class MinerBotV3Overlay implements DebugDraw {
     public static void init() {}
 
     public static PreviewResult preview(GameUI gui, MinerBotV3Logic.Direction heading) {
+        return preview(gui, heading, false);
+    }
+
+    public static PreviewResult preview(GameUI gui, MinerBotV3Logic.Direction heading,
+                                        boolean fanning) {
         MinerBotV3.StartPlan plan = MinerBotV3.resolveStartPlan(gui, heading);
         if(plan == null) {
             current = null;
             return new PreviewResult("Preview: no visible support", "No visible mine support was found.", false);
         }
         String route = probeAnchor(gui, plan);
-        showStart(gui, plan, plan.heading, "setup preview", route);
+        showStart(gui, plan, plan.heading, "setup preview", route, fanning);
         Snapshot snapshot = current;
         return new PreviewResult(snapshot == null ? "Preview unavailable" : snapshot.summary,
             snapshot == null ? "Preview could not be built." : snapshot.warning,
@@ -56,7 +62,8 @@ public final class MinerBotV3Overlay implements DebugDraw {
     }
 
     static void showStart(GameUI gui, MinerBotV3.StartPlan plan,
-                          MinerBotV3Logic.Direction heading, String phase, String route) {
+                          MinerBotV3Logic.Direction heading, String phase, String route,
+                          boolean fanning) {
         if(gui == null || gui.map == null || plan == null || heading == null) return;
         Snapshot prior = current;
         if(route == null && prior != null && prior.heading == heading && prior.anchor.equals(plan.anchor))
@@ -81,7 +88,7 @@ public final class MinerBotV3Overlay implements DebugDraw {
         current = new Snapshot(heading, plan.anchor, supportWorld, supportName,
             support == null ? -1L : support.id, collision, playerWorld, cross, along,
             supportOffset, plan.chainedSupports, phase, routeText, blocked, false,
-            warning, summary, plan.anchorSource());
+            warning, summary, plan.anchorSource(), fanning);
     }
 
     static void showLeg(GameUI gui, Coord anchor, MinerBotV3Logic.Direction heading, String phase) {
@@ -104,7 +111,8 @@ public final class MinerBotV3Overlay implements DebugDraw {
             old == null ? 0 : old.chainedSupports,
             phase, "running", false, false, warning,
             String.format(Locale.ROOT, "V3: %s from %s", heading.name(), anchor),
-            old == null ? "session checkpoint" : old.anchorSource);
+            old == null ? "session checkpoint" : old.anchorSource,
+            old != null && old.fanning);
     }
 
     static void markFailure(String reason) {
@@ -239,6 +247,12 @@ public final class MinerBotV3Overlay implements DebugDraw {
             previous = at;
         }
 
+        if(snapshot.fanning) {
+            Coord fanCenter = MinerBotV3Logic.fanAnchor(snapshot.anchor, snapshot.heading);
+            drawFanArm(g, mv, fanCenter, snapshot.heading.left(), "fan left");
+            drawFanArm(g, mv, fanCenter, snapshot.heading.right(), "fan right");
+        }
+
         Coord anchorScreen = screen(mv, MiningBot.tileCenter(snapshot.anchor));
         if(anchorScreen != null) marker(g, anchorScreen,
             snapshot.failure || snapshot.routeBlocked ? WARNING : ANCHOR, 7, "anchor");
@@ -279,8 +293,25 @@ public final class MinerBotV3Overlay implements DebugDraw {
             : snapshot.warning.startsWith("Session anchor") ? ANCHOR : WARNING);
         g.atext(snapshot.warning, base.add(0, 48), 0, 0);
         g.chcolor(TEXT);
-        g.atext("yellow=support  red=collision  cyan=anchor  green=11-tile leg  magenta=next column",
+        g.atext("yellow=support  red=collision  cyan=anchor  green=leg  blue=fan  magenta=column",
             base.add(0, 64), 0, 0);
+    }
+
+    private static void drawFanArm(GOut g, MapView mv, Coord center,
+                                   MinerBotV3Logic.Direction direction, String label) {
+        Coord previous = screen(mv, MiningBot.tileCenter(center));
+        g.chcolor(FAN);
+        for(int i = 1; i <= MinerBotV3Logic.LEG_TILES; i++) {
+            Coord tile = center.add(direction.step().mul(i));
+            Coord at = screen(mv, MiningBot.tileCenter(tile));
+            if(previous != null && at != null) g.line(previous, at, 2.0);
+            if(at != null) {
+                g.fellipse(at, Coord.of(i == MinerBotV3Logic.LEG_TILES ? 5 : 3,
+                    i == MinerBotV3Logic.LEG_TILES ? 5 : 3));
+                if(i == MinerBotV3Logic.LEG_TILES) g.atext(label, at.add(6, -5), 0, 0);
+            }
+            previous = at;
+        }
     }
 
     private static void outlineTile(GOut g, MapView mv, Coord tile, Color color, int width) {
@@ -366,6 +397,7 @@ public final class MinerBotV3Overlay implements DebugDraw {
         final String warning;
         final String summary;
         final String anchorSource;
+        final boolean fanning;
 
         Snapshot(MinerBotV3Logic.Direction heading, Coord anchor,
                  Coord2d supportWorld, String supportName, long supportId,
@@ -376,7 +408,7 @@ public final class MinerBotV3Overlay implements DebugDraw {
             this(heading, anchor, supportWorld, supportName, supportId,
                 supportCollision, playerWorld, crossTrack, alongTrack, supportOffset,
                 chainedSupports, phase, route, routeBlocked, failure, warning, summary,
-                "automatic support");
+                "automatic support", false);
         }
 
         Snapshot(MinerBotV3Logic.Direction heading, Coord anchor,
@@ -385,7 +417,7 @@ public final class MinerBotV3Overlay implements DebugDraw {
                  int crossTrack, int alongTrack, double supportOffset,
                  int chainedSupports, String phase, String route,
                  boolean routeBlocked, boolean failure, String warning, String summary,
-                 String anchorSource) {
+                 String anchorSource, boolean fanning) {
             this.heading = heading;
             this.anchor = new Coord(anchor);
             this.supportWorld = supportWorld;
@@ -404,13 +436,14 @@ public final class MinerBotV3Overlay implements DebugDraw {
             this.warning = warning == null ? "" : warning;
             this.summary = summary == null ? "" : summary;
             this.anchorSource = anchorSource == null ? "" : anchorSource;
+            this.fanning = fanning;
         }
 
         Snapshot withFailure(String reason) {
             return new Snapshot(heading, anchor, supportWorld, supportName, supportId,
                 supportCollision, playerWorld, crossTrack, alongTrack, supportOffset,
                 chainedSupports, reason, route, routeBlocked, true, warning, summary,
-                anchorSource);
+                anchorSource, fanning);
         }
     }
 }

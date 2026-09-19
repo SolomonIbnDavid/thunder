@@ -6,6 +6,7 @@ import auto.MinerBotV3Overlay;
 import haven.Area;
 import haven.Button;
 import haven.Coord;
+import haven.CheckBox;
 import haven.GameUI;
 import haven.Label;
 import haven.MiniMap;
@@ -13,6 +14,7 @@ import haven.TextEntry;
 import haven.UI;
 import haven.Widget;
 import haven.WindowX;
+import thunder.TileQualityWnd;
 
 /** Session-scoped setup window for the first Miner Bot V3 mode. */
 public final class MinerBotV3SetupWnd extends WindowX {
@@ -29,6 +31,7 @@ public final class MinerBotV3SetupWnd extends WindowX {
     private final TextEntry direction;
     private final TextEntry bars;
     private final TextEntry cap;
+    private final CheckBox fanning;
     private final Label anchorStatus;
     private final Label previewStatus;
     private final Label runtimeStatus;
@@ -44,6 +47,12 @@ public final class MinerBotV3SetupWnd extends WindowX {
         y += UI.scale(18);
         add(new Label("Eat below 2,500% → 8,000% | refill empty water"), 0, y);
         y += UI.scale(26);
+
+        fanning = add(new CheckBox("Fanning mode (11 tiles left + right after each column)") {
+            @Override
+            public void changed(boolean value) {refreshPreview(false);}
+        }, 0, y);
+        y += fanning.sz.y + UI.scale(6);
 
         add(new Label("Direction (n/s/e/w):"), 0, y);
         direction = add(new TextEntry(UI.scale(55), "n"), UI.scale(205), y);
@@ -85,6 +94,9 @@ public final class MinerBotV3SetupWnd extends WindowX {
         add(new Button(UI.scale(100), "Stop") {
             public void click() {MinerBotV3.stop();}
         }, UI.scale(110), y);
+        add(new Button(UI.scale(100), "Mining log") {
+            public void click() {TileQualityWnd.toggle(ui);}
+        }, UI.scale(220), y);
         y += UI.scale(34);
 
         lastRuntimeStatus = MinerBotV3.status();
@@ -264,18 +276,18 @@ public final class MinerBotV3SetupWnd extends WindowX {
             ui.gui.msg("Miner Bot V3: using the locked anchor heading " + locked.heading
                 + "; Pick or Clear the anchor to change direction.", GameUI.MsgType.INFO);
         }
-        MinerBotV3Overlay.PreviewResult preview = MinerBotV3Overlay.preview(ui.gui, dir);
+        MinerBotV3Overlay.PreviewResult preview = MinerBotV3Overlay.preview(ui.gui, dir, fanning.a);
         previewStatus.settext(preview.summary);
         if(!preview.reachable)
             ui.gui.msg("Miner Bot V3 preview warning: " + preview.warning, GameUI.MsgType.BAD);
-        MinerBotV3.start(ui.gui, dir, barTarget, safetyCap);
+        MinerBotV3.start(ui.gui, dir, barTarget, safetyCap, fanning.a);
     }
 
     private void refreshPreview(boolean reportWarning) {
         if(ui == null || ui.gui == null) return;
         try {
             MinerBotV3Logic.Direction dir = MinerBotV3Logic.Direction.parse(direction.text());
-            MinerBotV3Overlay.PreviewResult preview = MinerBotV3Overlay.preview(ui.gui, dir);
+            MinerBotV3Overlay.PreviewResult preview = MinerBotV3Overlay.preview(ui.gui, dir, fanning.a);
             previewStatus.settext(preview.summary);
             if(reportWarning && !preview.reachable)
                 ui.gui.msg("Miner Bot V3 preview warning: " + preview.warning, GameUI.MsgType.BAD);

@@ -74,7 +74,7 @@ public class MapWnd extends WindowX implements Console.Directory {
     private int olalpha = 64;
     protected final Collection<Runnable> deferred = new LinkedList<>();
 
-    private final static Predicate<Marker> pmarkers = (m -> m instanceof PMarker);
+    private final static Predicate<Marker> pmarkers = (m -> m instanceof PMarker && !thunder.TileQuality.isGroundQualityMarker(m));
     private final static Predicate<Marker> smarkers = (m -> m instanceof SMarker);
     private final static Predicate<Marker> custmarkers = (m -> m instanceof CustomMarker);
     private final static Comparator<ListMarker> namecmp = ((a, b) -> a.mark.nm.compareTo(b.mark.nm));

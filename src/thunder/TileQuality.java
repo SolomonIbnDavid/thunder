@@ -19,6 +19,7 @@ public class TileQuality {
     private static final int GRID_VERSION = 3;
     private static final int SHARED_GRID_VERSION = 1;
     static final String MARKER_PREFIX = "[TQ] ";
+    static final String MAP_MARKER_PREFIX = "[Mine] ";
 
     public static final String KEY_STONE_PREFIX = "stone/";
     public static final String KEY_ORE_PREFIX = "ore/";
@@ -53,12 +54,17 @@ public class TileQuality {
     // Fill detection doesn't get a cursor-clear like mine/dig, so a TTL gates
     // attribution. 5s matches MilkingAssist and covers observed round-trip.
     private static final long FILL_TTL_MS = 5000;
+    // Dynamic gemstone name/quality layers can arrive after Miner V3 cancels
+    // the mining cursor. Preserve the last mined tile long enough to resolve
+    // that late inventory update without keeping an unbounded stale action.
+    static final long MINE_RESULT_GRACE_MS = 5000;
 
     // At most one action is in flight at a time: a new click replaces it,
     // and it's cleared when the paginae cursor goes away. Items that were
     // captured into `retries` keep their own copy of the action, so clearing
     // here doesn't lose in-flight resolutions.
     private PendingAction currentPending;
+    private PendingAction recentMinePending;
     // Items whose quality wasn't ready on first tt; retried from GItem.tick.
     // WeakHashMap so destroyed items are GC-evicted without explicit cleanup.
     private final Map<GItem, PendingAction> retries = new WeakHashMap<>();
@@ -71,6 +77,15 @@ public class TileQuality {
     public static volatile String selectedKind = null;
 
     public static TileQuality current() {return current;}
+
+    /** Automatic quality markers are durable world labels, not map flags. */
+    public static boolean isGroundQualityMarker(Marker marker) {
+	return marker instanceof PMarker && isGroundQualityMarkerName(marker.nm);
+    }
+
+    static boolean isGroundQualityMarkerName(String name) {
+	return name != null && name.startsWith(MARKER_PREFIX);
+    }
 
     /** Finds the tracker owned by a specific map file (used by .hmap sharing). */
     public static TileQuality forFile(MapFile file) {
@@ -259,6 +274,7 @@ public class TileQuality {
     private void setPending(PendingAction action) {
 	synchronized (lock) {
 	    currentPending = action;
+	    if(action != null && action.group == GROUP_MINE) {recentMinePending = null;}
 	}
     }
 
@@ -280,6 +296,10 @@ public class TileQuality {
 	    if(p == null) {return;}
 	    if(!cursorMatchesGroup(cursorName, p.group)) {
 		currentPending = null;
+		if(p.group == GROUP_MINE) {
+		    recentMinePending = new PendingAction(p.group, p.rc,
+			System.currentTimeMillis() + MINE_RESULT_GRACE_MS);
+		}
 		TileQualityDebug.event("pending cleared: cursor now %s (was group=%s)", cursorName, debugGroupName(p.group));
 	    }
 	}
@@ -313,6 +333,16 @@ public class TileQuality {
 		gui.tileQuality.currentPending = null;
 		TileQualityDebug.event("pending expired: group=%s", debugGroupName(action.group));
 		action = null;
+	    }
+	    if(action == null) {
+		action = gui.tileQuality.recentMinePending;
+		if(action != null && action.expired()) {
+		    gui.tileQuality.recentMinePending = null;
+		    TileQualityDebug.event("recent mine pending expired");
+		    action = null;
+		} else if(action != null) {
+		    TileQualityDebug.event("using recent mine pending for late item update rc=%s", action.rc);
+		}
 	    }
 	}
 	if(action == null) {return;}
@@ -748,6 +778,38 @@ public class TileQuality {
 	// Purple is an ordinary player-marker group color, so the flag is included
 	// when that group is enabled in Thunder's existing automapper settings.
 	file.add(new PMarker(file, info.seg, mapTc, name, BuddyWnd.Group.Purple.col, true));
+    }
+
+    /** Adds an explicit, ordinary map marker for an entry chosen in the mining log. */
+    public boolean markOnMap(long gridId, int tileIdx, String key, short quality) {
+	key = MiningQualityCatalog.normalizeKey(key);
+	GridInfo info;
+	file.lock.readLock().lock();
+	try {
+	    info = file.gridinfo.get(gridId);
+	} finally {
+	    file.lock.readLock().unlock();
+	}
+	if(info == null) {return false;}
+	Coord gridTc = new Coord(tileIdx % cmaps.x, tileIdx / cmaps.x);
+	Coord mapTc = info.sc.mul(cmaps).add(gridTc);
+	String name = mapMarkerName(key, quality);
+	file.lock.readLock().lock();
+	try {
+	    for(Marker marker : file.markers) {
+		if(marker instanceof PMarker && marker.seg == info.seg && marker.tc.equals(mapTc)
+			&& marker.nm.equals(name)) {return true;}
+	    }
+	} finally {
+	    file.lock.readLock().unlock();
+	}
+	file.add(new PMarker(file, info.seg, mapTc, name, BuddyWnd.Group.Purple.col, false));
+	return true;
+    }
+
+    static String mapMarkerName(String key, short quality) {
+	return MAP_MARKER_PREFIX + displayName(MiningQualityCatalog.normalizeKey(key))
+	    + " q" + formatQuality(quality);
     }
 
     private static String formatQuality(short quality) {

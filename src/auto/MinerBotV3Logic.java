@@ -136,6 +136,19 @@ public final class MinerBotV3Logic {
         return Collections.unmodifiableList(out);
     }
 
+    /** Start the sideways leg one tile behind the support anchor so its first
+     * mine tile does not run through the column standing to the anchor's right. */
+    public static Coord detourStart(Coord supportAnchor, Direction original) {
+        if(supportAnchor == null || original == null) return supportAnchor;
+        return supportAnchor.sub(original.step());
+    }
+
+    /** The crosscut runs immediately behind the newly placed support. */
+    public static Coord fanAnchor(Coord legAnchor, Direction heading) {
+        if(legAnchor == null || heading == null) return legAnchor;
+        return endpoint(legAnchor, heading).sub(heading.step());
+    }
+
     public static boolean tooHardMessage(String message) {
         return message != null && message.toLowerCase(Locale.ROOT).contains("too hard");
     }
@@ -163,6 +176,14 @@ public final class MinerBotV3Logic {
         int along = delta.x * heading.dx + delta.y * heading.dy;
         int cross = delta.x * heading.right().dx + delta.y * heading.right().dy;
         return along >= 0 && along <= 1 && Math.abs(cross) <= 1;
+    }
+
+    /** Boulder origins can be one tile away while their large footprint still
+     * covers a mine or placement target. Keep the test local to the operation. */
+    public static boolean boulderBlocksTile(Coord target, Coord boulderTile) {
+        if(target == null || boulderTile == null) return false;
+        Coord delta = boulderTile.sub(target);
+        return Math.abs(delta.x) <= 1 && Math.abs(delta.y) <= 1;
     }
 
     public static boolean needsEnergy(double energy) {

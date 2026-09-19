@@ -63,7 +63,7 @@ public final class MinerBotV3 {
     public static String status() {return status;}
 
     public static synchronized void start(GameUI gui, MinerBotV3Logic.Direction direction,
-                                          int barsTarget, int segmentCap) {
+                                          int barsTarget, int segmentCap, boolean fanning) {
         if(running) {gui.error("Miner Bot V3 is already running."); return;}
         if(gui == null || gui.map == null || gui.menu == null || gui.map.player() == null) return;
         if(Bot.hasCurrent()) {gui.error("Miner Bot V3: another automation task is already running."); return;}
@@ -114,11 +114,11 @@ public final class MinerBotV3 {
         final int targetBars = barsTarget;
         running = true;
         status = "Status: starting";
-        MinerBotV3Overlay.showStart(gui, plan, runDirection, "starting", null);
+        MinerBotV3Overlay.showStart(gui, plan, runDirection, "starting", null, fanning);
         openLog();
-        diag("START direction=%s origin=%s saved-origin=%s anchor-source=%s bars=%d cap=%s segment=%x",
+        diag("START direction=%s origin=%s saved-origin=%s anchor-source=%s bars=%d cap=%s fanning=%b segment=%x",
             runDirection, start, savedStart, plan.anchorSource(), targetBars,
-            cap == Integer.MAX_VALUE ? "unlimited" : Integer.toString(cap), context.segment);
+            cap == Integer.MAX_VALUE ? "unlimited" : Integer.toString(cap), fanning, context.segment);
         if(plan.anchorSupport != null && plan.nearestSupport != null) {
             diag("START-GEOMETRY player-tile=%s nearest-support=#%d@%s anchor-support=#%d@%s chained=%d",
                 plan.playerTile, plan.nearestSupport.id, plan.nearestSupport.rc,
@@ -130,7 +130,7 @@ public final class MinerBotV3 {
         Bot task = Bot.execute((ignored, bot) -> {
             try {
                 MiningBot.prewarmSupportResource(gui, bot);
-                new Run(gui, bot, runDirection, targetBars, cap,
+                new Run(gui, bot, runDirection, targetBars, cap, fanning,
                     context.segment, savedStart).execute();
             } catch(InterruptedException interrupted) {
                 String reason = bot.stopMessage();
@@ -316,6 +316,7 @@ public final class MinerBotV3 {
         final MinerBotV3Logic.Direction originalDirection;
         final int barsTarget;
         final int segmentCap;
+        final boolean fanning;
         final long segmentId;
         final Coord savedOrigin;
         final List<Coord> trail = new ArrayList<>();
@@ -325,12 +326,13 @@ public final class MinerBotV3 {
         boolean barBatchInitialized;
 
         Run(GameUI gui, Bot bot, MinerBotV3Logic.Direction originalDirection,
-            int barsTarget, int segmentCap, long segmentId, Coord savedOrigin) {
+            int barsTarget, int segmentCap, boolean fanning, long segmentId, Coord savedOrigin) {
             this.gui = gui;
             this.bot = bot;
             this.originalDirection = originalDirection;
             this.barsTarget = barsTarget;
             this.segmentCap = segmentCap;
+            this.fanning = fanning;
             this.segmentId = segmentId;
             this.savedOrigin = new Coord(savedOrigin);
         }
@@ -398,6 +400,8 @@ public final class MinerBotV3 {
 
             Coord endpoint = MinerBotV3Logic.endpoint(anchor, heading);
             Coord column = MinerBotV3Logic.columnTile(anchor, heading);
+            if(!clearOperationBoulders(column, "column pocket"))
+                return failLeg("could not clear boulder obstructing column pocket " + column);
             LegOutcome pocket = minePocket(column);
             if(pocket != LegOutcome.SUCCESS) return pocket;
 
@@ -408,6 +412,8 @@ public final class MinerBotV3 {
                 return failLeg("no Bronze/Wrought bar is available for the column");
 
             status = "Status: placing column at " + column;
+            if(!clearOperationBoulders(column, "column placement"))
+                return failLeg("could not clear boulder obstructing column placement " + column);
             MiningBot.waitForCommandQueueIdle(gui, bot, 15000L);
             MiningBot.waitForMovementSettled(gui, bot, 3000L);
             if(!MiningBot.placeSupport(gui, bot, MiningBot.tileCenter(column)))
@@ -416,12 +422,51 @@ public final class MinerBotV3 {
             if(!walkToTile(endpoint, "return to tunnel centerline"))
                 return failLeg("could not return to centerline " + endpoint + " after placement");
 
+            if(fanning && heading == originalDirection && !mineFan(anchor, endpoint))
+                return LegOutcome.FAILED;
+
             if(trail.isEmpty() || !trail.get(trail.size() - 1).equals(endpoint))
                 trail.add(new Coord(endpoint));
             anchors.add(new Anchor(endpoint, trail.size() - 1));
             placements++;
             diag("COLUMN placed=%s anchor=%s heading=%s count=%d", column, endpoint, heading, placements);
             return LegOutcome.SUCCESS;
+        }
+
+        private boolean mineFan(Coord mainAnchor, Coord endpoint) throws InterruptedException {
+            Coord center = MinerBotV3Logic.fanAnchor(mainAnchor, originalDirection);
+            MinerBotV3Logic.Direction[] arms = {
+                originalDirection.left(), originalDirection.right()
+            };
+            String[] names = {"left", "right"};
+            for(int i = 0; i < arms.length; i++) {
+                if(!walkToTile(center, "fan center " + names[i]))
+                    return failFan("could not reach fan center " + center);
+                status = "Status: fanning " + names[i] + " from " + center;
+                MinerBotV3Overlay.showLeg(gui, mainAnchor, originalDirection, status);
+                int trailSize = trail.size();
+                LegOutcome result;
+                try {
+                    result = completeLine(center, arms[i]);
+                } finally {
+                    while(trail.size() > trailSize) trail.remove(trail.size() - 1);
+                }
+                diag("FAN arm=%s center=%s heading=%s result=%s",
+                    names[i], center, arms[i], result);
+                if(result == LegOutcome.FAILED)
+                    return failFan(names[i] + " fan arm failed from " + center);
+                // A hard wall merely bounds this supported fan arm; the other
+                // side and the main tunnel can still proceed safely.
+            }
+            if(!walkToTile(endpoint, "return from fan to tunnel centerline"))
+                return failFan("could not return from fan to centerline " + endpoint);
+            return true;
+        }
+
+        private boolean failFan(String reason) throws InterruptedException {
+            diag("FAN failed reason=%s", reason);
+            fail(reason);
+            return false;
         }
 
         private void saveCheckpoint(Coord liveAnchor) {
@@ -599,6 +644,48 @@ public final class MinerBotV3 {
                     .filter(g -> MinerBotV3Logic.boulderBlocksFrontier(anchor, heading,
                         completed, g.rc.floor(MCache.tilesz)))
                     .min(Comparator.<Gob>comparingDouble(g -> g.rc.dist(frontierWorld))
+                        .thenComparingLong(g -> g.id))
+                    .orElse(null);
+            }
+        }
+
+        /** Clears every loaded bumling whose footprint can overlap the tile
+         * required by the current operation. Re-scan after each chip because a
+         * cave-in can contain more than one boulder at the same work site. */
+        private boolean clearOperationBoulders(Coord target, String phase)
+                throws InterruptedException {
+            int cleared = 0;
+            while(true) {
+                Gob boulder = operationBoulder(target);
+                if(boulder == null) return true;
+                status = "Status: clearing boulder obstructing " + phase;
+                diag("BOULDER obstruction phase=%s id=%d resid=%s tile=%s target=%s",
+                    phase, boulder.id, safeResid(boulder),
+                    boulder.rc.floor(MCache.tilesz), target);
+                if(!chipBoulder(boulder)) {
+                    diag("BOULDER obstruction phase=%s id=%d result=failed", phase, boulder.id);
+                    return false;
+                }
+                cleared++;
+                diag("BOULDER obstruction phase=%s id=%d result=cleared count=%d",
+                    phase, boulder.id, cleared);
+                if(cleared >= BOULDER_MAX_ATTEMPTS) {
+                    diag("BOULDER obstruction phase=%s result=safety-limit limit=%d",
+                        phase, BOULDER_MAX_ATTEMPTS);
+                    return operationBoulder(target) == null;
+                }
+            }
+        }
+
+        private Gob operationBoulder(Coord target) {
+            Coord2d targetWorld = MiningBot.tileCenter(target);
+            synchronized(gui.ui.sess.glob.oc) {
+                return gui.ui.sess.glob.oc.stream()
+                    .filter(g -> g != null && !g.disposed() && g.rc != null)
+                    .filter(g -> MinerBotV3Logic.isBoulderResource(safeResid(g)))
+                    .filter(g -> MinerBotV3Logic.boulderBlocksTile(target,
+                        g.rc.floor(MCache.tilesz)))
+                    .min(Comparator.<Gob>comparingDouble(g -> g.rc.dist(targetWorld))
                         .thenComparingLong(g -> g.id))
                     .orElse(null);
             }
@@ -887,9 +974,12 @@ public final class MinerBotV3 {
                 Anchor base = baseline.get(baseIndex);
                 if(!returnAndResetTo(base.tile, baseline, baseIndex))
                     fail("could not return to dogleg base " + base.tile);
-                diag("DETOUR try=%s base=%s", candidate, base.tile);
+                Coord start = MinerBotV3Logic.detourStart(base.tile, originalDirection);
+                if(!walkToTile(start, "dogleg support clearance"))
+                    fail("could not reach dogleg start " + start + " behind support " + base.tile);
+                diag("DETOUR try=%s base=%s start=%s clearance=1", candidate, base.tile, start);
                 MinerBotV3Logic.Direction side = candidate.heading(originalDirection);
-                Coord at = new Coord(base.tile);
+                Coord at = start;
                 boolean candidateHard = false;
                 for(int leg = 0; leg < candidate.sideLegs; leg++) {
                     LegOutcome lateral = mineAndPlaceLeg(at, side);

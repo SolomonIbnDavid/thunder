@@ -66,6 +66,40 @@ public class MinerBotV3LogicTest {
     }
 
     @Test
+    void doglegStartsOneTileBehindSupportInEveryHeading() {
+        Coord support = Coord.of(100, 200);
+        for(MinerBotV3Logic.Direction heading : MinerBotV3Logic.Direction.values()) {
+            Coord start = MinerBotV3Logic.detourStart(support, heading);
+            assertEquals(support.sub(heading.step()), start);
+
+            MinerBotV3Logic.Direction side = heading.right();
+            assertEquals(start.add(side.step()),
+                MinerBotV3Logic.remainingLine(start, side, 0).start);
+            assertNotEquals(MinerBotV3Logic.columnTile(
+                MinerBotV3Logic.priorAnchor(support, heading, 1), heading),
+                MinerBotV3Logic.remainingLine(start, side, 0).start);
+        }
+    }
+
+    @Test
+    void fanCrosscutRunsBehindNewColumnInEveryHeading() {
+        Coord anchor = Coord.of(100, 200);
+        for(MinerBotV3Logic.Direction heading : MinerBotV3Logic.Direction.values()) {
+            Coord endpoint = MinerBotV3Logic.endpoint(anchor, heading);
+            Coord column = MinerBotV3Logic.columnTile(anchor, heading);
+            Coord center = MinerBotV3Logic.fanAnchor(anchor, heading);
+            assertEquals(endpoint.sub(heading.step()), center);
+            assertNotEquals(column, center.add(heading.right().step()));
+            assertEquals(MinerBotV3Logic.LEG_TILES,
+                MinerBotV3Logic.completedTiles(center, heading.left(),
+                    MinerBotV3Logic.endpoint(center, heading.left())));
+            assertEquals(MinerBotV3Logic.LEG_TILES,
+                MinerBotV3Logic.completedTiles(center, heading.right(),
+                    MinerBotV3Logic.endpoint(center, heading.right())));
+        }
+    }
+
+    @Test
     void miningMessagesAndEnergyUseTheV3Thresholds() {
         assertTrue(MinerBotV3Logic.tooHardMessage("This rock is much too hard for you to mine."));
         assertTrue(MinerBotV3Logic.tooHardMessage("TOO HARD"));
@@ -111,6 +145,17 @@ public class MinerBotV3LogicTest {
         assertFalse(MinerBotV3Logic.boulderBlocksFrontier(
             anchor, MinerBotV3Logic.Direction.NORTH, MinerBotV3Logic.LEG_TILES,
             MinerBotV3Logic.endpoint(anchor, MinerBotV3Logic.Direction.NORTH)));
+    }
+
+    @Test
+    void operationBoulderDetectionCoversLargeAdjacentFootprintsOnly() {
+        Coord target = Coord.of(40, 50);
+        assertTrue(MinerBotV3Logic.boulderBlocksTile(target, target));
+        assertTrue(MinerBotV3Logic.boulderBlocksTile(target, target.add(1, 0)));
+        assertTrue(MinerBotV3Logic.boulderBlocksTile(target, target.add(-1, 1)));
+        assertFalse(MinerBotV3Logic.boulderBlocksTile(target, target.add(2, 0)));
+        assertFalse(MinerBotV3Logic.boulderBlocksTile(target, target.add(0, -2)));
+        assertFalse(MinerBotV3Logic.boulderBlocksTile(null, target));
     }
 
     @Test

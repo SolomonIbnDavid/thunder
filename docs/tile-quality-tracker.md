@@ -14,9 +14,11 @@ Open the world map and press **Q**, then press **Marker settings**.
 - Threshold settings persist in `config.json` and apply to every character/map.
 - **Copy settings** puts the universal rule and all individual rules in a versioned JSON profile on the clipboard. **Paste settings** replaces the local threshold profile with the shared one.
 
-When an observation qualifies, Thunder creates a purple player marker named like `[TQ] Granite q72.5`. It has **Display in world** enabled. In the game world, quality markers render as the material's inventory icon beside the quality number instead of the ordinary flag; each gemstone uses a representative rough-gem icon composed with that gemstone's specific game texture. On the saved map they remain normal searchable player markers. Raising or disabling a threshold does not erase markers that were already created; they remain editable and can be removed from the map marker list.
+When an observation qualifies, Thunder creates a permanent ground label. In the game world, quality labels render as the material's inventory icon beside the quality number instead of an ordinary flag; each gemstone uses a representative rough-gem icon composed with that gemstone's specific game texture. Automatic labels are deliberately hidden from the map, marker list, and automapper upload. Raising or disabling a threshold does not erase labels that were already created.
 
-Purple is an existing player-marker group color. If purple marker upload is enabled in Thunder's automapper settings, quality flags are eligible for the normal remote marker upload path as well.
+The persistent **Mining Log**, available from Miner Bot V3, lists recorded observations across sessions. Select an entry and press **Mark on map** to create an ordinary searchable `[Mine] Material qN` player marker at that location. Explicit map markers are independent of the automatic ground label and can be edited or removed normally.
+
+Explicit mining-log markers use the existing purple player-marker group and follow its normal automapper upload setting.
 
 ## Sharing
 
@@ -75,6 +77,11 @@ Grid payload version 3 stores canonical string keys. Version 2 remains readable 
 ### Mining
 
 An area-mine click arms the mine action. Each `gfx/terobjs/mineout` overlay advances the pending location to the wall tile that just opened. Inventory item-info updates then provide the material name and quality. This works for manual mining and Miner Bot V3 because both use Thunder's normal mining action.
+
+When the mine cursor closes, the last mined tile remains eligible for five
+seconds. This bounded grace period covers delayed dynamic gemstone name and
+quality information (all gem types share one item resource) without leaving a
+stale mining location armed indefinitely.
 
 Only items in the main inventory are accepted for mining/digging attribution. Stacked item names are normalized, and delayed item information is retried until name and quality are available.
 

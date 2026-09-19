@@ -335,6 +335,8 @@ public class MappingClient {
 		for (int i = 0; i < markers.size(); i++) {
 		    try {
 			MarkerData md = markers.get(i);
+			if (thunder.TileQuality.isGroundQualityMarker(md.m))
+			    continue;
 			if (md.indirGrid.get() == null)
 			    continue;
 			
