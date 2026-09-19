@@ -103,12 +103,14 @@ public class MinerBotV3LogicTest {
             Coord center = MinerBotV3Logic.fanAnchor(anchor, heading);
             assertEquals(endpoint.sub(heading.step()), center);
             assertNotEquals(column, center.add(heading.right().step()));
-            assertEquals(MinerBotV3Logic.LEG_TILES,
-                MinerBotV3Logic.completedTiles(center, heading.left(),
-                    MinerBotV3Logic.endpoint(center, heading.left())));
-            assertEquals(MinerBotV3Logic.LEG_TILES,
-                MinerBotV3Logic.completedTiles(center, heading.right(),
-                    MinerBotV3Logic.endpoint(center, heading.right())));
+            MinerBotV3Logic.Line left = MinerBotV3Logic.remainingLine(center,
+                heading.left(), 0, MinerBotV3Logic.FAN_LEFT_TILES);
+            MinerBotV3Logic.Line right = MinerBotV3Logic.remainingLine(center,
+                heading.right(), 0, MinerBotV3Logic.FAN_RIGHT_TILES);
+            assertEquals(center.add(heading.left().step().mul(10)), left.end);
+            assertEquals(center.add(heading.right().step().mul(12)), right.end);
+            assertEquals(22, MinerBotV3Logic.FAN_LEFT_TILES
+                + MinerBotV3Logic.FAN_RIGHT_TILES);
         }
     }
 

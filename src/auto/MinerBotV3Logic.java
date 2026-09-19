@@ -9,6 +9,8 @@ import java.util.Locale;
 /** Pure geometry and policy rules for Miner Bot V3. */
 public final class MinerBotV3Logic {
     public static final int LEG_TILES = 11;
+    public static final int FAN_LEFT_TILES = LEG_TILES - 1;
+    public static final int FAN_RIGHT_TILES = LEG_TILES + 1;
     public static final int COLUMN_STONES = 30;
     public static final int MAX_NO_PROGRESS_REDRAWS = 3;
     public static final double LOW_ENERGY = 0.25;
@@ -61,11 +63,17 @@ public final class MinerBotV3Logic {
     }
 
     public static Line remainingLine(Coord anchor, Direction heading, int completedTiles) {
+        return remainingLine(anchor, heading, completedTiles, LEG_TILES);
+    }
+
+    public static Line remainingLine(Coord anchor, Direction heading, int completedTiles,
+                                     int targetTiles) {
         if(anchor == null || heading == null) throw new IllegalArgumentException("anchor and heading are required");
-        int completed = Math.max(0, Math.min(LEG_TILES, completedTiles));
+        if(targetTiles < 1) throw new IllegalArgumentException("targetTiles must be positive");
+        int completed = Math.max(0, Math.min(targetTiles, completedTiles));
         Coord step = heading.step();
-        Coord end = anchor.add(step.mul(LEG_TILES));
-        Coord start = completed >= LEG_TILES ? end : anchor.add(step.mul(completed + 1));
+        Coord end = anchor.add(step.mul(targetTiles));
+        Coord start = completed >= targetTiles ? end : anchor.add(step.mul(completed + 1));
         return new Line(start, end);
     }
 

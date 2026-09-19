@@ -474,6 +474,9 @@ public final class MinerBotV3 {
                 originalDirection.left(), originalDirection.right()
             };
             String[] names = {"left", "right"};
+            int[] lengths = {
+                MinerBotV3Logic.FAN_LEFT_TILES, MinerBotV3Logic.FAN_RIGHT_TILES
+            };
             for(int i = 0; i < arms.length; i++) {
                 if(!walkToTile(center, "fan center " + names[i]))
                     return failFan("could not reach fan center " + center);
@@ -482,12 +485,12 @@ public final class MinerBotV3 {
                 int trailSize = trail.size();
                 LegOutcome result;
                 try {
-                    result = completeLine(center, arms[i]);
+                    result = completeLine(center, arms[i], lengths[i]);
                 } finally {
                     while(trail.size() > trailSize) trail.remove(trail.size() - 1);
                 }
-                diag("FAN arm=%s center=%s heading=%s result=%s",
-                    names[i], center, arms[i], result);
+                diag("FAN arm=%s center=%s heading=%s tiles=%d result=%s",
+                    names[i], center, arms[i], lengths[i], result);
                 if(result == LegOutcome.FAILED)
                     return failFan(names[i] + " fan arm failed from " + center);
                 // A hard wall merely bounds this supported fan arm; the other
@@ -522,22 +525,28 @@ public final class MinerBotV3 {
 
         private LegOutcome completeLine(Coord anchor, MinerBotV3Logic.Direction heading)
                 throws InterruptedException {
+            return completeLine(anchor, heading, MinerBotV3Logic.LEG_TILES);
+        }
+
+        private LegOutcome completeLine(Coord anchor, MinerBotV3Logic.Direction heading,
+                                        int targetTiles) throws InterruptedException {
             int completed = 0;
             MinerBotV3Logic.RedrawProgress progress = new MinerBotV3Logic.RedrawProgress(completed);
-            while(completed < MinerBotV3Logic.LEG_TILES) {
+            while(completed < targetTiles) {
                 bot.checkCancelled();
                 ensureSupplyCircuit(false);
-                completed = advanceOpenPrefix(anchor, heading, completed);
-                if(completed >= MinerBotV3Logic.LEG_TILES) return LegOutcome.SUCCESS;
+                completed = advanceOpenPrefix(anchor, heading, completed, targetTiles);
+                if(completed >= targetTiles) return LegOutcome.SUCCESS;
 
                 BoulderOutcome boulder = clearFrontierBoulder(anchor, heading, completed);
                 if(boulder == BoulderOutcome.FAILED)
                     return failLeg("could not clear the boulder at the active mining frontier");
                 if(boulder == BoulderOutcome.CLEARED) continue;
 
-                MinerBotV3Logic.Line line = MinerBotV3Logic.remainingLine(anchor, heading, completed);
+                MinerBotV3Logic.Line line = MinerBotV3Logic.remainingLine(anchor, heading,
+                    completed, targetTiles);
                 MineOutcome outcome = submitMineArea(line.start, line.end,
-                    () -> openPrefix(anchor, heading) >= MinerBotV3Logic.LEG_TILES,
+                    () -> openPrefix(anchor, heading, targetTiles) >= targetTiles,
                     true, "line " + line.start + ".." + line.end);
                 if(outcome == MineOutcome.TOO_HARD) return LegOutcome.TOO_HARD;
                 if(outcome == MineOutcome.ARM_FAILED) return failLeg("Mine action did not arm for " + line.start + ".." + line.end);
@@ -546,7 +555,7 @@ public final class MinerBotV3 {
                     continue;
                 }
 
-                completed = advanceOpenPrefix(anchor, heading, completed);
+                completed = advanceOpenPrefix(anchor, heading, completed, targetTiles);
                 if(progress.failedAfter(completed)) {
                     Coord frontier = anchor.add(heading.step().mul(completed + 1));
                     String terrain = MapHelper.tileResourceName(gui, frontier);
@@ -644,9 +653,13 @@ public final class MinerBotV3 {
         }
 
         private int openPrefix(Coord anchor, MinerBotV3Logic.Direction heading) {
+            return openPrefix(anchor, heading, MinerBotV3Logic.LEG_TILES);
+        }
+
+        private int openPrefix(Coord anchor, MinerBotV3Logic.Direction heading, int targetTiles) {
             Coord step = heading.step();
             int open = 0;
-            for(int i = 1; i <= MinerBotV3Logic.LEG_TILES; i++) {
+            for(int i = 1; i <= targetTiles; i++) {
                 if(!MapHelper.isMinedFloorTile(gui, anchor.add(step.mul(i)))) break;
                 open = i;
             }
@@ -655,7 +668,12 @@ public final class MinerBotV3 {
 
         private int advanceOpenPrefix(Coord anchor, MinerBotV3Logic.Direction heading,
                                       int completed) throws InterruptedException {
-            int open = openPrefix(anchor, heading);
+            return advanceOpenPrefix(anchor, heading, completed, MinerBotV3Logic.LEG_TILES);
+        }
+
+        private int advanceOpenPrefix(Coord anchor, MinerBotV3Logic.Direction heading,
+                                      int completed, int targetTiles) throws InterruptedException {
+            int open = openPrefix(anchor, heading, targetTiles);
             if(open <= completed) return completed;
             Coord step = heading.step();
             for(int candidate = open; candidate > completed; candidate--) {

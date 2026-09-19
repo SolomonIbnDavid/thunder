@@ -249,8 +249,10 @@ public final class MinerBotV3Overlay implements DebugDraw {
 
         if(snapshot.fanning) {
             Coord fanCenter = MinerBotV3Logic.fanAnchor(snapshot.anchor, snapshot.heading);
-            drawFanArm(g, mv, fanCenter, snapshot.heading.left(), "fan left");
-            drawFanArm(g, mv, fanCenter, snapshot.heading.right(), "fan right");
+            drawFanArm(g, mv, fanCenter, snapshot.heading.left(),
+                MinerBotV3Logic.FAN_LEFT_TILES, "fan left");
+            drawFanArm(g, mv, fanCenter, snapshot.heading.right(),
+                MinerBotV3Logic.FAN_RIGHT_TILES, "fan right");
         }
 
         Coord anchorScreen = screen(mv, MiningBot.tileCenter(snapshot.anchor));
@@ -298,17 +300,17 @@ public final class MinerBotV3Overlay implements DebugDraw {
     }
 
     private static void drawFanArm(GOut g, MapView mv, Coord center,
-                                   MinerBotV3Logic.Direction direction, String label) {
+                                   MinerBotV3Logic.Direction direction, int tiles,
+                                   String label) {
         Coord previous = screen(mv, MiningBot.tileCenter(center));
         g.chcolor(FAN);
-        for(int i = 1; i <= MinerBotV3Logic.LEG_TILES; i++) {
+        for(int i = 1; i <= tiles; i++) {
             Coord tile = center.add(direction.step().mul(i));
             Coord at = screen(mv, MiningBot.tileCenter(tile));
             if(previous != null && at != null) g.line(previous, at, 2.0);
             if(at != null) {
-                g.fellipse(at, Coord.of(i == MinerBotV3Logic.LEG_TILES ? 5 : 3,
-                    i == MinerBotV3Logic.LEG_TILES ? 5 : 3));
-                if(i == MinerBotV3Logic.LEG_TILES) g.atext(label, at.add(6, -5), 0, 0);
+                g.fellipse(at, Coord.of(i == tiles ? 5 : 3, i == tiles ? 5 : 3));
+                if(i == tiles) g.atext(label, at.add(6, -5), 0, 0);
             }
             previous = at;
         }

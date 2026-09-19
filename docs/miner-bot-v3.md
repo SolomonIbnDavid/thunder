@@ -22,9 +22,11 @@ and repeats this cycle:
 5. Return to the centerline and continue in the same heading.
 
 The optional **Fanning mode** adds a supported crosscut after every successful
-column. One tile behind the new column, V3 mines eleven tiles left and eleven
+column. One tile behind the new column, V3 mines ten tiles left and twelve
 tiles right, returns to the centerline, and then resumes the straight tunnel.
-The one-tile setback keeps the right arm from intersecting the column itself.
+The one-tile rightward bias centers the 22-tile crosscut on the column's support
+field rather than on the tunnel centerline. The one-tile setback keeps the
+right arm from intersecting the column itself.
 A too-hard wall bounds only that fan arm; the opposite arm and main tunnel
 continue. Blue preview lines show both planned fan arms before the run and
 during each column cycle.
