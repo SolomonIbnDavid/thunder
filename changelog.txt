@@ -1,3 +1,9 @@
+$size[14]{$u{Miner Bot V3 fanning and mining log update on 19.09.2026:}
+* Adds optional column fanning with a live blue preview. Each supported crosscut mines 10 tiles left and 12 tiles right, centering its 22-tile width on the column's support field.
+* Important stone, ore, and gemstone finds now receive permanent in-world quality labels without cluttering the map. The persistent Miner V3 Mining Log can create an ordinary map marker for any selected find.
+* Miner V3 now arms quality tracking before programmatic mining selections, allowing fast gemstone results to be recorded reliably.
+* Closed startup anchors are cleared and mined open before movement, and boulders obstructing an active mining position are chipped instead of stopping the run.
+`
 $size[14]{$u{Miner Bot V3 hard-wall recovery fix on 18.09.2026:}
 * Silent hard mining walls now enter the bounded too-hard dogleg search after the normal no-progress redraw limit, even when the server omits its expected error message.
 * Restarting from a saved frontier reconstructs up to two verified open support legs behind the anchor, so one- and two-leg retreat candidates remain available after resupply or a manual restart.
