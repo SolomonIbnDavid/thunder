@@ -24,7 +24,6 @@ public final class DebugBoot {
 	touch("haven.pathfinding.BoardStockpileOverlay");
 	touch("haven.pathfinding.NavReplayRunner");
 	touch("thunder.FishingHeatmapOverlay");
-	touch("thunder.MiningHeatMapOverlay");
     }
 
     private static void touch(String fqcn) {

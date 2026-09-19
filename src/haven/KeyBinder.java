@@ -90,7 +90,6 @@ public class KeyBinder {
 	add(OPEN_ALCHEMY_DB);
 	add(OPEN_QUEST_HELP);
 	add(OPEN_FISHING_HELPER);
-	add(OPEN_MINING_HEAT_MAP);
 	add(KeyEvent.VK_H, ALT,   TOGGLE_CURSOR);
 	add(KeyEvent.VK_S, ALT,   TOGGLE_STUDY);
 	add(KeyEvent.VK_F, ALT,   FILTER);

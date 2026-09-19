@@ -13,7 +13,7 @@ import java.util.List;
 public final class FishingSamples {
     private static final String FILE = "fishing-casting-samples.json";
 
-    public static final class Sample implements SpatialPeakSearch.Sample {
+    public static final class Sample {
 	public final String species, tackle;
 	public final int bite, land;
 	public final Coord2d cast, player;
@@ -34,9 +34,6 @@ public final class FishingSamples {
 	    this.minute = minute;
 	    this.at = at;
 	}
-
-	@Override public Coord2d point() {return cast;}
-	@Override public double value() {return bite;}
     }
 
     private final List<Sample> samples = new ArrayList<>();

@@ -26,7 +26,6 @@ public enum Action {
     OPEN_COOKBOOK(GameUI::toggleCookbook, "Open cookbook", "Browse civ.hearthworld.com's food FEP database in-game. Type to filter (name:/from:/attr comparisons), log in to keep your session."),
     OPEN_QUEST_HELP(GameUI::toggleQuestHelper, "Open quest helper", "Opens window with uncompleted tasks for all active quests."),
     OPEN_FISHING_HELPER(GameUI::toggleFishingHelper, "Casting helper", "Map casting-rod bite chances and guide the search toward the strongest fish node."),
-    OPEN_MINING_HEAT_MAP(GameUI::toggleMiningHeatMap, "Mining Heat Map", "Map mined material quality and guide the search toward the local high point."),
     TOGGLE_CURSOR(GameUI::toggleHand, "Toggle cursor item", "Hide/show item on a cursor. Allows you to walk with item on cursor when hidden."),
     TOGGLE_STUDY(GameUI::toggleStudy, "Toggle study window"),
     FILTER(GameUI::toggleFilter, "Show item filter"),

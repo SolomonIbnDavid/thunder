@@ -280,7 +280,6 @@ public class CFG<T> {
     public static final CFG<Boolean> DEBUG_CATALOG = new CFG<>("debug.catalog", false);
     public static final CFG<Boolean> DEBUG_PF_PROBE = new CFG<>("debug.pf_probe", false);
     public static final CFG<Boolean> FISHING_HEATMAP = new CFG<>("fishing.casting_heatmap", true);
-    public static final CFG<Boolean> MINING_HEATMAP = new CFG<>("mining.heatmap", true);
 
     public static final CFG<Integer> ANIM_FRAME_SKIP = new CFG<>("perf.anim_frame_skip", 0);
     public static final CFG<Double> GOB_INFO_TICK_INTERVAL = new CFG<>("perf.gob_info_tick_interval", 0.25, new com.google.gson.reflect.TypeToken<Double>(){});
