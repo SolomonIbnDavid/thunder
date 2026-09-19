@@ -380,6 +380,16 @@ public final class MinerBotV3 {
             if(context != null && context.segment == segmentId && player != null && player.rc != null) {
                 Coord live = savedOrigin.sub(context.sessionTile);
                 if(player.rc.dist(MiningBot.tileCenter(live)) <= MCache.tilesz.x * 20.0) {
+                    if(!MapHelper.isMinedFloorTile(gui, live)) {
+                        status = "Status: mining open the startup anchor " + live;
+                        diag("CHECKPOINT anchor-closed saved=%s live=%s terrain=%s action=mine-open",
+                            savedOrigin, live, MapHelper.tileResourceName(gui, live));
+                        if(!clearOperationBoulders(live, "startup anchor")) return false;
+                        LegOutcome opened = mineSingleTile(live, "startup anchor", false);
+                        diag("CHECKPOINT anchor-open-result saved=%s live=%s result=%s",
+                            savedOrigin, live, opened);
+                        if(opened != LegOutcome.SUCCESS) return false;
+                    }
                     if(walkToTile(live, "nearby session mining anchor")) return true;
                     diag("CHECKPOINT nearby-local-route-failed saved=%s; trying saved-map route",
                         savedOrigin);
@@ -552,16 +562,25 @@ public final class MinerBotV3 {
         }
 
         private LegOutcome minePocket(Coord tile) throws InterruptedException {
+            return mineSingleTile(tile, "column pocket", true);
+        }
+
+        private LegOutcome mineSingleTile(Coord tile, String phase,
+                                          boolean monitorSupplies) throws InterruptedException {
             if(MapHelper.isMinedFloorTile(gui, tile)) return LegOutcome.SUCCESS;
             for(int attempt = 1; attempt <= MinerBotV3Logic.MAX_NO_PROGRESS_REDRAWS; attempt++) {
                 MineOutcome outcome = submitMineArea(tile, tile,
-                    () -> MapHelper.isMinedFloorTile(gui, tile), true,
-                    "column pocket " + tile + " attempt " + attempt);
+                    () -> MapHelper.isMinedFloorTile(gui, tile), monitorSupplies,
+                    phase + " " + tile + " attempt " + attempt);
                 if(outcome == MineOutcome.TOO_HARD) return LegOutcome.TOO_HARD;
-                if(outcome == MineOutcome.SUPPLY_NEEDED) {ensureSupplyCircuit(false); continue;}
+                if(outcome == MineOutcome.SUPPLY_NEEDED) {
+                    ensureSupplyCircuit(false);
+                    continue;
+                }
                 if(MapHelper.isMinedFloorTile(gui, tile)) return LegOutcome.SUCCESS;
             }
-            return failLeg("column pocket did not open at " + tile);
+            diag("MINE single-tile phase=%s tile=%s result=no-progress", phase, tile);
+            return LegOutcome.FAILED;
         }
 
         private MineOutcome submitMineArea(Coord start, Coord end, BooleanSupplier complete,

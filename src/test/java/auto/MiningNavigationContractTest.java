@@ -55,4 +55,15 @@ public class MiningNavigationContractTest {
         assertTrue(materials.contains(".map(w -> w.quantity.get())"),
             "minimum checks must sum item quantities rather than widget count");
     }
+
+    @Test
+    void minerV3OpensAClosedNearbyAnchorBeforeRoutingOntoIt() throws Exception {
+        String bot = Files.readString(Path.of("src/auto/MinerBotV3.java"));
+
+        assertTrue(bot.contains("!MapHelper.isMinedFloorTile(gui, live)"));
+        assertTrue(bot.contains("mineSingleTile(live, \"startup anchor\", false)"));
+        assertTrue(bot.indexOf("mineSingleTile(live, \"startup anchor\", false)")
+            < bot.indexOf("walkToTile(live, \"nearby session mining anchor\")"),
+            "the anchor must be mined before V3 asks movement to occupy it");
+    }
 }

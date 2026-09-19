@@ -56,6 +56,9 @@ first selected mine tile is one tile beyond it in the locked heading.
 - A later Start uses saved-cave-map routing to return to the checkpoint instead
   of searching for the nearest currently visible support. This works when the
   character was left at an off-screen storage, water, or food area.
+- If the computed or manually selected startup anchor is still a mineable rock
+  tile, V3 clears any obstructing bumling, mines that one tile open, and only
+  then walks onto it. A closed anchor is not treated as a pathfinding failure.
 - **Clear** discards the checkpoint and makes the next Start derive a fresh
   anchor from a visible support.
 
